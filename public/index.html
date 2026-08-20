@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#063323" />
+  <title>SRC Awards 2026</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css?v=8" />
+  <link rel="stylesheet" href="/hub.css?v=8" />
+</head>
+<body class="awards-page">
+  <div class="noise"></div>
+  <div id="siteHeader"></div>
+
+  <main id="home">
+    <section class="hero">
+      <div class="hero-glow hero-glow-one"></div>
+      <div class="hero-glow hero-glow-two"></div>
+
+      <div class="hero-copy">
+        <div class="eyebrow">THE PEOPLE'S CHOICE • CAMPUS 2026</div>
+        <h1>Celebrate excellence.<br><span>Vote your favorite.</span></h1>
+        <p>
+          A premium digital voting experience for the SRC Awards.
+          Discover nominees, support your favorites, and follow the race live.
+        </p>
+
+        <div class="hero-actions">
+          <a class="btn btn-gold btn-large" href="#categories">Start Voting</a>
+          <a class="btn btn-outline btn-large" href="#leaderboard">View Rankings</a>
+        </div>
+
+        <div class="trust-row">
+          <div><b>12</b><span>Categories</span></div>
+          <div><b>PRIVATE</b><span>Vote Counts</span></div>
+          <div><b id="votingStateBadge">OPEN</b><span>Voting status</span></div>
+        </div>
+      </div>
+
+      <div class="hero-card-wrap">
+        <div class="award-card">
+          <div class="award-card-shine"></div>
+          <div class="trophy">🏆</div>
+          <span class="award-small">SRC AWARDS</span>
+          <h2>2026</h2>
+          <p>Celebrating impact, leadership, style & campus excellence.</p>
+          <div class="seal">VOTE • CELEBRATE • WIN</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="countdown-section">
+      <div>
+        <span class="section-kicker">VOTING CLOSES IN</span>
+        <h2>The race is on.</h2>
+      </div>
+      <div class="countdown" id="countdown">
+        <div><b id="days">00</b><span>Days</span></div>
+        <div><b id="hours">00</b><span>Hours</span></div>
+        <div><b id="minutes">00</b><span>Minutes</span></div>
+        <div><b id="seconds">00</b><span>Seconds</span></div>
+      </div>
+    </section>
+
+    <section class="section" id="categories">
+      <div class="section-heading">
+        <div>
+          <span class="section-kicker">EXPLORE & VOTE</span>
+          <h2>Award categories</h2>
+          <p>Choose a category and support the nominee you believe deserves the crown.</p>
+        </div>
+
+        <div class="search-wrap">
+          <span>⌕</span>
+          <input id="searchInput" type="search" placeholder="Search nominee or category..." />
+        </div>
+      </div>
+
+      <div class="category-tabs" id="categoryTabs"></div>
+      <div class="nominee-grid" id="nomineeGrid"></div>
+    </section>
+
+    <section class="section leaderboard-section" id="leaderboard">
+      <div class="section-heading">
+        <div>
+          <span class="section-kicker">LIVE MOMENTUM</span>
+          <h2>Leaderboard</h2>
+          <p>Public rankings show percentages only. Exact vote counts remain private to administrators.</p>
+        </div>
+        <div class="live-pill"><span></span> Live demo</div>
+      </div>
+
+      <div class="leaderboard-layout">
+        <div class="leaderboard-card">
+          <div class="leaderboard-head">
+            <h3 id="leaderboardTitle">Overall Demo Leaders</h3>
+            <select id="leaderboardFilter" aria-label="Filter leaderboard"></select>
+          </div>
+          <div id="leaderboardList"></div>
+        </div>
+
+        <aside class="stats-card">
+          <span class="section-kicker">TODAY'S SNAPSHOT</span>
+          <div class="big-stat privacy-stat">
+            <b>🔒</b>
+            <span>Exact vote totals are hidden from the public</span>
+          </div>
+          <div class="mini-stats">
+            <div><b id="uniqueNominees">0</b><span>Nominees</span></div>
+            <div><b id="categoryCount">0</b><span>Categories</span></div>
+          </div>
+          <div class="freeze-note">
+            <b>🔒 Result freeze ready</b>
+            <p>In production, public rankings can automatically disappear before voting closes.</p>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section class="section how-section" id="how-it-works">
+      <div class="section-heading">
+        <div>
+          <span class="section-kicker">SIMPLE & SECURE</span>
+          <h2>How voting will work</h2>
+        </div>
+      </div>
+
+      <div class="steps-grid">
+        <div class="step-card"><span>01</span><h3>Choose</h3><p>Select a category and your preferred nominee.</p></div>
+        <div class="step-card"><span>02</span><h3>Enter votes</h3><p>Pick the number of votes you want to cast.</p></div>
+        <div class="step-card"><span>03</span><h3>Pay</h3><p>Authorize the exact amount through Mobile Money.</p></div>
+        <div class="step-card"><span>04</span><h3>Confirmed</h3><p>Votes are credited only after successful payment verification.</p></div>
+      </div>
+    </section>
+  </main>
+
+  <div id="siteFooter"></div>
+
+  <!-- Vote Modal -->
+  <div class="modal-backdrop" id="voteModal" aria-hidden="true">
+    <div class="modal">
+      <button class="modal-close" id="closeVoteModal" aria-label="Close">×</button>
+      <div class="modal-badge">CAST YOUR VOTE</div>
+      <div class="modal-nominee">
+        <div class="avatar avatar-large" id="modalAvatar">EA</div>
+        <div>
+          <span id="modalCategory">Best Course Representative</span>
+          <h2 id="modalNominee">Esther Addo</h2>
+        </div>
+      </div>
+
+      <label class="field-label">Number of votes</label>
+      <div class="vote-packs" id="votePacks">
+        <button data-votes="1">1</button>
+        <button data-votes="5">5</button>
+        <button data-votes="10" class="active">10</button>
+        <button data-votes="20">20</button>
+        <button data-votes="50">50</button>
+      </div>
+
+      <div class="custom-vote-row">
+        <label for="customVotes">Or enter custom votes</label>
+        <input id="customVotes" type="number" min="1" max="10000" value="10" />
+      </div>
+
+      <div class="payment-fields">
+        <div>
+          <label class="field-label" for="payerEmail">Email</label>
+          <input id="payerEmail" type="email" placeholder="you@example.com" autocomplete="email" />
+        </div>
+        <div>
+          <label class="field-label" for="payerPhone">MoMo number</label>
+          <input id="payerPhone" type="tel" placeholder="0551234567" autocomplete="tel" />
+        </div>
+        <div>
+          <label class="field-label" for="payerNetwork">Network</label>
+          <select id="payerNetwork">
+            <option value="mtn">MTN Mobile Money</option>
+            <option value="atl">AT Money</option>
+            <option value="vod">Telecel Cash</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="payment-summary">
+        <div><span>Price per vote</span><b id="pricePerVote">GH₵1.00</b></div>
+        <div><span>Votes</span><b id="summaryVotes">10</b></div>
+        <div class="summary-total"><span>Total</span><b id="summaryAmount">GH₵10.00</b></div>
+      </div>
+
+      <div class="payment-status" id="paymentStatus" hidden>
+        <span class="payment-spinner"></span>
+        <div>
+          <b id="paymentStatusTitle">Waiting for Mobile Money approval</b>
+          <p id="paymentStatusText">Approve the payment prompt on your phone.</p>
+        </div>
+      </div>
+
+      <button class="btn btn-gold btn-full" id="confirmDemoVote">Pay with Mobile Money</button>
+      <p class="modal-footnote" id="paymentModeNote">Localhost test mode. Your MoMo PIN is never entered on this website.</p>
+    </div>
+  </div>
+
+  <!-- Success Toast -->
+  <div class="toast" id="toast">
+    <span class="toast-icon">✓</span>
+    <div><b id="toastTitle">Vote recorded</b><p id="toastText">10 demo votes added.</p></div>
+  </div>
+
+  <!-- Admin Drawer -->
+  <div class="admin-overlay" id="adminOverlay">
+    <aside class="admin-drawer">
+      <div class="admin-header">
+        <div>
+          <span class="section-kicker">LOCAL DEMO</span>
+          <h2>Admin dashboard</h2>
+        </div>
+        <div class="admin-header-actions">
+          <button class="btn btn-ghost admin-logout" id="adminLogout" hidden>Log out</button>
+          <button class="modal-close" id="closeAdmin">×</button>
+        </div>
+      </div>
+
+      <form class="admin-login" id="adminLogin">
+        <h3>Administrator login</h3>
+        <p>Enter the admin password configured on the server.</p>
+        <label class="field-label" for="adminPassword">Password</label>
+        <input id="adminPassword" type="password" autocomplete="current-password" required />
+        <button class="btn btn-gold btn-full" type="submit">Sign in</button>
+        <p class="admin-login-message" id="adminLoginMessage" aria-live="polite"></p>
+      </form>
+
+      <div id="adminContent" hidden>
+      <div class="admin-metrics">
+        <div><span>Total votes</span><b id="adminTotalVotes">0</b></div>
+        <div><span>Verified revenue</span><b id="adminRevenue">GH₵0</b></div>
+        <div><span>Nominees</span><b id="adminNominees">0</b></div>
+        <div><span>Categories</span><b id="adminCategories">0</b></div>
+        <div><span>Pending payments</span><b id="adminPending">0</b></div>
+        <div><span>Verification failures</span><b id="adminFailures">0</b></div>
+      </div>
+
+      <div class="admin-block">
+        <div class="admin-block-head">
+          <h3>Voting controls</h3>
+          <span class="status-open">Server enforced</span>
+        </div>
+        <form id="awardsSettingsForm" class="admin-settings-grid">
+          <label>Awards title<input id="adminAwardsTitle" maxlength="100" required></label>
+          <label>Voting state<select id="adminVotingState"><option value="not_started">Not started</option><option value="open">Open</option><option value="paused">Paused</option><option value="closed">Closed</option></select></label>
+          <label>Price per vote (pesewas)<input id="adminPrice" type="number" min="1" max="1000000" required></label>
+          <label>Currency<input id="adminCurrency" maxlength="3" pattern="[A-Z]{3}" required></label>
+          <label>Maximum votes per transaction<input id="adminMaxVotes" type="number" min="1" max="100000" required></label>
+          <label>Opens at<input id="adminOpensAt" type="datetime-local"></label>
+          <label>Closes at<input id="adminClosesAt" type="datetime-local"></label>
+          <label class="admin-check"><input id="adminEventActive" type="checkbox"> Awards event is active</label>
+          <label class="admin-check"><input id="adminPublicResults" type="checkbox"> Show public rankings and percentages</label>
+          <button class="btn btn-gold" type="submit">Save secure settings</button>
+        </form>
+        <button class="admin-action" id="resetVotes">Reset all demo votes</button>
+      </div>
+
+      <div class="admin-block">
+        <h3>Eligibility controls</h3>
+        <p class="public-hidden">Inactive categories and nominees are rejected by the voting API.</p>
+        <div class="eligibility-grid"><div><h4>Categories</h4><div id="adminCategoryList"></div></div><div><h4>Nominees</h4><div id="adminNomineeList"></div></div></div>
+      </div>
+
+      <div class="admin-block">
+        <h3>Payment reconciliation</h3>
+        <form id="transactionFilters" class="admin-settings-grid">
+          <label>Status<select id="transactionStatus"><option value="">All statuses</option><option>pending</option><option>successful</option><option>failed</option><option>cancelled</option><option>expired</option><option>reversed</option><option>refunded</option></select></label>
+          <label>Reference<input id="transactionReference" maxlength="80" placeholder="SRCVOTE-…"></label>
+          <label>Category<select id="transactionCategory"><option value="">All categories</option></select></label>
+          <label>Nominee<select id="transactionNominee"><option value="">All nominees</option></select></label>
+          <label>From<input id="transactionFrom" type="date"></label>
+          <label>To<input id="transactionTo" type="date"></label>
+          <button class="btn btn-outline" type="submit">Apply filters</button>
+        </form>
+        <div class="admin-table-wrap"><table class="admin-transaction-table"><thead><tr><th>Reference</th><th>Nominee</th><th>Votes</th><th>Payment</th><th>Verification</th><th>Credit</th></tr></thead><tbody id="adminTransactions"></tbody></table></div>
+      </div>
+
+      <div class="admin-block">
+        <h3>Production readiness</h3>
+        <ul class="admin-list">
+          <li><span>1</span> Use staging before production</li>
+          <li><span>2</span> Keep simulation disabled in production</li>
+          <li><span>3</span> Verify backups and persistent media storage</li>
+          <li><span>4</span> Review alerts, roles, and audit activity</li>
+          <li><span>5</span> Follow the controlled launch checklist</li>
+        </ul>
+      </div>
+      </div>
+    </aside>
+  </div>
+
+  <script src="/hub-data.js?v=7"></script>
+  <script src="/hub-shell.js?v=7"></script>
+  <script src="/app.js?v=7"></script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+{
+  "name": "src-awards-localhost",
+  "version": "7.0.0",
+  "private": true,
+  "description": "SRC Digital Hub with hardened server-verified Awards voting, payment abstraction, RBAC, audit logging, and student services",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test",
+    "backup": "node scripts/backup.js",
+    "verify-backup": "node scripts/verify-backup.js"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.21.2"
+  }
+}

@@ -198,6 +198,7 @@ function createServicesRepository(db) {
     const result = db.prepare(`INSERT INTO student_businesses(slug,business_name,owner_name,description,category,phone,whatsapp,instagram,location,products_services,logo_token) VALUES(?,?,?,?,?,?,?,?,?,?,?)`).run(slug, name, owner, description, category, phone, whatsapp, instagram, location, products, logo?.token || null);
     return mapBusiness(db.prepare("SELECT * FROM student_businesses WHERE id=?").get(Number(result.lastInsertRowid)), true);
   }
+  function createBusinessAdmin(input,logo){db.exec("BEGIN IMMEDIATE");try{const created=createBusiness(input,logo);const business=updateBusiness(created.id,input,logo);db.exec("COMMIT");return business;}catch(error){try{db.exec("ROLLBACK");}catch{}throw error;}}
   function listBusinessesPublic(filters = {}) {
     const clauses = ["approval_status='approved'", "published=1"], params = [];
     if (filters.category) { clauses.push("category=?"); params.push(choice(filters.category, BUSINESS_CATEGORIES, "category")); }
@@ -214,15 +215,22 @@ function createServicesRepository(db) {
     return db.prepare(`SELECT * FROM student_businesses WHERE ${clauses.join(" AND ")} ORDER BY created_at DESC LIMIT 250`).all(...params).map(row => mapBusiness(row, true));
   }
   function getBusinessAdmin(id) { return mapBusiness(db.prepare("SELECT * FROM student_businesses WHERE id=?").get(validId(id)), true); }
-  function updateBusiness(id, input) {
+  function updateBusiness(id, input, logo) {
     const record = getBusinessAdmin(id); if (!record) throw httpError("Business not found.", 404);
     const approval = choice(input.approvalStatus, BUSINESS_STATUSES, "approval status", record.approvalStatus);
     const category = choice(input.category, BUSINESS_CATEGORIES, "category", record.category);
     const name = text(input.name ?? record.name, "Business name", { required: true, min: 2, max: 140 });
     const description = text(input.description ?? record.description, "Description", { required: true, min: 20, max: 3000 });
+    const owner = text(input.ownerName ?? record.ownerName, "Owner/display name", { max: 120 }) || null;
+    const phone = validPhone(input.phone ?? record.phone, "Public phone");
+    const whatsapp = validPhone(input.whatsapp ?? record.whatsapp, "WhatsApp number");
+    const instagram = validInstagram(input.instagram ?? record.instagram);
+    if (!phone && !whatsapp && !instagram) throw httpError("Provide at least one public contact method.");
+    const location = text(input.location ?? record.location, "General location", { required: true, min: 2, max: 160 });
+    const products = text(input.productsServices ?? record.productsServices, "Products/services", { required: true, min: 5, max: 1500 });
     const featured = bool(input.featured); const published = approval === "approved" && bool(input.published);
     const moderatorNotes = text(input.moderatorNotes ?? record.moderatorNotes, "Moderator notes", { max: 5000 }) || null;
-    db.prepare("UPDATE student_businesses SET business_name=?,category=?,description=?,approval_status=?,published=?,featured=?,moderator_notes=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").run(name, category, description, approval, published ? 1 : 0, featured ? 1 : 0, moderatorNotes, validId(id));
+    db.prepare("UPDATE student_businesses SET business_name=?,owner_name=?,category=?,description=?,phone=?,whatsapp=?,instagram=?,location=?,products_services=?,logo_token=COALESCE(?,logo_token),approval_status=?,published=?,featured=?,moderator_notes=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").run(name, owner, category, description, phone, whatsapp, instagram, location, products, logo?.token || null, approval, published ? 1 : 0, featured ? 1 : 0, moderatorNotes, validId(id));
     return getBusinessAdmin(id);
   }
   function deleteBusiness(id) { const result = db.prepare("DELETE FROM student_businesses WHERE id=?").run(validId(id)); if (!result.changes) throw httpError("Business not found.", 404); }
@@ -240,7 +248,7 @@ function createServicesRepository(db) {
         recent: db.prepare("SELECT * FROM feedback_submissions ORDER BY submitted_at DESC LIMIT 5").all().map(row => mapFeedback(row, true))
       },
       lostFound: { pending: scalar("SELECT COUNT(*) value FROM lost_found_listings WHERE moderation_status='pending'"), active: scalar("SELECT COUNT(*) value FROM lost_found_listings WHERE moderation_status='approved' AND listing_status='active'") },
-      businesses: { pending: scalar("SELECT COUNT(*) value FROM student_businesses WHERE approval_status='pending'"), approved: scalar("SELECT COUNT(*) value FROM student_businesses WHERE approval_status='approved'") }
+      businesses: { pending: scalar("SELECT COUNT(*) value FROM student_businesses WHERE approval_status='pending'"), approved: scalar("SELECT COUNT(*) value FROM student_businesses WHERE approval_status='approved'"), published: scalar("SELECT COUNT(*) value FROM student_businesses WHERE approval_status='approved' AND published=1") }
     };
   }
   function publicFile(token) {
@@ -255,7 +263,7 @@ function createServicesRepository(db) {
     config: { feedbackCategories: FEEDBACK_CATEGORIES, feedbackStatuses: FEEDBACK_STATUSES, priorities: PRIORITIES, itemTypes: ITEM_TYPES, itemCategories: ITEM_CATEGORIES, moderationStatuses: MODERATION_STATUSES, listingStatuses: LISTING_STATUSES, businessCategories: BUSINESS_CATEGORIES, businessStatuses: BUSINESS_STATUSES },
     createFeedback, feedbackStatus, listFeedback, getFeedback, updateFeedback,
     createListing, listListingsPublic, getListingPublic, listListingsAdmin, getListingAdmin, updateListing, deleteListing,
-    createBusiness, listBusinessesPublic, featuredBusinesses, getBusinessPublic, listBusinessesAdmin, getBusinessAdmin, updateBusiness, deleteBusiness,
+    createBusiness, createBusinessAdmin, listBusinessesPublic, featuredBusinesses, getBusinessPublic, listBusinessesAdmin, getBusinessAdmin, updateBusiness, deleteBusiness,
     dashboard, publicFile, feedbackAttachment
   };
 }

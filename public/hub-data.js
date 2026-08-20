@@ -22,8 +22,7 @@ window.SRC_HUB_DATA = Object.freeze({
   ],
   additionalNavigation: [
     { label: "SRC Executives", href: "/executives" },
-    { label: "Contact", href: "/contact" },
-    { label: "Admin Dashboard", href: "/admin" }
+    { label: "Contact", href: "/contact" }
   ],
   pages: {
     announcements: { eyebrow: "Stay informed", title: "Announcements", description: "Official SRC notices, campus updates, opportunities, and important student information.", status: "Published announcements are managed through the protected Publicity workspace." },

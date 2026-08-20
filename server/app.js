@@ -12,6 +12,8 @@ const { createServicesRepository } = require("./services");
 const { createServicesRouter } = require("./services-routes");
 const { createContentRepository } = require("./content");
 const { createContentRouter } = require("./content-routes");
+const { createAwardsAdminRouter } = require("./awards-admin");
+const { createUploadStore } = require("./uploads");
 
 const normalizePhone = phone => String(phone || "").replace(/[^\d+]/g, "");
 const validEmail = email => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && email.length <= 254;
@@ -115,7 +117,12 @@ function createApp(options = {}) {
   }
   app.get("/health",health);
   app.get("/api/health",health);
-  app.get("/api/config", (req, res) => res.json({ paystackConfigured: paystackProvider.enabled, simulationEnabled, paymentProvider: paystackProvider.enabled ? paystackProvider.name : simulationEnabled ? "simulation" : "disabled", maintenanceMode }));
+  app.get("/api/config", (req, res) => res.json({ paystackConfigured: paystackProvider.enabled, simulationEnabled, paymentProvider: paystackProvider.enabled ? paystackProvider.name : simulationEnabled ? "simulation" : "disabled", maintenanceMode, environment }));
+  app.get("/api/awards/files/:token", (req,res) => {
+    const token=String(req.params.token||""); if(!/^[a-f0-9]{32}\.[a-z0-9]{2,5}$/.test(token))return res.sendStatus(404);
+    const visible=db.prepare("SELECT 1 FROM nominees n JOIN categories c ON c.id=n.category_id WHERE n.photo_token=? AND n.active=1 AND c.active=1").get(token);
+    if(!visible)return res.sendStatus(404); res.setHeader("Cache-Control","public, max-age=3600"); res.sendFile(createUploadStore(uploadDirectory).absolute(token));
+  });
   app.get("/api/awards", (req, res) => {const data=awards.publicData(db);if(maintenanceMode)data.voting={open:false,state:"paused",message:"Voting is temporarily unavailable during maintenance."};res.json(data);});
   app.get("/api/awards/transactions/:reference", paymentLimit, (req, res) => {
     if (!/^SRCVOTE-[A-Za-z0-9_-]{20,60}$/.test(req.params.reference)) return res.status(400).json({ ok:false,message:"Invalid transaction reference." });
@@ -249,24 +256,13 @@ function createApp(options = {}) {
   app.get("/api/admin/awards", auth.requireAwardsAdmin, (req,res)=>res.json({
     ...awards.adminData(db,req.query),
     categories:db.prepare("SELECT id,name,sort_order AS sortOrder,active FROM categories ORDER BY sort_order").all(),
-    nominees:db.prepare("SELECT n.id,n.name,n.program,n.code,n.active,n.vote_total AS voteTotal,n.category_id AS categoryId,c.name AS category FROM nominees n JOIN categories c ON c.id=n.category_id ORDER BY c.sort_order,n.name").all()
+    nominees:db.prepare("SELECT n.id,n.name,n.program,n.code,n.active,n.photo_token AS photoToken,n.vote_total AS voteTotal,n.category_id AS categoryId,c.name AS category FROM nominees n JOIN categories c ON c.id=n.category_id ORDER BY c.sort_order,n.name").all()
   }));
   app.put("/api/admin/awards/settings", auth.requireAwardsAdmin, (req,res,next)=>{
     try { const before=awards.settings(db); const updated=awards.updateSettings(db,req.body||{}); content.audit(req.admin,"awards.settings_updated","awards","settings",`Awards configuration changed from ${before.voting_state} to ${updated.voting_state}`); res.json({ok:true,settings:updated}); }
     catch(error){next(error);}
   });
-  app.put("/api/admin/awards/categories/:id", auth.requireAwardsAdmin, (req,res)=>{
-    const id=Number(req.params.id); if(!Number.isSafeInteger(id)||id<1) return res.status(400).json({ok:false,message:"Invalid category."});
-    const active=typeof req.body?.active==="boolean"?Number(req.body.active):null; if(active===null) return res.status(400).json({ok:false,message:"Active state is required."});
-    const result=db.prepare("UPDATE categories SET active=? WHERE id=?").run(active,id); if(!result.changes)return res.status(404).json({ok:false,message:"Category not found."});
-    content.audit(req.admin,"awards.category_updated","category",String(id),`Category ${active?"activated":"deactivated"}`); res.json({ok:true});
-  });
-  app.put("/api/admin/awards/nominees/:id", auth.requireAwardsAdmin, (req,res)=>{
-    const id=Number(req.params.id); if(!Number.isSafeInteger(id)||id<1) return res.status(400).json({ok:false,message:"Invalid nominee."});
-    const active=typeof req.body?.active==="boolean"?Number(req.body.active):null; if(active===null) return res.status(400).json({ok:false,message:"Active state is required."});
-    const result=db.prepare("UPDATE nominees SET active=? WHERE id=?").run(active,id); if(!result.changes)return res.status(404).json({ok:false,message:"Nominee not found."});
-    content.audit(req.admin,"awards.nominee_updated","nominee",String(id),`Nominee ${active?"activated":"deactivated"}`); res.json({ok:true});
-  });
+  app.use("/api/admin/awards", createAwardsAdminRouter({ db, uploadDirectory, requireAwardsAdmin: auth.requireAwardsAdmin, audit: content.audit }));
   app.post("/api/admin/awards/transactions/:reference/adjustment",auth.requireAdmin,(req,res,next)=>{
     try{
       if(req.body?.externalConfirmed!==true||req.body?.confirmReference!==req.params.reference)return res.status(400).json({ok:false,message:"External provider confirmation and exact transaction reference are required."});

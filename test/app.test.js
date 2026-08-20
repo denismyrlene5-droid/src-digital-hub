@@ -635,3 +635,93 @@ test("public settings contain no secrets and only Super Admin can update them", 
     assert.equal(publicSettings.settings.activeTerm, "2026/2027");
   } finally { await app.close(); }
 });
+
+test("Awards CMS creates and edits records while protecting historical nominees", async () => {
+  const app = await fixture();
+  try {
+    assert.equal((await fetch(`${app.base}/api/admin/awards/categories`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: "Unauthorized" }) })).status, 401);
+    const cookie = await adminCookie(app);
+    const categoryResponse = await fetch(`${app.base}/api/admin/awards/categories`, { method: "POST", headers: { "Content-Type": "application/json", Cookie: cookie }, body: JSON.stringify({ name: "Campus Impact", sortOrder: 99, active: true }) });
+    assert.equal(categoryResponse.status, 201);
+    const category = (await categoryResponse.json()).category;
+    const nomineeResponse = await fetch(`${app.base}/api/admin/awards/nominees`, { method: "POST", headers: { "Content-Type": "application/json", Cookie: cookie }, body: JSON.stringify({ name: "CMS Test Nominee", program: "Development Studies", code: "CMS01", categoryId: category.id, active: true, photo: pngUpload }) });
+    assert.equal(nomineeResponse.status, 201);
+    const nominee = (await nomineeResponse.json()).nominee;
+    const publicAwards = await (await fetch(`${app.base}/api/awards`)).json();
+    assert.match(publicAwards.nominees.find(item => item.id === nominee.id).imageUrl, /^\/api\/awards\/files\//);
+    assert.equal((await fetch(`${app.base}/api/admin/awards/nominees/1`, { method: "DELETE", headers: { Cookie: cookie } })).status, 409);
+    assert.equal((await fetch(`${app.base}/api/admin/awards/nominees/${nominee.id}`, { method: "DELETE", headers: { Cookie: cookie } })).status, 200);
+    assert.equal((await fetch(`${app.base}/api/admin/awards/categories/${category.id}`, { method: "DELETE", headers: { Cookie: cookie } })).status, 200);
+  } finally { await app.close(); }
+});
+
+test("authorized administrators can create a published student business", async () => {
+  const app = await fixture({ publicityAdminPassword: "publicity-password" });
+  try {
+    const cookie = await adminCookie(app, "publicity-password");
+    const created = await fetch(`${app.base}/api/services/admin/businesses`, { method: "POST", headers: { "Content-Type": "application/json", Cookie: cookie }, body: JSON.stringify({ ...businessPayload, approvalStatus: "approved", published: true, featured: false }) });
+    assert.equal(created.status, 201);
+    const business = (await created.json()).business;
+    assert.equal(business.approvalStatus, "approved");
+    assert.equal(business.published, true);
+    const publicDirectory = await (await fetch(`${app.base}/api/services/businesses`)).json();
+    assert.equal(publicDirectory.businesses.some(item => item.id === business.id), true);
+  } finally { await app.close(); }
+});
+
+test("website settings safely persist office, social, and homepage content", async () => {
+  const app = await fixture();
+  try {
+    const cookie = await adminCookie(app);
+    const updated = await fetch(`${app.base}/api/content/admin/settings`, { method: "PUT", headers: { "Content-Type": "application/json", Cookie: cookie }, body: JSON.stringify({ officeLocation: "Student Centre, Room 4", whatsapp: "https://wa.me/233200000000", welcomeText: "Welcome to the official student information and services hub." }) });
+    assert.equal(updated.status, 200);
+    const settings = (await (await fetch(`${app.base}/api/content/settings`)).json()).settings;
+    assert.equal(settings.officeLocation, "Student Centre, Room 4");
+    assert.equal(settings.whatsapp, "https://wa.me/233200000000");
+    assert.match(settings.welcomeText, /official student information/);
+    assert.equal("ADMIN_PASSWORD" in settings, false);
+  } finally { await app.close(); }
+});
+
+test("media CMS publishes validated video and link records", async () => {
+  const app = await fixture();
+  try {
+    const cookie = await adminCookie(app);
+    const created = await fetch(`${app.base}/api/content/admin/media`, { method: "POST", headers: { "Content-Type": "application/json", Cookie: cookie }, body: JSON.stringify({ title: "SRC Leadership Recap", description: "A verified video recap from the student leadership forum.", category: "Leadership", albumDate: "2026-08-20", mediaKind: "video", externalUrl: "https://video.example.edu/watch/leadership", status: "published", featured: false }) });
+    assert.equal(created.status, 201);
+    const album = (await created.json()).album;
+    assert.equal(album.mediaKind, "video");
+    assert.equal(album.externalUrl, "https://video.example.edu/watch/leadership");
+    const publicAlbum = await (await fetch(`${app.base}/api/content/media/${album.slug}`)).json();
+    assert.equal(publicAlbum.album.externalUrl, album.externalUrl);
+    const unsafe = await fetch(`${app.base}/api/content/admin/media/${album.id}`, { method: "PUT", headers: { "Content-Type": "application/json", Cookie: cookie }, body: JSON.stringify({ ...album, externalUrl: "javascript:alert(1)" }) });
+    assert.equal(unsafe.status, 400);
+  } finally { await app.close(); }
+});
+
+test("normal Hub navigation does not expose the protected admin route", async () => {
+  const app = await fixture();
+  try {
+    const data = await (await fetch(`${app.base}/hub-data.js`)).text();
+    const shell = await (await fetch(`${app.base}/hub-shell.js`)).text();
+    assert.doesNotMatch(data, /href:\s*["']\/admin["']/);
+    assert.doesNotMatch(shell, /href=["']\/admin["']/);
+  } finally { await app.close(); }
+});
+
+test("CMS migrations and content persist across a SQLite restart", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "src-cms-persistence-"));
+  const databasePath = path.join(directory, "hub.sqlite");
+  const uploadDirectory = path.join(directory, "uploads");
+  try {
+    const first = createApp({ databasePath, uploadDirectory, adminPassword: "test-password", nodeEnv: "test", seedData: false });
+    first.db.prepare("INSERT INTO categories(name,sort_order,active) VALUES(?,?,?)").run("Persistent Category", 1, 1);
+    first.db.prepare("UPDATE site_settings SET setting_value=? WHERE setting_key='welcomeText'").run("Persistent CMS welcome text");
+    first.db.close();
+    const second = createApp({ databasePath, uploadDirectory, adminPassword: "test-password", nodeEnv: "test", seedData: false });
+    assert.equal(second.db.prepare("SELECT active FROM categories WHERE name=?").get("Persistent Category").active, 1);
+    assert.equal(second.db.prepare("SELECT setting_value value FROM site_settings WHERE setting_key='welcomeText'").get().value, "Persistent CMS welcome text");
+    assert.equal(fs.existsSync(uploadDirectory), true);
+    second.db.close();
+  } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+});

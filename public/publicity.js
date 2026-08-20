@@ -177,7 +177,7 @@
     const { context, serviceDashboard: services, serviceConfig, publicityDashboard: publicity, publicityConfig, contentDashboard: content, contentConfig, activity, awardsDashboard: awards } = bundle;
     const metrics = [
       context.capabilities.feedback && [services.feedback.total, "Total feedback"],
-      context.capabilities.feedback && [services.feedback.received, "Received feedback"],
+      context.capabilities.feedback && [services.feedback.received, "Unread feedback"],
       context.capabilities.feedback && [services.feedback.underReview, "Under review"],
       context.capabilities.feedback && [services.feedback.inProgress, "In progress"],
       context.capabilities.feedback && [services.feedback.resolved, "Resolved feedback"],
@@ -186,7 +186,7 @@
       context.capabilities.lostFound && [services.lostFound.pending, "Lost & Found pending"],
       context.capabilities.lostFound && [services.lostFound.active, "Active item listings"],
       context.capabilities.businesses && [services.businesses.pending, "Business approvals"],
-      context.capabilities.businesses && [services.businesses.approved, "Approved businesses"],
+      context.capabilities.businesses && [services.businesses.published, "Published businesses"],
       context.capabilities.publicity && [publicity.publishedAnnouncements, "Published announcements"],
       context.capabilities.publicity && [publicity.draftAnnouncements, "Draft announcements"],
       context.capabilities.publicity && [publicity.upcomingEvents, "Upcoming events"],
@@ -199,22 +199,27 @@
       context.capabilities.awards && [awards.paidRevenue, "Verified revenue (GHS)"]
     ].filter(Boolean);
     const tabs = [
-      ["overview", "Overview", "Dashboard"],
+      ["overview", "Dashboard", "Dashboard"],
       context.capabilities.publicity && ["announcements", "Announcements", "Content"], context.capabilities.publicity && ["events", "Events", "Content"],
+      context.capabilities.awards && ["awards", "Awards & Voting", "Awards"],
       context.capabilities.media && ["media", "Media", "Content"],
-      context.capabilities.feedback && ["feedback", "Feedback", "Student services"], context.capabilities.lostFound && ["lostFound", "Lost & Found", "Student services"],
-      context.capabilities.businesses && ["businesses", "Businesses", "Student services"],
+      context.capabilities.feedback && ["feedback", "Student Feedback", "Student services"], context.capabilities.lostFound && ["lostFound", "Lost & Found", "Student services"],
+      context.capabilities.businesses && ["businesses", "Student Businesses", "Student services"],
       context.capabilities.executives && ["executives", "Executives", "SRC"],
-      context.capabilities.settings && ["settings", "Settings", "System"]
+      context.capabilities.settings && ["settings", "Website Settings", "System"]
     ].filter(Boolean);
     root.innerHTML = `<div class="admin-toolbar"><div><span class="hub-badge">${esc(context.role.replaceAll("_", " "))}</span><h2>Administration dashboard</h2></div><button class="hub-btn hub-btn-quiet" id="publicityLogout" type="button">Log out</button></div>
       <div class="admin-workspace"><nav class="admin-sidebar" aria-label="Admin sections">${[...new Set(tabs.map(item=>item[2]))].map(group=>`<h3>${esc(group)}</h3>${tabs.filter(item=>item[2]===group).map(item=>`<button class="${item[0]==="overview"?"is-active":""}" data-admin-tab="${item[0]}" type="button">${item[1]}</button>`).join("")}`).join("")}${context.capabilities.awards?`<h3>Awards</h3><a href="/awards#categories">Categories</a><a href="/awards#categories">Nominees</a><a href="/awards#leaderboard">Voting</a><a href="/awards#admin">Transactions</a>`:""}${context.role==="super_admin"?`<h3>System</h3><span class="admin-disabled">Admins use environment-managed roles</span>`:""}</nav><div class="admin-main"><div id="adminModule"></div><div id="publicityEditor"></div></div></div>`;
+    root.querySelectorAll('.admin-sidebar a[href^="/awards"]').forEach(link=>link.remove());
+    const disabledRoleNote=root.querySelector(".admin-disabled");if(disabledRoleNote){if(disabledRoleNote.previousElementSibling?.tagName==="H3")disabledRoleNote.previousElementSibling.remove();disabledRoleNote.remove();}
+    root.querySelectorAll(".admin-sidebar h3").forEach(heading=>{if(!heading.nextElementSibling||heading.nextElementSibling.tagName==="H3")heading.remove();});
     root.querySelector("#publicityLogout").addEventListener("click", async () => { await api("/api/admin/logout", { method: "POST" }); renderAdminLogin(root); });
     root.querySelectorAll("[data-admin-tab]").forEach(button => button.addEventListener("click", () => {
       root.querySelectorAll("[data-admin-tab]").forEach(item => item.classList.toggle("is-active", item === button));
       const type = button.dataset.adminTab;
       if (type === "overview") renderOverview();
       else if (["announcements", "events"].includes(type)) loadAdminModule(type, publicityConfig).catch(showPageError);
+      else if (type === "awards") window.SRC_AWARDS_ADMIN.loadModule().catch(showPageError);
       else if (["media", "executives", "settings"].includes(type)) window.SRC_CONTENT_ADMIN.loadModule(type, contentConfig).catch(showPageError);
       else window.SRC_SERVICES_ADMIN.loadModule(type, serviceConfig).catch(showPageError);
     }));

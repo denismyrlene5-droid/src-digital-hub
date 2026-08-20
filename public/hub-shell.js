@@ -9,7 +9,7 @@
   const active = href => href === "/" ? path === "/" : path === href;
   const links = items => items.map(item => `<a href="${item.href}" class="hub-nav-link ${item.featured ? "hub-nav-featured" : ""} ${active(item.href) ? "is-active" : ""}" ${active(item.href) ? 'aria-current="page"' : ""}>${item.label}</a>`).join("");
   const extra = data.additionalNavigation.map(item => `<a href="${item.href}" ${active(item.href) ? 'aria-current="page"' : ""}>${item.label}</a>`).join("");
-  const awardsAdmin = path === "/awards" ? '<button class="hub-admin-trigger" id="adminBtn" type="button">Awards Admin</button>' : '<a class="hub-admin-trigger" href="/admin">Admin</a>';
+  const awardsAdmin = path === "/awards" ? '<button class="hub-admin-trigger" id="adminBtn" type="button">Awards Admin</button>' : '';
   const header = document.getElementById("siteHeader");
   if (header) header.innerHTML = `<header class="hub-header">
     <a class="hub-brand" href="/" aria-label="SRC Digital Hub home"><span class="hub-brand-mark">SRC</span><span><strong>${data.organization.srcName}</strong><small>DIGITAL HUB</small></span></a>

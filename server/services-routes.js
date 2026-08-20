@@ -81,7 +81,8 @@ function createServicesRouter({ repository, uploadDirectory, requireAnyAdmin, re
 
   router.get("/admin/businesses", requireBusinessAdmin, handle((req, res) => res.json({ businesses: repository.listBusinessesAdmin(req.query) })));
   router.get("/admin/businesses/:id", requireBusinessAdmin, handle((req, res) => { const business = repository.getBusinessAdmin(req.params.id); if (!business) return res.sendStatus(404); res.json({ business }); }));
-  router.put("/admin/businesses/:id", requireBusinessAdmin, handle((req, res) => { const business = repository.updateBusiness(req.params.id, req.body); audit(req.admin, "business.updated", "business", business.id, `${business.name}: ${business.approvalStatus}`); res.json({ business }); }));
+  router.post("/admin/businesses", requireBusinessAdmin, handle((req, res) => { let logo; try { logo=saveUpload(req.body?.upload,"image"); const business=repository.createBusinessAdmin(req.body,logo); audit(req.admin,"business.created","business",business.id,`${business.name}: ${business.approvalStatus}`); res.status(201).json({business}); } catch(error) { removeUpload(logo); throw error; } }));
+  router.put("/admin/businesses/:id", requireBusinessAdmin, handle((req, res) => { let logo; try { logo=saveUpload(req.body?.upload,"image"); const business = repository.updateBusiness(req.params.id, req.body, logo); audit(req.admin, "business.updated", "business", business.id, `${business.name}: ${business.approvalStatus}`); res.json({ business }); } catch(error) { removeUpload(logo); throw error; } }));
   router.delete("/admin/businesses/:id", requireBusinessAdmin, handle((req, res) => { repository.deleteBusiness(req.params.id); audit(req.admin, "business.deleted", "business", req.params.id, "Business removed"); res.json({ ok: true }); }));
   return router;
 }

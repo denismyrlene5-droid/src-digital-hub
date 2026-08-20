@@ -15,6 +15,7 @@ function addColumn(db, table, definition) {
 function migrateAwards(db) {
   addColumn(db, "categories", "active INTEGER NOT NULL DEFAULT 1");
   addColumn(db, "nominees", "legacy_unverified_votes INTEGER NOT NULL DEFAULT 0");
+  addColumn(db, "nominees", "photo_token TEXT");
   [
     "internal_id TEXT", "public_id TEXT", "category_id INTEGER REFERENCES categories(id)", "price_per_vote INTEGER NOT NULL DEFAULT 100",
     "paid_amount INTEGER", "payment_status TEXT NOT NULL DEFAULT 'pending'", "verification_status TEXT NOT NULL DEFAULT 'unverified'",
@@ -196,12 +197,15 @@ function recordAdjustment(db,{reference,action,reason,providerReference,source="
 
 function publicData(db) {
   const config = settings(db); const visible = Boolean(config.public_results_visible);
-  const rows = db.prepare(`SELECT n.id,n.name,c.name AS category,n.program,n.code,n.vote_total AS votes
+  const rows = db.prepare(`SELECT n.id,n.name,c.name AS category,n.program,n.code,n.photo_token AS photoToken,n.vote_total AS votes
     FROM nominees n JOIN categories c ON c.id=n.category_id WHERE n.active=1 AND c.active=1 ORDER BY c.sort_order,n.id`).all();
   const totals = new Map(); rows.forEach(row => totals.set(row.category,(totals.get(row.category)||0)+row.votes));
   const ranks = new Map();
   if (visible) [...new Set(rows.map(r=>r.category))].forEach(category => rows.filter(r=>r.category===category).sort((a,b)=>b.votes-a.votes||a.id-b.id).forEach((r,i)=>ranks.set(r.id,i+1)));
-  const nominees = rows.map(({votes,...row}) => visible ? {...row,percentage:totals.get(row.category)?votes/totals.get(row.category)*100:0,rank:ranks.get(row.id)} : row);
+  const nominees = rows.map(({votes,photoToken,...row}) => {
+    const publicRow = {...row,imageUrl:photoToken?`/api/awards/files/${photoToken}`:null};
+    return visible ? {...publicRow,percentage:totals.get(row.category)?votes/totals.get(row.category)*100:0,rank:ranks.get(row.id)} : publicRow;
+  });
   return { title: config.awards_title, categories: [...new Set(rows.map(r=>r.category))], nominees, pricePerVote: config.price_per_vote,
     currency: config.currency, publicResultsVisible: visible, voting: votingAvailability(config), opensAt: config.opens_at, closesAt: config.closes_at, maxVotes: config.max_votes };
 }

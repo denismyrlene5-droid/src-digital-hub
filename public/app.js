@@ -65,7 +65,7 @@ function renderNominees() {
   const list = filteredNominees().sort((a, b) => a.category.localeCompare(b.category) || (a.rank||a.id) - (b.rank||b.id));
   if (!list.length) { grid.innerHTML = `<div class="empty-state">No nominees match your search.</div>`; return; }
   grid.innerHTML = list.map(n => `<article class="nominee-card">
-    <div class="card-top"><div class="avatar">${initials(n.name)}</div><span class="rank-badge">${n.code}</span></div>
+    <div class="card-top"><div class="avatar">${n.imageUrl?`<img src="${escapeHtml(n.imageUrl)}" alt="${escapeHtml(n.name)}" loading="lazy">`:initials(n.name)}</div><span class="rank-badge">${n.code}</span></div>
     <h3>${n.name}</h3><div class="nominee-category">${n.category}</div>
     <div class="nominee-meta"><span>${n.program}</span>${publicResultsVisible?`<span class="percent-pill">${n.percentage.toFixed(1)}%</span>`:""}</div>
     <div class="public-hidden" style="margin:-5px 0 13px">${publicResultsVisible?`Public standing: #${n.rank} • exact votes hidden`:"Public results are currently hidden"}</div>
@@ -145,6 +145,7 @@ async function detectPaymentMode() {
   try {
     const data = await api("/api/config");
     paymentConfigured = Boolean(data.paystackConfigured); simulationEnabled = Boolean(data.simulationEnabled);configuredPaymentProvider=data.paymentProvider||"disabled";
+    const environmentBadge=byId("adminEnvironmentBadge");if(environmentBadge)environmentBadge.textContent=data.environment==="staging"?"STAGING":data.environment==="production"?"PRODUCTION":"LOCAL";
     byId("paymentModeNote").textContent = paymentConfigured
       ? "Paystack TEST mode is connected. Your MoMo PIN is entered only on your phone."
       : simulationEnabled ? "Development simulation is active. No money will be charged." : "Payments are not configured.";

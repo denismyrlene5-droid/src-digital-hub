@@ -3,12 +3,13 @@ require("dotenv").config();
 const path = require("path");
 const { createApp } = require("./server/app");
 
-const PORT = Number(process.env.PORT) || 8000;
+const port = Number(process.env.PORT) || 8000;
+const host = "0.0.0.0";
 const databasePath = process.env.DATABASE_PATH ? path.resolve(process.env.DATABASE_PATH) : path.join(__dirname, "data", "src-awards.sqlite");
 const { app } = createApp({ databasePath });
 
-const server = app.listen(PORT, () => {
-  console.log(`SRC Digital Hub running at http://localhost:${PORT}`);
+const server = app.listen(port, host, () => {
+  console.log(`SRC Digital Hub listening on ${host}:${port}`);
   console.log(`Environment: ${process.env.APP_ENV || process.env.NODE_ENV || "development"}.`);
   console.log(`Payment provider: ${process.env.PAYMENT_PROVIDER || (process.env.PAYSTACK_SECRET_KEY?.startsWith("sk_test_") ? "paystack_test" : "simulation")}.`);
   console.log(process.env.ADMIN_PASSWORD ? "Admin login is configured." : "Admin login is disabled until ADMIN_PASSWORD is set.");
@@ -19,6 +20,6 @@ const server = app.listen(PORT, () => {
 });
 
 server.on("error", error => {
-  console.error(error.code === "EADDRINUSE" ? `Port ${PORT} is already in use.` : error);
+  console.error(error.code === "EADDRINUSE" ? `Port ${port} is already in use.` : error);
   process.exitCode = 1;
 });

@@ -64,7 +64,7 @@ function createApp(options = {}) {
   const simulationEnabled = !production && simulationRequested;
   const simulatedProvider = createSimulatedProvider({ enabled: simulationEnabled });
   const paystackMode=paymentProvider==="paystack_live"?"live":"test";
-  const paystackProvider = createPaystackProvider({ secretKey: paymentProvider.startsWith("paystack_") ? paystackKey : "", mode:paystackMode, fetchImpl: options.fetchImpl });
+  const paystackProvider = createPaystackProvider({ secretKey: paymentProvider.startsWith("paystack_") ? paystackKey : "", mode:paystackMode, fetchImpl: options.fetchImpl, diagnosticsEnabled: staging, diagnosticLogger: options.paymentDiagnosticLogger || console.info });
   const securityEvent=(event,details={})=>console.warn(JSON.stringify({timestamp:new Date().toISOString(),category:"security",event,...details}));
   const auth = createAuth({ adminPassword, publicityAdminPassword, studentAffairsAdminPassword, awardsAdminPassword, contentEditorPassword, secureCookies: production, onSecurityEvent:securityEvent });
   const paymentLimit = rateLimit({ windowMs: 60_000, max: 20 });

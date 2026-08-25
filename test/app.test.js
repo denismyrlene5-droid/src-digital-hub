@@ -128,6 +128,17 @@ test("homepage hero uses the CMS activity panel without duplicating Awards", asy
   } finally { await app.close(); }
 });
 
+test("public navigation header remains in normal document flow", async () => {
+  const app = await fixture();
+  try {
+    const css = await (await fetch(`${app.base}/hub.css`)).text();
+    const normalFlowRule = "#siteHeader{position:relative;top:auto;height:auto}";
+    assert.ok(css.lastIndexOf(normalFlowRule) > css.lastIndexOf("#siteHeader{position:sticky"));
+    assert.match(css, /\.hub-hero,\.page-hero,\.detail-header\{margin-top:0\}/);
+    assert.match(css, /\.awards-page \.hero\{margin-top:0\}/);
+  } finally { await app.close(); }
+});
+
 test("simulated vote credit is validated and idempotent", async () => {
   const app = await fixture();
   try {

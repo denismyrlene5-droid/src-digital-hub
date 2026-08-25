@@ -253,3 +253,13 @@ body.awards-page{background:var(--hub-bg);color:var(--hub-ink)}
 @media(max-width:480px){.hero-campus-panel{min-height:374px;padding:23px 20px;border-radius:18px}.hero-campus-panel h2{font-size:27px;margin-bottom:17px}.campus-panel-item>a{font-size:13px}}
 
 .awards-page a.is-disabled{pointer-events:none;opacity:.6;cursor:not-allowed}
+
+/* Keep the public navigation in normal document flow. */
+#siteHeader{position:relative;top:auto;height:auto}
+.hub-header{position:relative;top:auto}
+.hub-hero,.page-hero,.detail-header{margin-top:0}
+.hub-hero,.page-hero{padding-top:100px}
+.detail-header{padding-top:95px}
+.urgent-notice{margin-top:0}
+.awards-page .hero{margin-top:0}
+@media(max-width:768px){.hub-header{top:auto}.hub-hero{padding-top:74px}.detail-header{padding-top:74px}.urgent-notice{margin-top:0}.awards-page .hero{margin-top:0;padding-top:74px}}

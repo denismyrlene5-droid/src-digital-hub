@@ -683,6 +683,52 @@ test("website settings safely persist office, social, and homepage content", asy
   } finally { await app.close(); }
 });
 
+test("official branding defaults and replacement logo remain public through the protected store", async () => {
+  const app = await fixture();
+  try {
+    const defaults = (await (await fetch(`${app.base}/api/content/settings`)).json()).settings;
+    assert.equal(defaults.srcName, "UCC SANDWICH – WISE CAMPUS");
+    assert.equal(defaults.institution, "STUDENTS’ REPRESENTATIVE COUNCIL");
+    assert.equal(defaults.siteShortName, "SRC DIGITAL HUB");
+    assert.equal(defaults.logoUrl, "/assets/ucc-wise-src-logo.jpg");
+    assert.equal("logoToken" in defaults, false);
+    const cookie = await adminCookie(app);
+    const replaced = await fetch(`${app.base}/api/content/admin/settings`, { method: "PUT", headers: { "Content-Type": "application/json", Cookie: cookie }, body: JSON.stringify({ logo: pngUpload }) });
+    assert.equal(replaced.status, 200);
+    const logoUrl = (await replaced.json()).settings.logoUrl;
+    assert.match(logoUrl, /^\/api\/content\/files\/[a-f0-9]{32}\.png$/);
+    assert.equal((await fetch(`${app.base}${logoUrl}`)).status, 200);
+  } finally { await app.close(); }
+});
+
+test("replacement logo survives an application restart on persistent storage", async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "src-logo-persistence-"));
+  const databasePath = path.join(directory, "hub.sqlite");
+  const uploadDirectory = path.join(directory, "uploads");
+  const start = async () => { const created=createApp({databasePath,uploadDirectory,adminPassword:"test-password",nodeEnv:"test",paystackKey:""});const server=await new Promise(resolve=>{const instance=created.app.listen(0,"127.0.0.1",()=>resolve(instance));});return{...created,server,base:`http://127.0.0.1:${server.address().port}`}; };
+  let first,second;
+  try {
+    first=await start();const cookie=await adminCookie(first);const response=await fetch(`${first.base}/api/content/admin/settings`,{method:"PUT",headers:{"Content-Type":"application/json",Cookie:cookie},body:JSON.stringify({logo:pngUpload})});const logoUrl=(await response.json()).settings.logoUrl;assert.equal(response.status,200);await new Promise(resolve=>first.server.close(resolve));first.db.close();first=null;
+    second=await start();const settings=(await (await fetch(`${second.base}/api/content/settings`)).json()).settings;assert.equal(settings.logoUrl,logoUrl);assert.equal((await fetch(`${second.base}${logoUrl}`)).status,200);
+  } finally { if(first){await new Promise(resolve=>first.server.close(resolve));first.db.close();}if(second){await new Promise(resolve=>second.server.close(resolve));second.db.close();}fs.rmSync(directory,{recursive:true,force:true}); }
+});
+
+test("Awards opening time drives the public countdown without opening voting", async () => {
+  const app = await fixture();
+  try {
+    const initial = await (await fetch(`${app.base}/api/awards`)).json();
+    assert.equal(initial.countdownTarget, "2026-09-15T00:00:00.000Z");
+    const cookie = await adminCookie(app);
+    const target = "2099-09-15T00:00:00.000Z";
+    const saved = await fetch(`${app.base}/api/admin/awards/settings`, { method: "PUT", headers: { "Content-Type": "application/json", Cookie: cookie }, body: JSON.stringify({ votingState: "not_started", opensAt: target }) });
+    assert.equal(saved.status, 200);
+    const publicAwards = await (await fetch(`${app.base}/api/awards`)).json();
+    assert.equal(publicAwards.countdownTarget, target);
+    assert.equal(publicAwards.voting.state, "not_started");
+    assert.equal(publicAwards.voting.open, false);
+  } finally { await app.close(); }
+});
+
 test("media CMS publishes validated video and link records", async () => {
   const app = await fixture();
   try {

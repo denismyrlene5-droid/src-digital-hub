@@ -12,7 +12,7 @@
   const awardsAdmin = path === "/awards" ? '<button class="hub-admin-trigger" id="adminBtn" type="button">Awards Admin</button>' : '';
   const header = document.getElementById("siteHeader");
   if (header) header.innerHTML = `<header class="hub-header">
-    <a class="hub-brand" href="/" aria-label="SRC Digital Hub home"><span class="hub-brand-mark">SRC</span><span><strong>${data.organization.srcName}</strong><small>DIGITAL HUB</small></span></a>
+    <a class="hub-brand" href="/" aria-label="SRC Digital Hub home"><img class="hub-brand-logo" src="${data.organization.logoUrl}" alt="UCC crest"><span><strong class="hub-brand-campus">${data.organization.srcName}</strong><small class="hub-brand-council">${data.organization.institution}</small><small class="hub-brand-short">${data.organization.siteShortName}</small></span></a>
     <nav class="hub-desktop-nav" aria-label="Primary navigation">${links(data.navigation)}
       <details class="hub-more"><summary>More</summary><div>${extra}</div></details>
     </nav>
@@ -21,11 +21,21 @@
   </header>`;
   const footer = document.getElementById("siteFooter");
   if (footer) footer.innerHTML = `<footer class="hub-footer"><div class="hub-footer-grid">
-    <div><a class="hub-brand hub-footer-brand" href="/"><span class="hub-brand-mark">SRC</span><span><strong>${data.organization.srcName}</strong><small>DIGITAL HUB</small></span></a><p>${data.organization.institution}</p><p class="hub-placeholder-note">Replace these central placeholders with official SRC details before launch.</p></div>
-    <div><h2>Quick links</h2>${data.navigation.slice(0, 6).map(item => `<a href="${item.href}">${item.label}</a>`).join("")}</div>
-    <div><h2>Contact</h2><a href="mailto:${data.organization.email}">${data.organization.email}</a><a href="tel:${data.organization.phone.replace(/\s/g, "")}">${data.organization.phone}</a><span>${data.organization.institution}</span></div>
-    <div><h2>Social</h2><a href="${data.organization.instagram}">Instagram</a><a href="${data.organization.tiktok}">TikTok</a><a href="${data.organization.facebook}">Facebook</a></div>
-  </div><div class="hub-footer-bottom"><span>© ${new Date().getFullYear()} ${data.organization.srcName}. All rights reserved.</span><span>Built for the student community.</span></div></footer>`;
+    <div><a class="hub-brand hub-footer-brand" href="/"><img class="hub-brand-logo" src="${data.organization.logoUrl}" alt="UCC crest"><span><strong class="hub-brand-campus">${data.organization.srcName}</strong><small class="hub-brand-council">${data.organization.institution}</small><small class="hub-brand-short">${data.organization.siteShortName}</small></span></a><p class="hub-footer-message">${data.organization.message}</p></div>
+    <div><h2>Quick links</h2>${[...data.navigation.slice(0,6),data.additionalNavigation.find(item=>item.href==="/contact")].filter(Boolean).map(item => `<a href="${item.href}">${item.label}</a>`).join("")}</div>
+    <div class="hub-footer-contact" hidden><h2>Contact</h2></div>
+    <div class="hub-footer-social" hidden><h2>Social</h2></div>
+  </div><div class="hub-footer-bottom"><span>© ${new Date().getFullYear()} <span class="hub-footer-owner">${data.organization.srcName} SRC</span>. All rights reserved.</span><span class="hub-footer-tagline">Updates • Events • Student Services</span></div></footer>`;
+
+  fetch("/api/content/settings").then(response=>response.ok?response.json():null).then(payload=>{
+    const settings=payload?.settings;if(!settings)return;
+    document.querySelectorAll(".hub-brand-campus").forEach(element=>element.textContent=settings.srcName);
+    document.querySelectorAll(".hub-brand-council").forEach(element=>element.textContent=settings.institution);
+    document.querySelectorAll(".hub-brand-short").forEach(element=>element.textContent=settings.siteShortName||"SRC DIGITAL HUB");
+    document.querySelectorAll(".hub-brand-logo,.award-official-logo").forEach(element=>element.src=settings.logoUrl);
+    const owner=document.querySelector(".hub-footer-owner");if(owner)owner.textContent=`${settings.srcName} SRC`;
+    const tagline=document.querySelector(".hub-footer-tagline");if(tagline)tagline.textContent=settings.footerText;
+  }).catch(()=>{});
 
   const menuButton = document.querySelector(".hub-menu-button");
   const mobileNav = document.getElementById("mobileNavigation");

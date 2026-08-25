@@ -207,7 +207,7 @@ function publicData(db) {
     return visible ? {...publicRow,percentage:totals.get(row.category)?votes/totals.get(row.category)*100:0,rank:ranks.get(row.id)} : publicRow;
   });
   return { title: config.awards_title, categories: [...new Set(rows.map(r=>r.category))], nominees, pricePerVote: config.price_per_vote,
-    currency: config.currency, publicResultsVisible: visible, voting: votingAvailability(config), opensAt: config.opens_at, closesAt: config.closes_at, maxVotes: config.max_votes };
+    currency: config.currency, publicResultsVisible: visible, voting: votingAvailability(config), opensAt: config.opens_at, countdownTarget: config.opens_at || "2026-09-15T00:00:00.000Z", closesAt: config.closes_at, maxVotes: config.max_votes };
 }
 
 function updateSettings(db, input) {

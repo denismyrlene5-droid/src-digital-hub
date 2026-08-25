@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css?v=8" />
-  <link rel="stylesheet" href="/hub.css?v=8" />
+  <link rel="stylesheet" href="/hub.css?v=9" />
 </head>
 <body class="awards-page">
   <div class="noise"></div>
@@ -21,19 +21,19 @@
       <div class="hero-glow hero-glow-two"></div>
 
       <div class="hero-copy">
-        <div class="eyebrow">THE PEOPLE'S CHOICE • CAMPUS 2026</div>
-        <h1>Celebrate excellence.<br><span>Vote your favorite.</span></h1>
-        <p>
+        <div class="eyebrow" id="awardsHeroEyebrow">THE PEOPLE'S CHOICE • CAMPUS 2026</div>
+        <h1 id="awardsHeroTitle">Celebrate excellence.<br><span>Vote your favorite.</span></h1>
+        <p id="awardsHeroIntro">
           A premium digital voting experience for the SRC Awards.
           Discover nominees, support your favorites, and follow the race live.
         </p>
 
-        <div class="hero-actions">
+        <div class="hero-actions" id="awardsLiveActions">
           <a class="btn btn-gold btn-large" href="#categories">Start Voting</a>
           <a class="btn btn-outline btn-large" href="#leaderboard">View Rankings</a>
         </div>
 
-        <div class="trust-row">
+        <div class="trust-row" id="awardsLiveTrust">
           <div><b>12</b><span>Categories</span></div>
           <div><b>PRIVATE</b><span>Vote Counts</span></div>
           <div><b id="votingStateBadge">OPEN</b><span>Voting status</span></div>
@@ -43,7 +43,7 @@
       <div class="hero-card-wrap">
         <div class="award-card">
           <div class="award-card-shine"></div>
-          <div class="trophy">🏆</div>
+          <img class="award-official-logo" src="/assets/ucc-wise-src-logo.jpg" alt="UCC crest">
           <span class="award-small">SRC AWARDS</span>
           <h2>2026</h2>
           <p>Celebrating impact, leadership, style & campus excellence.</p>
@@ -54,8 +54,8 @@
 
     <section class="countdown-section">
       <div>
-        <span class="section-kicker">VOTING CLOSES IN</span>
-        <h2>The race is on.</h2>
+        <span class="section-kicker" id="awardsCountdownKicker">VOTING CLOSES IN</span>
+        <h2 id="awardsCountdownHeading">The race is on.</h2>
       </div>
       <div class="countdown" id="countdown">
         <div><b id="days">00</b><span>Days</span></div>
@@ -65,7 +65,16 @@
       </div>
     </section>
 
-    <section class="section" id="categories">
+    <section class="section awards-prelaunch" id="awardsPrelaunch" hidden>
+      <img class="award-official-logo" src="/assets/ucc-wise-src-logo.jpg" alt="UCC crest">
+      <span class="section-kicker">SRC AWARDS 2026</span>
+      <h2>Celebrating Excellence.<br>Recognising Impact.</h2>
+      <p>The UCC Sandwich – WISE Campus SRC Awards are coming soon.</p>
+      <p>Get ready to celebrate the personalities, achievements and impact that make WISE Campus exceptional.</p>
+      <h3>STAY READY.</h3>
+    </section>
+
+    <section class="section awards-live-section" id="categories">
       <div class="section-heading">
         <div>
           <span class="section-kicker">EXPLORE & VOTE</span>
@@ -83,7 +92,7 @@
       <div class="nominee-grid" id="nomineeGrid"></div>
     </section>
 
-    <section class="section leaderboard-section" id="leaderboard">
+    <section class="section leaderboard-section awards-live-section" id="leaderboard">
       <div class="section-heading">
         <div>
           <span class="section-kicker">LIVE MOMENTUM</span>
@@ -120,7 +129,7 @@
       </div>
     </section>
 
-    <section class="section how-section" id="how-it-works">
+    <section class="section how-section awards-live-section" id="how-it-works">
       <div class="section-heading">
         <div>
           <span class="section-kicker">SIMPLE & SECURE</span>
@@ -254,7 +263,7 @@
           <label>Price per vote (pesewas)<input id="adminPrice" type="number" min="1" max="1000000" required></label>
           <label>Currency<input id="adminCurrency" maxlength="3" pattern="[A-Z]{3}" required></label>
           <label>Maximum votes per transaction<input id="adminMaxVotes" type="number" min="1" max="100000" required></label>
-          <label>Opens at<input id="adminOpensAt" type="datetime-local"></label>
+          <label>Awards launch / countdown target<input id="adminOpensAt" type="datetime-local"></label>
           <label>Closes at<input id="adminClosesAt" type="datetime-local"></label>
           <label class="admin-check"><input id="adminEventActive" type="checkbox"> Awards event is active</label>
           <label class="admin-check"><input id="adminPublicResults" type="checkbox"> Show public rankings and percentages</label>
@@ -297,8 +306,8 @@
     </aside>
   </div>
 
-  <script src="/hub-data.js?v=7"></script>
-  <script src="/hub-shell.js?v=7"></script>
-  <script src="/app.js?v=7"></script>
+  <script src="/hub-data.js?v=9"></script>
+  <script src="/hub-shell.js?v=9"></script>
+  <script src="/app.js?v=9"></script>
 </body>
 </html>

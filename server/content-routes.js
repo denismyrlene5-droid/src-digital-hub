@@ -18,7 +18,7 @@ function createContentRouter({ repository, uploadDirectory, requireAnyAdmin, req
   router.get("/admin/dashboard",requireAnyAdmin,(req,res)=>res.json({role:req.admin.role,...repository.dashboard()}));
   router.get("/admin/audit",requireAnyAdmin,(req,res)=>res.json({activity:repository.recentAudit(req.query.limit)}));
   router.get("/admin/settings",requireSuperAdmin,(req,res)=>res.json({settings:repository.settings()}));
-  router.put("/admin/settings",requireSuperAdmin,handle((req,res)=>{const settings=repository.updateSettings(req.body,req.admin.role);log(req,"settings.updated","settings","public","Public site settings updated");res.json({settings});}));
+  router.put("/admin/settings",requireSuperAdmin,handle((req,res)=>{let logo;const previousLogo=repository.logoToken();try{logo=uploads.save(req.body.logo,"image");const settings=repository.updateSettings(req.body,req.admin.role,logo);if(logo&&previousLogo)uploads.remove(previousLogo);log(req,"settings.updated","settings","public",logo?"Public site settings and logo updated":"Public site settings updated");res.json({settings});}catch(error){uploads.remove(logo);throw error;}}));
 
   router.get("/admin/media",requireContentAdmin,handle((req,res)=>res.json({albums:repository.listAlbumsAdmin(req.query)})));
   router.get("/admin/media/:id",requireContentAdmin,handle((req,res)=>{const album=repository.getAlbumAdmin(req.params.id);if(!album)return res.sendStatus(404);res.json({album});}));

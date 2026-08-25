@@ -14,6 +14,7 @@ let maxVotes = 10000;
 let voting = { open: true, state: "open", message: "Voting is open." };
 let publicResultsVisible = true;
 let closesAt = null;
+let countdownTarget = "2026-09-15T00:00:00.000Z";
 
 const byId = id => document.getElementById(id);
 const initials = name => name.replace("&", " ").split(/\s+/).filter(Boolean).slice(0, 2).map(x => x[0]).join("").toUpperCase();
@@ -35,14 +36,24 @@ async function loadAwards() {
   categories = ["All", ...data.categories];
   nominees = data.nominees;
   pricePerVote = data.pricePerVote; awardsCurrency = data.currency; maxVotes = data.maxVotes;
-  voting = data.voting; publicResultsVisible = data.publicResultsVisible; closesAt = data.closesAt;
+  voting = data.voting; publicResultsVisible = data.publicResultsVisible; closesAt = data.closesAt; countdownTarget = data.countdownTarget || data.opensAt || countdownTarget;
   byId("pricePerVote").textContent = formatMoney(pricePerVote);
   byId("votingStateBadge").textContent = voting.state.replace("_", " ").toUpperCase();
   byId("votingStateBadge").className = voting.open ? "status-open" : "status-closed";
+  applyVotingPresentation();
   renderTabs();
   renderNominees();
   populateLeaderboardFilter();
   renderLeaderboard();
+}
+
+function applyVotingPresentation(){
+  const prelaunch=voting.state==="not_started";
+  byId("awardsPrelaunch").hidden=!prelaunch;
+  document.querySelectorAll(".awards-live-section").forEach(section=>section.hidden=prelaunch);
+  byId("awardsLiveActions").hidden=prelaunch;byId("awardsLiveTrust").hidden=prelaunch;
+  if(prelaunch){byId("awardsHeroEyebrow").textContent="SRC AWARDS 2026";byId("awardsHeroTitle").innerHTML="SOMETHING BIG<br><span>IS COMING.</span>";byId("awardsHeroIntro").textContent="The UCC Sandwich – WISE Campus SRC Awards are coming soon.";byId("awardsCountdownKicker").textContent="COUNTDOWN TO SRC AWARDS 2026";byId("awardsCountdownHeading").textContent="The wait is almost over.";}
+  else{byId("awardsHeroEyebrow").textContent="THE PEOPLE'S CHOICE • CAMPUS 2026";byId("awardsHeroTitle").innerHTML="Celebrate excellence.<br><span>Vote your favorite.</span>";byId("awardsHeroIntro").textContent="A premium digital voting experience for the SRC Awards. Discover nominees, support your favorites, and follow the race live.";byId("awardsCountdownKicker").textContent="VOTING CLOSES IN";byId("awardsCountdownHeading").textContent="The race is on.";}
 }
 
 function renderTabs() {
@@ -262,10 +273,12 @@ function setupVoting() {
 
 function setupCountdown() {
   const tick = () => {
-    const end = closesAt ? new Date(closesAt).getTime() : Date.now();
+    const target=voting.state==="not_started"?countdownTarget:closesAt;
+    const end = target ? new Date(target).getTime() : Date.now();
     let diff = Math.max(0, end - Date.now());
     const values = [Math.floor(diff / 86400000), Math.floor(diff % 86400000 / 3600000), Math.floor(diff % 3600000 / 60000), Math.floor(diff % 60000 / 1000)];
     ["days", "hours", "minutes", "seconds"].forEach((id, index) => byId(id).textContent = String(values[index]).padStart(2, "0"));
+    if(voting.state==="not_started"&&diff===0){byId("awardsCountdownHeading").textContent="THE WAIT IS OVER.";}
   };
   tick(); setInterval(tick, 1000);
 }

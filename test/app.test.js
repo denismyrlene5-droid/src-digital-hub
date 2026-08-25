@@ -139,6 +139,19 @@ test("public navigation header remains in normal document flow", async () => {
   } finally { await app.close(); }
 });
 
+test("Awards hero uses a values panel without a large logo or duplicate countdown", async () => {
+  const app = await fixture();
+  try {
+    const html = await (await fetch(`${app.base}/awards`)).text();
+    assert.match(html, /class="awards-values-panel"/);
+    assert.match(html, /RECOGNITION/);
+    assert.match(html, /EXCELLENCE/);
+    assert.match(html, /IMPACT/);
+    assert.equal((html.match(/class="award-official-logo"/g) || []).length, 1);
+    assert.equal((html.match(/id="countdown"/g) || []).length, 1);
+  } finally { await app.close(); }
+});
+
 test("simulated vote credit is validated and idempotent", async () => {
   const app = await fixture();
   try {

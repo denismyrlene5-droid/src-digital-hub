@@ -40,12 +40,23 @@
     const announcements = document.getElementById("homeAnnouncements");
     const events = document.getElementById("homeEvents");
     if (!announcements || !events) return;
+    const latestTarget = document.getElementById("heroLatestAnnouncement");
+    const eventTarget = document.getElementById("heroNextEvent");
+    const eventDateTarget = document.getElementById("heroNextEventDate");
     try {
       const feed = await api("/api/publicity/home");
       announcements.innerHTML = feed.announcements.length ? feed.announcements.map(announcementCard).join("") : '<div class="publicity-empty">No published announcements yet.</div>';
       events.innerHTML = feed.events.length ? feed.events.map(eventCard).join("") : '<div class="publicity-empty">No upcoming events yet.</div>';
+      const latest=[...feed.announcements].sort((a,b)=>Date.parse(b.publishedAt)-Date.parse(a.publishedAt))[0];
+      const nextEvent=feed.events[0];
+      if(latestTarget){latestTarget.textContent=latest?.title||"No new announcement";latestTarget.href=latest?`/announcements/${encodeURIComponent(latest.slug)}`:"/announcements";}
+      if(eventTarget){eventTarget.textContent=nextEvent?.title||"No upcoming event";eventTarget.href=nextEvent?`/events/${encodeURIComponent(nextEvent.slug)}`:"/events";}
+      if(eventDateTarget){eventDateTarget.textContent=nextEvent?formatDate(nextEvent.eventDate):"Check back for future events";eventDateTarget.dateTime=nextEvent?.eventDate||"";}
     } catch {
       announcements.innerHTML = events.innerHTML = '<div class="publicity-empty">Publicity updates are temporarily unavailable.</div>';
+      if(latestTarget)latestTarget.textContent="Updates temporarily unavailable";
+      if(eventTarget)eventTarget.textContent="Events temporarily unavailable";
+      if(eventDateTarget)eventDateTarget.textContent="Please check back soon";
     }
   }
 

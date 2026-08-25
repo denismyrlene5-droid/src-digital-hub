@@ -13,7 +13,11 @@
         <h1>YOUR CAMPUS.<br>YOUR VOICE.<br><span>YOUR HUB.</span></h1><p class="hero-service-line">Updates • Events • Student Services</p><p class="hero-intro">${data.organization.message}</p>
         <div class="hub-actions"><a class="hub-btn hub-btn-primary" href="/announcements">Latest Updates</a><a class="hub-btn hub-btn-secondary" href="/events">Explore Events</a></div>
         <div class="hero-trust"><span>Official updates</span><span>Student services</span><span>Campus opportunities</span></div>
-      </div><div class="hero-feature" aria-label="SRC Digital Hub overview"><span class="hero-feature-label">OFFICIAL SRC PLATFORM</span><img class="hero-official-logo" src="${data.organization.logoUrl}" alt="UCC crest"><h2>${data.organization.srcName}</h2><p>${data.organization.institution}</p><div class="hero-feature-links"><span>Updates</span><span>Events</span><span>Awards</span><span>Voice</span></div></div></div>
+      </div><aside class="hero-feature hero-campus-panel" aria-labelledby="campusPanelTitle"><span class="hero-feature-label">CAMPUS INFORMATION</span><h2 id="campusPanelTitle">WHAT'S HAPPENING</h2><div class="campus-panel-list" aria-live="polite">
+        <div class="campus-panel-item"><span>LATEST UPDATE</span><a id="heroLatestAnnouncement" href="/announcements">Loading latest announcement…</a></div>
+        <div class="campus-panel-item"><span>NEXT EVENT</span><a id="heroNextEvent" href="/events">Loading next event…</a><time id="heroNextEventDate"></time></div>
+        <div class="campus-panel-item"><span>STUDENT SERVICES</span><a href="#quickAccess">Access useful campus services and information.</a></div>
+      </div><a class="hub-btn hub-btn-gold campus-panel-action" href="/announcements">View All Updates</a></aside></div>
     </section>
     <section class="hub-section" id="quickAccess"><div class="hub-container"><div class="hub-section-heading"><div><span class="hub-eyebrow">START HERE</span><h2>Quick access</h2></div><p>The campus information and services students need most, gathered in one place.</p></div>
       <div class="quick-grid">${[

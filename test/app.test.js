@@ -83,6 +83,22 @@ test("Digital Hub and Awards routes are available", async () => {
   } finally { await app.close(); }
 });
 
+test("homepage hero uses the CMS activity panel without duplicating Awards", async () => {
+  const app = await fixture();
+  try {
+    const hub = await (await fetch(`${app.base}/hub.js`)).text();
+    const publicity = await (await fetch(`${app.base}/publicity.js`)).text();
+    assert.match(hub, /WHAT'S HAPPENING/);
+    assert.match(hub, /heroLatestAnnouncement/);
+    assert.match(hub, /heroNextEvent/);
+    assert.doesNotMatch(hub, /hero-official-logo/);
+    assert.equal((hub.match(/id="homeAwardsCountdown"/g) || []).length, 1);
+    assert.match(publicity, /api\/publicity\/home/);
+    assert.match(publicity, /No new announcement/);
+    assert.match(publicity, /No upcoming event/);
+  } finally { await app.close(); }
+});
+
 test("simulated vote credit is validated and idempotent", async () => {
   const app = await fixture();
   try {

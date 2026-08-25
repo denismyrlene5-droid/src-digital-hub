@@ -1,6 +1,19 @@
 (function () {
   const data = window.SRC_HUB_DATA;
   if (!data) return;
+  if (!window.SRC_PUBLIC_BOOTSTRAP) {
+    try { window.SRC_PUBLIC_BOOTSTRAP = JSON.parse(document.getElementById("srcPublicBootstrap")?.textContent || "null"); } catch {}
+  }
+  const bootstrapSettings = window.SRC_PUBLIC_BOOTSTRAP?.settings || null;
+  document.documentElement.dataset.publicData = bootstrapSettings ? "bootstrapped" : "fallback";
+  const organization = bootstrapSettings ? {
+    ...data.organization,
+    ...bootstrapSettings,
+    message: bootstrapSettings.welcomeText || data.organization.message
+  } : data.organization;
+  window.SRC_PUBLIC_SETTINGS_PROMISE = bootstrapSettings
+    ? Promise.resolve(bootstrapSettings)
+    : fetch("/api/content/settings").then(response => response.ok ? response.json() : null).then(payload => payload?.settings || null).catch(() => null);
   const path = window.location.pathname.replace(/\/$/, "") || "/";
   if (path === "/" && ["#categories", "#leaderboard", "#how-it-works"].includes(window.location.hash)) {
     window.location.replace(`/awards${window.location.hash}`);
@@ -12,7 +25,7 @@
   const awardsAdmin = path === "/awards" ? '<button class="hub-admin-trigger" id="adminBtn" type="button">Awards Admin</button>' : '';
   const header = document.getElementById("siteHeader");
   if (header) header.innerHTML = `<header class="hub-header">
-    <a class="hub-brand" href="/" aria-label="SRC Digital Hub home"><img class="hub-brand-logo" src="${data.organization.logoUrl}" alt="UCC crest"><span><strong class="hub-brand-campus">${data.organization.srcName}</strong><small class="hub-brand-council">${data.organization.institution}</small><small class="hub-brand-short">${data.organization.siteShortName}</small></span></a>
+    <a class="hub-brand" href="/" aria-label="SRC Digital Hub home"><img class="hub-brand-logo" src="${organization.logoUrl}" alt="UCC crest" width="54" height="54" fetchpriority="high"><span><strong class="hub-brand-campus">${organization.srcName}</strong><small class="hub-brand-council">${organization.institution}</small><small class="hub-brand-short">${organization.siteShortName}</small></span></a>
     <nav class="hub-desktop-nav" aria-label="Primary navigation">${links(data.navigation)}
       <details class="hub-more"><summary>More</summary><div>${extra}</div></details>
     </nav>
@@ -21,21 +34,21 @@
   </header>`;
   const footer = document.getElementById("siteFooter");
   if (footer) footer.innerHTML = `<footer class="hub-footer"><div class="hub-footer-grid">
-    <div><a class="hub-brand hub-footer-brand" href="/"><img class="hub-brand-logo" src="${data.organization.logoUrl}" alt="UCC crest"><span><strong class="hub-brand-campus">${data.organization.srcName}</strong><small class="hub-brand-council">${data.organization.institution}</small><small class="hub-brand-short">${data.organization.siteShortName}</small></span></a><p class="hub-footer-message">${data.organization.message}</p></div>
+    <div><a class="hub-brand hub-footer-brand" href="/"><img class="hub-brand-logo" src="${organization.logoUrl}" alt="UCC crest" width="54" height="54" loading="lazy"><span><strong class="hub-brand-campus">${organization.srcName}</strong><small class="hub-brand-council">${organization.institution}</small><small class="hub-brand-short">${organization.siteShortName}</small></span></a><p class="hub-footer-message">${organization.message}</p></div>
     <div><h2>Quick links</h2>${[...data.navigation.slice(0,6),data.additionalNavigation.find(item=>item.href==="/contact")].filter(Boolean).map(item => `<a href="${item.href}">${item.label}</a>`).join("")}</div>
     <div class="hub-footer-contact" hidden><h2>Contact</h2></div>
     <div class="hub-footer-social" hidden><h2>Social</h2></div>
-  </div><div class="hub-footer-bottom"><span>© ${new Date().getFullYear()} <span class="hub-footer-owner">${data.organization.srcName} SRC</span>. All rights reserved.</span><span class="hub-footer-tagline">Updates • Events • Student Services</span></div></footer>`;
+  </div><div class="hub-footer-bottom"><span>© ${new Date().getFullYear()} <span class="hub-footer-owner">${organization.srcName} SRC</span>. All rights reserved.</span><span class="hub-footer-tagline">${organization.footerText || "Updates • Events • Student Services"}</span></div></footer>`;
 
-  fetch("/api/content/settings").then(response=>response.ok?response.json():null).then(payload=>{
-    const settings=payload?.settings;if(!settings)return;
+  window.SRC_PUBLIC_SETTINGS_PROMISE.then(settings=>{
+    if(!settings || bootstrapSettings)return;
     document.querySelectorAll(".hub-brand-campus").forEach(element=>element.textContent=settings.srcName);
     document.querySelectorAll(".hub-brand-council").forEach(element=>element.textContent=settings.institution);
     document.querySelectorAll(".hub-brand-short").forEach(element=>element.textContent=settings.siteShortName||"SRC DIGITAL HUB");
     document.querySelectorAll(".hub-brand-logo,.award-official-logo").forEach(element=>element.src=settings.logoUrl);
     const owner=document.querySelector(".hub-footer-owner");if(owner)owner.textContent=`${settings.srcName} SRC`;
     const tagline=document.querySelector(".hub-footer-tagline");if(tagline)tagline.textContent=settings.footerText;
-  }).catch(()=>{});
+  });
 
   const menuButton = document.querySelector(".hub-menu-button");
   const mobileNav = document.getElementById("mobileNavigation");

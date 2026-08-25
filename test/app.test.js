@@ -112,16 +112,19 @@ test("Digital Hub and Awards routes are available", async () => {
 test("homepage hero uses the CMS activity panel without duplicating Awards", async () => {
   const app = await fixture();
   try {
+    const html = await (await fetch(`${app.base}/`)).text();
     const hub = await (await fetch(`${app.base}/hub.js`)).text();
     const publicity = await (await fetch(`${app.base}/publicity.js`)).text();
     assert.match(hub, /WHAT'S HAPPENING/);
-    assert.match(hub, /heroLatestAnnouncement/);
-    assert.match(hub, /heroNextEvent/);
+    assert.doesNotMatch(hub, /Loading latest announcement/);
+    assert.doesNotMatch(hub, /Loading next event/);
     assert.doesNotMatch(hub, /hero-official-logo/);
     assert.equal((hub.match(/id="homeAwardsCountdown"/g) || []).length, 1);
     assert.match(publicity, /api\/publicity\/home/);
-    assert.match(publicity, /No new announcement/);
-    assert.match(publicity, /No upcoming event/);
+    assert.match(html, /<script type="application\/json" id="srcPublicBootstrap">/);
+    assert.match(html, /"homeFeed":\{"announcements":\[/);
+    assert.match(html, /<link rel="preload" as="image" href="[^"]+" fetchpriority="high">/);
+    assert.ok(html.indexOf('id="srcPublicBootstrap"') < html.indexOf('src="/hub-shell.js'));
   } finally { await app.close(); }
 });
 

@@ -283,6 +283,18 @@ function createApp(options = {}) {
   function escapeAttribute(value) {
     return String(value || "").replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   }
+  function injectCriticalPublicData(html,{includeHomeFeed=false}={}){
+    const settings=content.settings();
+    const bootstrap={settings};
+    if(includeHomeFeed)bootstrap.homeFeed=publicity.homeFeed();
+    const bootstrapJson=JSON.stringify(bootstrap)
+      .replace(/&/g,"\\u0026").replace(/</g,"\\u003c").replace(/>/g,"\\u003e")
+      .replace(/\u2028/g,"\\u2028").replace(/\u2029/g,"\\u2029");
+    const preload=settings.logoUrl?`<link rel="preload" as="image" href="${escapeAttribute(settings.logoUrl)}" fetchpriority="high">`:"";
+    return html
+      .replace("<!-- CRITICAL_ASSETS -->",preload)
+      .replace("<!-- PUBLIC_BOOTSTRAP -->",`<script type="application/json" id="srcPublicBootstrap">${bootstrapJson}</script>`);
+  }
   function detailHtml(req, record, kind) {
     const description = kind === "announcement" ? record.summary : record.shortDescription;
     const image = kind === "announcement" ? record.featuredImage : record.posterImage;
@@ -304,10 +316,10 @@ function createApp(options = {}) {
       `<meta name="twitter:description" content="${escapeAttribute(description)}">`,
       absoluteImage ? `<meta property="og:image" content="${escapeAttribute(absoluteImage)}"><meta name="twitter:image" content="${escapeAttribute(absoluteImage)}">` : ""
     ].join("");
-    return hubTemplate
+    return injectCriticalPublicData(hubTemplate
       .replace(/<title>[\s\S]*?<\/title>/, `<title>${escapeAttribute(record.title)} | SRC Digital Hub</title>`)
       .replace(/<meta name="description" content="[^"]*"\s*\/?>/, `<meta name="description" content="${escapeAttribute(description)}" />`)
-      .replace("<!-- SOCIAL_META -->", metadata);
+      .replace("<!-- SOCIAL_META -->", metadata));
   }
   function hubHtml(req) {
     const origin = publicBaseUrl||`${req.protocol}://${req.get("host")}`;
@@ -322,7 +334,7 @@ function createApp(options = {}) {
       `<meta name="twitter:description" content="Official updates, events, awards, student services, and campus community in one trusted place.">`,
       `<meta name="twitter:image" content="${escapeAttribute(origin + "/og.png")}">`
     ].join("");
-    return hubTemplate.replace("<!-- SOCIAL_META -->", metadata);
+    return injectCriticalPublicData(hubTemplate.replace("<!-- SOCIAL_META -->", metadata),{includeHomeFeed:req.path==="/"});
   }
   app.get("/announcements/:slug", (req, res) => {
     const record = publicity.getAnnouncementBySlug(req.params.slug);

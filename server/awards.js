@@ -25,8 +25,8 @@ function migrateAwards(db) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS awards_settings (
       id INTEGER PRIMARY KEY CHECK (id=1), awards_title TEXT NOT NULL DEFAULT 'SRC Awards 2026',
-      event_active INTEGER NOT NULL DEFAULT 1, voting_state TEXT NOT NULL DEFAULT 'open',
-      opens_at TEXT, closes_at TEXT, price_per_vote INTEGER NOT NULL DEFAULT 100 CHECK(price_per_vote BETWEEN 1 AND 1000000),
+      event_active INTEGER NOT NULL DEFAULT 1, voting_state TEXT NOT NULL DEFAULT 'not_started',
+      opens_at TEXT DEFAULT '2026-09-15T00:00:00.000Z', closes_at TEXT, price_per_vote INTEGER NOT NULL DEFAULT 100 CHECK(price_per_vote BETWEEN 1 AND 1000000),
       currency TEXT NOT NULL DEFAULT 'GHS', public_results_visible INTEGER NOT NULL DEFAULT 1,
       max_votes INTEGER NOT NULL DEFAULT 10000 CHECK(max_votes BETWEEN 1 AND 100000), ledger_migrated INTEGER NOT NULL DEFAULT 0,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -63,16 +63,21 @@ function migrateAwards(db) {
       UPDATE awards_settings SET ledger_migrated=1 WHERE id=1;
       COMMIT;`);
   }
+  if(Number(settings(db).ledger_migrated)<2){
+    db.prepare(`UPDATE awards_settings SET
+      voting_state=CASE WHEN voting_state='open' AND opens_at IS NULL THEN 'not_started' ELSE voting_state END,
+      opens_at=CASE WHEN opens_at IS NULL AND voting_state IN ('open','not_started') THEN '2026-09-15T00:00:00.000Z' ELSE opens_at END,
+      ledger_migrated=2,updated_at=? WHERE id=1`).run(now());
+  }
   db.exec("PRAGMA optimize");
 }
 
 function settings(db) { return db.prepare("SELECT * FROM awards_settings WHERE id=1").get(); }
-function votingAvailability(config, at = new Date()) {
+function votingAvailability(config) {
   if (!config.event_active) return { open: false, state: "closed", message: "This Awards event is not active." };
-  const time = at.getTime();
-  if (config.opens_at && time < Date.parse(config.opens_at)) return { open: false, state: "not_started", message: "Voting has not started." };
-  if (config.closes_at && time >= Date.parse(config.closes_at)) return { open: false, state: "closed", message: "Voting has closed." };
-  if (config.voting_state !== "open") return { open: false, state: config.voting_state, message: config.voting_state === "paused" ? "Voting is temporarily paused." : "Voting is not open." };
+  if (config.voting_state === "not_started") return { open: false, state: "not_started", message: "Voting has not started." };
+  if (config.voting_state === "paused") return { open: false, state: "paused", message: "Voting Paused" };
+  if (config.voting_state === "closed") return { open: false, state: "closed", message: "Voting Closed" };
   return { open: true, state: "open", message: "Voting is open." };
 }
 
@@ -196,7 +201,7 @@ function recordAdjustment(db,{reference,action,reason,providerReference,source="
 }
 
 function publicData(db) {
-  const config = settings(db); const visible = Boolean(config.public_results_visible);
+  const config = settings(db); const voting = votingAvailability(config); const visible = Boolean(config.public_results_visible) && voting.state !== "not_started";
   const rows = db.prepare(`SELECT n.id,n.name,c.name AS category,n.program,n.code,n.photo_token AS photoToken,n.vote_total AS votes
     FROM nominees n JOIN categories c ON c.id=n.category_id WHERE n.active=1 AND c.active=1 ORDER BY c.sort_order,n.id`).all();
   const totals = new Map(); rows.forEach(row => totals.set(row.category,(totals.get(row.category)||0)+row.votes));
@@ -207,7 +212,7 @@ function publicData(db) {
     return visible ? {...publicRow,percentage:totals.get(row.category)?votes/totals.get(row.category)*100:0,rank:ranks.get(row.id)} : publicRow;
   });
   return { title: config.awards_title, categories: [...new Set(rows.map(r=>r.category))], nominees, pricePerVote: config.price_per_vote,
-    currency: config.currency, publicResultsVisible: visible, voting: votingAvailability(config), opensAt: config.opens_at, countdownTarget: config.opens_at || "2026-09-15T00:00:00.000Z", closesAt: config.closes_at, maxVotes: config.max_votes };
+    currency: config.currency, publicResultsVisible: visible, voting, opensAt: config.opens_at, countdownTarget: config.opens_at || "2026-09-15T00:00:00.000Z", closesAt: config.closes_at, maxVotes: config.max_votes };
 }
 
 function updateSettings(db, input) {

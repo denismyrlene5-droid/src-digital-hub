@@ -8,7 +8,10 @@ const { createApp } = require("../server/app");
 
 async function fixture(options = {}) {
   const uploadDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "src-services-test-"));
-  const { app, db } = createApp({ databasePath: ":memory:", uploadDirectory, adminPassword: "test-password", paystackKey: "", nodeEnv: "test", ...options });
+  const initialVotingState=Object.hasOwn(options,"initialVotingState")?options.initialVotingState:"open";
+  const appOptions={...options};delete appOptions.initialVotingState;
+  const { app, db } = createApp({ databasePath: ":memory:", uploadDirectory, adminPassword: "test-password", paystackKey: "", nodeEnv: "test", ...appOptions });
+  if(initialVotingState)db.prepare("UPDATE awards_settings SET voting_state=?,opens_at=NULL,closes_at=NULL WHERE id=1").run(initialVotingState);
   const server = await new Promise(resolve => {
     const instance = app.listen(0, "127.0.0.1", () => resolve(instance));
   });
@@ -59,6 +62,29 @@ test("public awards hide exact vote totals", async () => {
     assert.equal("votes" in data.nominees[0], false);
     assert.equal(typeof data.nominees[0].percentage, "number");
   } finally { await app.close(); }
+});
+
+test("Awards default to a fail-closed pre-launch state with a real countdown target", async () => {
+  const app = await fixture({initialVotingState:null});
+  try {
+    const data=await (await fetch(`${app.base}/api/awards`)).json();
+    assert.equal(data.voting.state,"not_started");assert.equal(data.voting.open,false);
+    assert.equal(data.opensAt,"2026-09-15T00:00:00.000Z");assert.equal(data.countdownTarget,data.opensAt);
+    assert.equal(data.publicResultsVisible,false);assert.equal("percentage" in data.nominees[0],false);assert.equal("rank" in data.nominees[0],false);
+    const html=await (await fetch(`${app.base}/awards`)).text();
+    assert.match(html,/id="awardsLiveActions" hidden/);assert.match(html,/id="categories" hidden/);assert.doesNotMatch(html,/id="awardsPrelaunch" hidden/);
+  } finally {await app.close();}
+});
+
+test("stored voting state remains authoritative regardless of countdown dates", async () => {
+  const app=await fixture();
+  try{
+    const cookie=await adminCookie(app),future="2099-09-15T00:00:00.000Z",past="2000-01-01T00:00:00.000Z";
+    for(const [state,opensAt,closesAt,expectedOpen] of [["open",future,null,true],["open",null,past,true],["paused",future,null,false],["closed",future,null,false],["not_started",past,null,false]]){
+      const saved=await fetch(`${app.base}/api/admin/awards/settings`,{method:"PUT",headers:{"Content-Type":"application/json",Cookie:cookie},body:JSON.stringify({votingState:state,opensAt,closesAt})});assert.equal(saved.status,200);
+      const data=await (await fetch(`${app.base}/api/awards`)).json();assert.equal(data.voting.state,state);assert.equal(data.voting.open,expectedOpen);
+    }
+  }finally{await app.close();}
 });
 
 test("backend source is not publicly served", async () => {
@@ -786,4 +812,16 @@ test("CMS migrations and content persist across a SQLite restart", () => {
     assert.equal(fs.existsSync(uploadDirectory), true);
     second.db.close();
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+});
+
+test("legacy open Awards configuration migrates once to the configured pre-launch state", () => {
+  const directory=fs.mkdtempSync(path.join(os.tmpdir(),"src-awards-prelaunch-"));const databasePath=path.join(directory,"hub.sqlite"),uploadDirectory=path.join(directory,"uploads");
+  try{
+    const first=createApp({databasePath,uploadDirectory,adminPassword:"test-password",nodeEnv:"test",seedData:false});
+    first.db.prepare("UPDATE awards_settings SET voting_state='open',opens_at=NULL,closes_at=NULL,ledger_migrated=1 WHERE id=1").run();first.db.close();
+    const second=createApp({databasePath,uploadDirectory,adminPassword:"test-password",nodeEnv:"test",seedData:false});const settings=second.db.prepare("SELECT voting_state,opens_at,ledger_migrated FROM awards_settings WHERE id=1").get();
+    assert.equal(settings.voting_state,"not_started");assert.equal(settings.opens_at,"2026-09-15T00:00:00.000Z");assert.equal(settings.ledger_migrated,2);
+    second.db.prepare("UPDATE awards_settings SET voting_state='open',opens_at=NULL WHERE id=1").run();second.db.close();
+    const third=createApp({databasePath,uploadDirectory,adminPassword:"test-password",nodeEnv:"test",seedData:false});assert.equal(third.db.prepare("SELECT voting_state FROM awards_settings WHERE id=1").get().voting_state,"open");third.db.close();
+  }finally{fs.rmSync(directory,{recursive:true,force:true});}
 });

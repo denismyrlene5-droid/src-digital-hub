@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css?v=8" />
-  <link rel="stylesheet" href="/hub.css?v=9" />
+  <link rel="stylesheet" href="/hub.css?v=10" />
 </head>
 <body class="awards-page">
   <div class="noise"></div>
@@ -28,12 +28,12 @@
           Discover nominees, support your favorites, and follow the race live.
         </p>
 
-        <div class="hero-actions" id="awardsLiveActions">
-          <a class="btn btn-gold btn-large" href="#categories">Start Voting</a>
+        <div class="hero-actions" id="awardsLiveActions" hidden>
+          <a class="btn btn-gold btn-large" id="awardsPrimaryAction" href="#categories">Start Voting</a>
           <a class="btn btn-outline btn-large" href="#leaderboard">View Rankings</a>
         </div>
 
-        <div class="trust-row" id="awardsLiveTrust">
+        <div class="trust-row" id="awardsLiveTrust" hidden>
           <div><b>12</b><span>Categories</span></div>
           <div><b>PRIVATE</b><span>Vote Counts</span></div>
           <div><b id="votingStateBadge">OPEN</b><span>Voting status</span></div>
@@ -52,7 +52,7 @@
       </div>
     </section>
 
-    <section class="countdown-section">
+    <section class="countdown-section" id="awardsCountdownSection">
       <div>
         <span class="section-kicker" id="awardsCountdownKicker">VOTING CLOSES IN</span>
         <h2 id="awardsCountdownHeading">The race is on.</h2>
@@ -65,7 +65,7 @@
       </div>
     </section>
 
-    <section class="section awards-prelaunch" id="awardsPrelaunch" hidden>
+    <section class="section awards-prelaunch" id="awardsPrelaunch">
       <img class="award-official-logo" src="/assets/ucc-wise-src-logo.jpg" alt="UCC crest">
       <span class="section-kicker">SRC AWARDS 2026</span>
       <h2>Celebrating Excellence.<br>Recognising Impact.</h2>
@@ -74,7 +74,7 @@
       <h3>STAY READY.</h3>
     </section>
 
-    <section class="section awards-live-section" id="categories">
+    <section class="section awards-live-section" id="categories" hidden>
       <div class="section-heading">
         <div>
           <span class="section-kicker">EXPLORE & VOTE</span>
@@ -92,7 +92,7 @@
       <div class="nominee-grid" id="nomineeGrid"></div>
     </section>
 
-    <section class="section leaderboard-section awards-live-section" id="leaderboard">
+    <section class="section leaderboard-section awards-live-section" id="leaderboard" hidden>
       <div class="section-heading">
         <div>
           <span class="section-kicker">LIVE MOMENTUM</span>
@@ -129,7 +129,7 @@
       </div>
     </section>
 
-    <section class="section how-section awards-live-section" id="how-it-works">
+    <section class="section how-section awards-live-section" id="how-it-works" hidden>
       <div class="section-heading">
         <div>
           <span class="section-kicker">SIMPLE & SECURE</span>
@@ -308,6 +308,6 @@
 
   <script src="/hub-data.js?v=9"></script>
   <script src="/hub-shell.js?v=9"></script>
-  <script src="/app.js?v=9"></script>
+  <script src="/app.js?v=10"></script>
 </body>
 </html>

@@ -11,8 +11,8 @@ let configuredPaymentProvider = "disabled";
 let pricePerVote = 100;
 let awardsCurrency = "GHS";
 let maxVotes = 10000;
-let voting = { open: true, state: "open", message: "Voting is open." };
-let publicResultsVisible = true;
+let voting = { open: false, state: "not_started", message: "Voting has not started." };
+let publicResultsVisible = false;
 let closesAt = null;
 let countdownTarget = "2026-09-15T00:00:00.000Z";
 
@@ -52,6 +52,10 @@ function applyVotingPresentation(){
   byId("awardsPrelaunch").hidden=!prelaunch;
   document.querySelectorAll(".awards-live-section").forEach(section=>section.hidden=prelaunch);
   byId("awardsLiveActions").hidden=prelaunch;byId("awardsLiveTrust").hidden=prelaunch;
+  byId("awardsCountdownSection").hidden=!prelaunch&&!closesAt;
+  const primary=byId("awardsPrimaryAction");
+  primary.textContent=voting.state==="paused"?"Voting Paused":voting.state==="closed"?"Voting Closed":"Start Voting";
+  primary.setAttribute("aria-disabled",String(!voting.open));primary.tabIndex=voting.open?0:-1;primary.classList.toggle("is-disabled",!voting.open);
   if(prelaunch){byId("awardsHeroEyebrow").textContent="SRC AWARDS 2026";byId("awardsHeroTitle").innerHTML="SOMETHING BIG<br><span>IS COMING.</span>";byId("awardsHeroIntro").textContent="The UCC Sandwich – WISE Campus SRC Awards are coming soon.";byId("awardsCountdownKicker").textContent="COUNTDOWN TO SRC AWARDS 2026";byId("awardsCountdownHeading").textContent="The wait is almost over.";}
   else{byId("awardsHeroEyebrow").textContent="THE PEOPLE'S CHOICE • CAMPUS 2026";byId("awardsHeroTitle").innerHTML="Celebrate excellence.<br><span>Vote your favorite.</span>";byId("awardsHeroIntro").textContent="A premium digital voting experience for the SRC Awards. Discover nominees, support your favorites, and follow the race live.";byId("awardsCountdownKicker").textContent="VOTING CLOSES IN";byId("awardsCountdownHeading").textContent="The race is on.";}
 }
@@ -274,7 +278,8 @@ function setupVoting() {
 function setupCountdown() {
   const tick = () => {
     const target=voting.state==="not_started"?countdownTarget:closesAt;
-    const end = target ? new Date(target).getTime() : Date.now();
+    if(!target)return;
+    const end = new Date(target).getTime();
     let diff = Math.max(0, end - Date.now());
     const values = [Math.floor(diff / 86400000), Math.floor(diff % 86400000 / 3600000), Math.floor(diff % 3600000 / 60000), Math.floor(diff % 60000 / 1000)];
     ["days", "hours", "minutes", "seconds"].forEach((id, index) => byId(id).textContent = String(values[index]).padStart(2, "0"));

@@ -140,6 +140,17 @@ test("public navigation header remains in normal document flow", async () => {
   } finally { await app.close(); }
 });
 
+test("public frontend retains accessibility and responsive spacing polish", async () => {
+  const app = await fixture();
+  try {
+    const css = await (await fetch(`${app.base}/hub.css`)).text();
+    assert.match(css, /\.hub-footer-grid a[^}]*min-height:44px/);
+    assert.match(css, /\.urgent-notice-content b\{white-space:normal/);
+    assert.match(css, /\.hub-hero h1\{font-size:clamp\(40px,12vw,49px\)/);
+    assert.match(css, /\.publicity-metrics\{grid-template-columns:repeat\(4,1fr\)\}/);
+  } finally { await app.close(); }
+});
+
 test("Awards hero uses a values panel without a large logo or duplicate countdown", async () => {
   const app = await fixture();
   try {

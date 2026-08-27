@@ -6,7 +6,7 @@ const { createApp } = require("./server/app");
 const port = Number(process.env.PORT) || 8000;
 const host = "0.0.0.0";
 const databasePath = process.env.DATABASE_PATH ? path.resolve(process.env.DATABASE_PATH) : path.join(__dirname, "data", "src-awards.sqlite");
-const { app } = createApp({ databasePath });
+const { app, db } = createApp({ databasePath });
 
 const server = app.listen(port, host, () => {
   console.log(`SRC Digital Hub listening on ${host}:${port}`);
@@ -23,3 +23,20 @@ server.on("error", error => {
   console.error(error.code === "EADDRINUSE" ? `Port ${port} is already in use.` : error);
   process.exitCode = 1;
 });
+
+let shuttingDown = false;
+function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`${signal} received; closing SRC Digital Hub safely.`);
+  const forceExit = setTimeout(() => process.exit(1), 10_000);
+  forceExit.unref();
+  server.close(() => {
+    try { db.close(); } catch {}
+    clearTimeout(forceExit);
+    process.exit(0);
+  });
+}
+
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));

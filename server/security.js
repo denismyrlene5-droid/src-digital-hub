@@ -15,6 +15,12 @@ function createAuth({ adminPassword, publicityAdminPassword = "", studentAffairs
   const cookieName = "src_admin_session";
   const absoluteSessionMs = 8 * 60 * 60 * 1000;
   const idleSessionMs = 30 * 60 * 1000;
+  let lastSessionSweep = 0;
+  function sweepSessions(current) {
+    if (current - lastSessionSweep < 60_000) return;
+    lastSessionSweep = current;
+    for (const [token, session] of sessions) if (session.expiresAt < current || session.lastSeenAt + idleSessionMs < current) sessions.delete(token);
+  }
   const credentials = [
     ["super_admin", adminPassword], ["publicity_admin", publicityAdminPassword],
     ["student_affairs_admin", studentAffairsAdminPassword], ["awards_admin", awardsAdminPassword],
@@ -26,6 +32,7 @@ function createAuth({ adminPassword, publicityAdminPassword = "", studentAffairs
     const i = part.indexOf("="); return [part.slice(0, i), decodeURIComponent(part.slice(i + 1))];
   }));
   function login(req, res) {
+    sweepSessions(Date.now());
     if (!adminPassword && !publicityAdminPassword && !studentAffairsAdminPassword && !awardsAdminPassword && !contentEditorPassword) return res.status(503).json({ ok: false, message: "Admin login is not configured." });
     const supplied = String(req.body?.password || "");
     let role=null;
@@ -42,6 +49,7 @@ function createAuth({ adminPassword, publicityAdminPassword = "", studentAffairs
     const token = cookies(req.headers.cookie)[cookieName];
     const session = token && sessions.get(token);
     const current=Date.now();
+    sweepSessions(current);
     if (!session || session.expiresAt < current || session.lastSeenAt + idleSessionMs < current) {
       if (token) sessions.delete(token);
       return null;
@@ -81,9 +89,14 @@ function createAuth({ adminPassword, publicityAdminPassword = "", studentAffairs
 
 function rateLimit({ windowMs, max }) {
   const clients = new Map();
+  let lastSweep = 0;
   return (req, res, next) => {
     const key = req.ip || req.socket.remoteAddress || "unknown";
     const now = Date.now();
+    if (now - lastSweep >= Math.min(windowMs, 60_000)) {
+      lastSweep = now;
+      for (const [client, record] of clients) if (record.resetAt <= now) clients.delete(client);
+    }
     let item = clients.get(key);
     if (!item || item.resetAt <= now) item = { count: 0, resetAt: now + windowMs };
     item.count += 1; clients.set(key, item);
@@ -97,7 +110,7 @@ function securityHeaders(req, res, next) {
   res.setHeader("X-Frame-Options", "DENY");
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
   res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
-  res.setHeader("Content-Security-Policy", "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self'");
+  res.setHeader("Content-Security-Policy", "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self'");
   if (req.app.get("productionMode")) res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
   next();
 }

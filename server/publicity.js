@@ -281,6 +281,18 @@ function createPublicityRepository(db, options = {}) {
 
   const getAnnouncementAdmin = id => mapAnnouncement(db.prepare("SELECT * FROM announcements WHERE id=?").get(validId(id)));
 
+  function publicAnnouncementFile(token) {
+    if (!/^[a-f0-9]{32}\.[a-z0-9]{2,5}$/.test(String(token || ""))) return null;
+    const url = `/api/publicity/files/${token}`;
+    return db.prepare(`SELECT 1 FROM announcements WHERE featured_image=? AND status='published'
+      AND published_at IS NOT NULL AND datetime(published_at)<=datetime('now')`).get(url) ? token : null;
+  }
+
+  function adminAnnouncementFile(token) {
+    if (!/^[a-f0-9]{32}\.[a-z0-9]{2,5}$/.test(String(token || ""))) return null;
+    return db.prepare("SELECT 1 FROM announcements WHERE featured_image=?").get(`/api/publicity/files/${token}`) ? token : null;
+  }
+
   function createEvent(input, role) {
     const item = validateEvent(input);
     const slug = uniqueSlug("events", item.title);
@@ -329,7 +341,8 @@ function createPublicityRepository(db, options = {}) {
     statuses: { announcements: ANNOUNCEMENT_STATUSES, events: EVENT_STATUSES },
     listAnnouncementsPublic, listEventsPublic, homeFeed, urgentNotice, getAnnouncementBySlug, getEventBySlug,
     listAnnouncementsAdmin, listEventsAdmin, getAnnouncementAdmin, getEventAdmin,
-    createAnnouncement, updateAnnouncement, deleteAnnouncement, createEvent, updateEvent, deleteEvent, dashboard
+    createAnnouncement, updateAnnouncement, deleteAnnouncement, publicAnnouncementFile, adminAnnouncementFile,
+    createEvent, updateEvent, deleteEvent, dashboard
   };
 }
 

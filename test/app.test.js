@@ -5,6 +5,7 @@ const os = require("node:os");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const { createApp } = require("../server/app");
+const { createPaystackProvider } = require("../server/payment-providers");
 
 async function fixture(options = {}) {
   const uploadDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "src-services-test-"));
@@ -16,7 +17,7 @@ async function fixture(options = {}) {
     const instance = app.listen(0, "127.0.0.1", () => resolve(instance));
   });
   const base = `http://127.0.0.1:${server.address().port}`;
-  return { base, db, close: () => new Promise(resolve => server.close(() => { db.close(); fs.rmSync(uploadDirectory, { recursive: true, force: true }); resolve(); })) };
+  return { base, db, uploadDirectory, close: () => new Promise(resolve => server.close(() => { db.close(); fs.rmSync(uploadDirectory, { recursive: true, force: true }); resolve(); })) };
 }
 
 async function adminCookie(app, password = "test-password") {
@@ -296,14 +297,32 @@ test("production blocks simulation and emits production security headers",async(
   try{
     assert.equal((await fetch(`${app.base}/api/simulated-votes`,{method:"POST",headers:{"Content-Type":"application/json","Idempotency-Key":"production-block-test-123"},body:JSON.stringify({nomineeId:1,votes:1})})).status,404);
     const health=await fetch(`${app.base}/health`);assert.equal(health.status,200);assert.match(health.headers.get("strict-transport-security"),/max-age=31536000/);
+    assert.match(health.headers.get("content-security-policy"), /img-src 'self' data: blob: https:/);
     assert.deepEqual(await health.json(),{ok:true,status:"healthy",application:"healthy",database:"healthy",storage:"healthy"});
   }finally{await app.close();}
 });
 
 test("staging simulation works while incomplete live-provider configuration fails safely",async()=>{
-  const staging=await fixture({environment:"staging",paymentProvider:"simulation",simulationEnabled:true});
+  const staging=await fixture({environment:"staging",paymentProvider:"simulation",simulationEnabled:true,seedData:true});
   try{assert.equal((await createSimulatedTransaction(staging,{votes:1})).status,201);}finally{await staging.close();}
   assert.throws(()=>createApp({databasePath:":memory:",environment:"production",baseUrl:"https://hub.example.edu",paymentProvider:"paystack_live",paystackKey:"",adminPassword:"production-super-admin-password"}),/live server secret key/i);
+});
+
+test("staging does not seed demonstration content unless explicitly requested",async()=>{
+  const staging=await fixture({environment:"staging",paymentProvider:"disabled",simulationEnabled:false,initialVotingState:null});
+  try {
+    assert.equal(staging.db.prepare("SELECT COUNT(*) count FROM nominees").get().count,0);
+    assert.equal(staging.db.prepare("SELECT COUNT(*) count FROM announcements").get().count,0);
+  } finally { await staging.close(); }
+});
+
+test("Paystack accepts asynchronous charge states and rejects terminal charge states",async()=>{
+  const transaction={reference:"SRCVOTE-test-reference-123456",currency:"GHS",expectedAmount:300,votes:3,nominee:{id:1}};
+  const payer={email:"student@example.edu",phone:"0551234567",network:"mtn"};
+  const asynchronous=createPaystackProvider({secretKey:"sk_test_async",fetchImpl:async()=>({ok:true,status:200,json:async()=>({status:true,message:"Charge attempted",data:{status:"pay_offline",display_text:"Approve on your phone"}})})});
+  assert.deepEqual(await asynchronous.initialize(transaction,payer),{ok:true,status:"pay_offline",displayText:"Approve on your phone"});
+  const terminal=createPaystackProvider({secretKey:"sk_test_terminal",fetchImpl:async()=>({ok:true,status:200,json:async()=>({status:true,message:"Charge failed",data:{status:"failed"}})})});
+  assert.deepEqual(await terminal.initialize(transaction,payer),{ok:false,message:"Charge failed"});
 });
 
 test("maintenance and voting pause reject initiation without changing valid votes",async()=>{
@@ -338,7 +357,14 @@ test("recorded external refund removes votes atomically once and preserves histo
 
 test("cross-origin administrator mutations are rejected",async()=>{
   const app=await fixture();
-  try{assert.equal((await fetch(`${app.base}/api/admin/login`,{method:"POST",headers:{"Content-Type":"application/json",Origin:"https://evil.example"},body:JSON.stringify({password:"test-password"})})).status,403);}finally{await app.close();}
+  try{
+    assert.equal((await fetch(`${app.base}/api/admin/login`,{method:"POST",headers:{"Content-Type":"application/json",Origin:"https://evil.example"},body:JSON.stringify({password:"test-password"})})).status,403);
+    const cookie=await adminCookie(app);
+    const headers={"Content-Type":"application/json",Origin:"https://evil.example",Cookie:cookie};
+    assert.equal((await fetch(`${app.base}/api/content/admin/settings`,{method:"PUT",headers,body:JSON.stringify({srcName:"Unsafe change"})})).status,403);
+    assert.equal((await fetch(`${app.base}/api/publicity/admin/announcements`,{method:"POST",headers,body:JSON.stringify(announcementPayload)})).status,403);
+    assert.equal((await fetch(`${app.base}/api/services/admin/businesses`,{method:"POST",headers,body:JSON.stringify(businessPayload)})).status,403);
+  }finally{await app.close();}
 });
 
 test("admin summary requires login and uses an HTTP-only cookie", async () => {
@@ -378,6 +404,41 @@ test("draft announcements stay private while published urgent announcements are 
     assert.equal((await fetch(`${app.base}/api/announcements/${draft.slug}`)).status, 200);
     assert.equal((await fetch(`${app.base}/api/publicity/admin/announcements/${draft.id}`, { method: "DELETE", headers: { Cookie: cookie } })).status, 200);
     assert.equal((await fetch(`${app.base}/api/announcements/${draft.slug}`)).status, 404);
+  } finally { await app.close(); }
+});
+
+test("announcement featured images upload on create and edit, take priority over URLs, and stay access-controlled", async () => {
+  const app = await fixture();
+  const imageUpload = { name: "announcement.png", type: "image/png", data: Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]).toString("base64") };
+  try {
+    const cookie = await adminCookie(app);
+    const createdResponse = await fetch(`${app.base}/api/publicity/admin/announcements`, {
+      method: "POST", headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ ...announcementPayload, featuredImage: "https://example.com/ignored.jpg", featuredImageUpload: imageUpload })
+    });
+    assert.equal(createdResponse.status, 201);
+    const created = (await createdResponse.json()).announcement;
+    assert.match(created.featuredImage, /^\/api\/publicity\/files\/[a-f0-9]{32}\.png$/);
+    const firstToken = created.featuredImage.split("/").pop();
+    assert.equal((await fetch(`${app.base}${created.featuredImage}`)).status, 404);
+    assert.equal((await fetch(`${app.base}/api/publicity/admin/files/${firstToken}`, { headers: { Cookie: cookie } })).status, 200);
+
+    const replacement = { name: "replacement.webp", type: "image/webp", data: Buffer.from("RIFF0000WEBP").toString("base64") };
+    const updatedResponse = await fetch(`${app.base}/api/publicity/admin/announcements/${created.id}`, {
+      method: "PUT", headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ ...announcementPayload, status: "published", featuredImage: created.featuredImage, featuredImageUpload: replacement })
+    });
+    assert.equal(updatedResponse.status, 200);
+    const updated = (await updatedResponse.json()).announcement;
+    assert.match(updated.featuredImage, /^\/api\/publicity\/files\/[a-f0-9]{32}\.webp$/);
+    assert.equal((await fetch(`${app.base}${updated.featuredImage}`)).status, 200);
+    assert.equal((await fetch(`${app.base}/api/publicity/admin/files/${firstToken}`, { headers: { Cookie: cookie } })).status, 404);
+
+    const invalidResponse = await fetch(`${app.base}/api/publicity/admin/announcements`, {
+      method: "POST", headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ ...announcementPayload, featuredImageUpload: { name: "malware.exe", type: "application/octet-stream", data: "TVqQ" } })
+    });
+    assert.equal(invalidResponse.status, 400);
   } finally { await app.close(); }
 });
 
@@ -598,6 +659,40 @@ const executivePayload = order => ({
   active: true
 });
 const pngUpload = { name: "test.png", type: "image/png", data: Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]).toString("base64") };
+const webpUpload = { name: "replacement.webp", type: "image/webp", data: Buffer.from("RIFF0000WEBP").toString("base64") };
+
+test("replacing and deleting managed images removes obsolete upload files", async () => {
+  const app = await fixture();
+  const stored = token => fs.existsSync(path.join(app.uploadDirectory, token));
+  try {
+    const cookie = await adminCookie(app);
+
+    const listingCreated = await fetch(`${app.base}/api/services/lost-found`, { method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...listingPayload,upload:pngUpload}) });
+    assert.equal(listingCreated.status,201); const listing=(await (await fetch(`${app.base}/api/services/admin/lost-found`,{headers:{Cookie:cookie}})).json()).listings[0]; assert.equal(stored(listing.imageToken),true);
+    assert.equal((await fetch(`${app.base}/api/services/admin/lost-found/${listing.id}`,{method:"DELETE",headers:{Cookie:cookie}})).status,200); assert.equal(stored(listing.imageToken),false);
+
+    const businessCreated = await fetch(`${app.base}/api/services/admin/businesses`, { method:"POST", headers:{"Content-Type":"application/json",Cookie:cookie}, body:JSON.stringify({...businessPayload,upload:pngUpload}) });
+    assert.equal(businessCreated.status,201); const firstBusiness=(await businessCreated.json()).business; assert.equal(stored(firstBusiness.logoToken),true);
+    const businessUpdated = await fetch(`${app.base}/api/services/admin/businesses/${firstBusiness.id}`, { method:"PUT", headers:{"Content-Type":"application/json",Cookie:cookie}, body:JSON.stringify({...businessPayload,approvalStatus:"approved",published:true,featured:false,upload:webpUpload}) });
+    assert.equal(businessUpdated.status,200); const secondBusiness=(await businessUpdated.json()).business; assert.equal(stored(firstBusiness.logoToken),false); assert.equal(stored(secondBusiness.logoToken),true);
+    assert.equal((await fetch(`${app.base}/api/services/admin/businesses/${firstBusiness.id}`,{method:"DELETE",headers:{Cookie:cookie}})).status,200); assert.equal(stored(secondBusiness.logoToken),false);
+
+    const mediaCreated = await fetch(`${app.base}/api/content/admin/media`, { method:"POST",headers:{"Content-Type":"application/json",Cookie:cookie},body:JSON.stringify({...albumPayload,cover:pngUpload}) });
+    assert.equal(mediaCreated.status,201); const firstAlbum=(await mediaCreated.json()).album; const firstCover=firstAlbum.coverUrl.split("/").pop(); assert.equal(stored(firstCover),true);
+    const mediaUpdated = await fetch(`${app.base}/api/content/admin/media/${firstAlbum.id}`, { method:"PUT",headers:{"Content-Type":"application/json",Cookie:cookie},body:JSON.stringify({...albumPayload,cover:webpUpload}) });
+    assert.equal(mediaUpdated.status,200); const secondCover=(await mediaUpdated.json()).album.coverUrl.split("/").pop(); assert.equal(stored(firstCover),false); assert.equal(stored(secondCover),true);
+
+    const executiveCreated = await fetch(`${app.base}/api/content/admin/executives`, { method:"POST",headers:{"Content-Type":"application/json",Cookie:cookie},body:JSON.stringify({...executivePayload(8),photo:pngUpload}) });
+    assert.equal(executiveCreated.status,201); const firstExecutive=(await executiveCreated.json()).executive; assert.equal(stored(firstExecutive.photoToken),true);
+    const executiveUpdated = await fetch(`${app.base}/api/content/admin/executives/${firstExecutive.id}`, { method:"PUT",headers:{"Content-Type":"application/json",Cookie:cookie},body:JSON.stringify({...executivePayload(8),photo:webpUpload}) });
+    assert.equal(executiveUpdated.status,200); const secondExecutive=(await executiveUpdated.json()).executive; assert.equal(stored(firstExecutive.photoToken),false); assert.equal(stored(secondExecutive.photoToken),true);
+
+    const nomineeCreated = await fetch(`${app.base}/api/admin/awards/nominees`, { method:"POST",headers:{"Content-Type":"application/json",Cookie:cookie},body:JSON.stringify({name:"Storage Test Nominee",program:"Development Studies",code:"STORE01",categoryId:1,active:true,photo:pngUpload}) });
+    assert.equal(nomineeCreated.status,201); const firstNominee=(await nomineeCreated.json()).nominee; assert.equal(stored(firstNominee.photoToken),true);
+    const nomineeUpdated = await fetch(`${app.base}/api/admin/awards/nominees/${firstNominee.id}`, { method:"PUT",headers:{"Content-Type":"application/json",Cookie:cookie},body:JSON.stringify({name:firstNominee.name,program:firstNominee.program,code:firstNominee.code,categoryId:firstNominee.categoryId,active:true,photo:webpUpload}) });
+    assert.equal(nomineeUpdated.status,200); const secondNominee=(await nomineeUpdated.json()).nominee; assert.equal(stored(firstNominee.photoToken),false); assert.equal(stored(secondNominee.photoToken),true);
+  } finally { await app.close(); }
+});
 
 test("media drafts stay private, published albums are public, and uploads are protected", async () => {
   const app = await fixture({ publicityAdminPassword: "publicity-password" });

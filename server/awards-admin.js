@@ -17,8 +17,8 @@ function createAwardsAdminRouter({ db, uploadDirectory, requireAwardsAdmin, audi
   const router = express.Router();
   const uploads = createUploadStore(uploadDirectory);
   const handle = fn => async (req, res, next) => { try { await fn(req, res, next); } catch (error) { next(error); } };
-  router.use(express.json({ limit: "4mb" }));
   router.use(requireAwardsAdmin);
+  router.use(express.json({ limit: "4mb" }));
 
   const category = categoryId => db.prepare("SELECT id,name,sort_order AS sortOrder,active FROM categories WHERE id=?").get(id(categoryId));
   const nominee = nomineeId => db.prepare(`SELECT n.id,n.name,n.program,n.code,n.category_id AS categoryId,n.active,n.photo_token AS photoToken,c.name AS category
@@ -70,7 +70,7 @@ function createAwardsAdminRouter({ db, uploadDirectory, requireAwardsAdmin, audi
       photo = uploads.save(req.body?.photo, "image");
       try { db.prepare("UPDATE nominees SET name=?,category_id=?,program=?,code=?,active=?,photo_token=COALESCE(?,photo_token) WHERE id=?").run(name, categoryId, program, code, bool(req.body?.active, Boolean(current.active)) ? 1 : 0, photo?.token || null, current.id); }
       catch (error) { if (String(error.message).includes("UNIQUE")) throw httpError("That nominee code is already in use.", 409); throw error; }
-      const record = nominee(current.id); audit(req.admin, "awards.nominee_updated", "nominee", record.id, `Nominee updated: ${record.name}`); res.json({ nominee: record });
+      const record = nominee(current.id); if(photo&&current.photoToken)uploads.remove(current.photoToken); audit(req.admin, "awards.nominee_updated", "nominee", record.id, `Nominee updated: ${record.name}`); res.json({ nominee: record });
     } catch (error) { uploads.remove(photo); throw error; }
   }));
   router.delete("/nominees/:id", handle((req, res) => {

@@ -37,7 +37,7 @@ function createApp(options = {}) {
   let publicBaseUrl="";
   if(configuredBaseUrl){try{publicBaseUrl=new URL(configuredBaseUrl).origin;}catch{throw new Error("BASE_URL must be a valid absolute URL.");}}
   if(production&&(!publicBaseUrl||!publicBaseUrl.startsWith("https://")))throw new Error("Production requires an HTTPS BASE_URL.");
-  const seedData=options.seedData ?? !production;
+  const seedData=options.seedData ?? !["production","staging"].includes(environment);
   const db = options.db || createDatabase(databasePath,{seed:seedData});
   awards.migrateAwards(db);
   const publicity = createPublicityRepository(db,{seed:seedData});
@@ -68,12 +68,19 @@ function createApp(options = {}) {
   const paystackMode=paymentProvider==="paystack_live"?"live":"test";
   const paystackProvider = createPaystackProvider({ secretKey: paymentProvider.startsWith("paystack_") ? paystackKey : "", mode:paystackMode, fetchImpl: options.fetchImpl, diagnosticsEnabled: staging, diagnosticLogger: options.paymentDiagnosticLogger || console.info });
   const securityEvent=(event,details={})=>console.warn(JSON.stringify({timestamp:new Date().toISOString(),category:"security",event,...details}));
-  const auth = createAuth({ adminPassword, publicityAdminPassword, studentAffairsAdminPassword, awardsAdminPassword, contentEditorPassword, secureCookies: production, onSecurityEvent:securityEvent });
+  const auth = createAuth({ adminPassword, publicityAdminPassword, studentAffairsAdminPassword, awardsAdminPassword, contentEditorPassword, secureCookies: production || staging, onSecurityEvent:securityEvent });
   const paymentLimit = rateLimit({ windowMs: 60_000, max: 20 });
+  const requireSameOrigin=(req,res,next)=>{
+    if(["GET","HEAD","OPTIONS"].includes(req.method))return next();
+    const origin=req.get("origin");if(!origin)return next();
+    const expected=publicBaseUrl||`${req.protocol}://${req.get("host")}`;
+    if(origin!==expected)return res.status(403).json({ok:false,message:"Cross-origin admin request rejected."});
+    next();
+  };
 
   app.disable("x-powered-by");
   app.set("productionMode",production);
-  if (production) app.set("trust proxy", 1);
+  if (production || staging) app.set("trust proxy", 1);
   app.use(securityHeaders);
   app.post("/api/paystack/webhook", express.raw({ type: "application/json", limit: "200kb" }), async (req, res, next) => {
     try {
@@ -89,6 +96,7 @@ function createApp(options = {}) {
     res.sendStatus(200);
     } catch(error){ next(error); }
   });
+  app.use("/api/services/admin",requireSameOrigin);
   app.use("/api/services", createServicesRouter({
     repository: services,
     uploadDirectory,
@@ -98,6 +106,7 @@ function createApp(options = {}) {
     requireBusinessAdmin: auth.requireBusinessAdmin,
     audit: content.audit
   }));
+  app.use("/api/content/admin",requireSameOrigin);
   app.use("/api/content", createContentRouter({
     repository: content,
     uploadDirectory,
@@ -106,6 +115,8 @@ function createApp(options = {}) {
     requireContentPublisher: auth.requireContentPublisher,
     requireSuperAdmin: auth.requireAdmin
   }));
+  app.use("/api/publicity/admin",requireSameOrigin);
+  app.use("/api", createPublicityRouter({ repository: publicity, uploadDirectory, requirePublicityAdmin: auth.requirePublicityAdmin, audit: content.audit }));
   app.use(express.json({ limit: "32kb" }));
 
   function health(req,res){
@@ -173,8 +184,6 @@ function createApp(options = {}) {
       res.json({ok:true,credited:false,transaction:awards.transaction(db,item.reference)});
     } catch(error){ next(error); }
   });
-  app.use("/api", createPublicityRouter({ repository: publicity, requirePublicityAdmin: auth.requirePublicityAdmin, audit: content.audit }));
-
   app.post("/api/simulated-votes", paymentLimit, (req, res) => {
     if(maintenanceMode)return res.status(503).json({ok:false,message:"Voting is temporarily unavailable during maintenance."});
     if (!simulationEnabled) return res.status(404).json({ ok: false, message: "Simulation is disabled." });
@@ -229,13 +238,7 @@ function createApp(options = {}) {
     } catch (error) { next(error); }
   });
 
-  app.use("/api/admin",(req,res,next)=>{
-    if(["GET","HEAD","OPTIONS"].includes(req.method))return next();
-    const origin=req.get("origin");if(!origin)return next();
-    const expected=publicBaseUrl||`${req.protocol}://${req.get("host")}`;
-    if(origin!==expected)return res.status(403).json({ok:false,message:"Cross-origin admin request rejected."});
-    next();
-  });
+  app.use("/api/admin",requireSameOrigin);
   app.post("/api/admin/login", rateLimit({ windowMs: 900_000, max: 10 }), auth.login);
   app.post("/api/admin/logout", auth.requireAnyAdmin, auth.logout);
   app.get("/api/admin/context", auth.requireAnyAdmin, (req, res) => {

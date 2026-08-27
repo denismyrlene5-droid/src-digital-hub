@@ -5,12 +5,37 @@
   const esc = value => String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
   const formatDate = value => value ? new Intl.DateTimeFormat("en-GH", { year: "numeric", month: "long", day: "numeric" }).format(new Date(value.length === 10 ? `${value}T00:00:00` : value)) : "Not scheduled";
   const formatTime = value => value ? new Intl.DateTimeFormat("en-GH", { hour: "numeric", minute: "2-digit" }).format(new Date(`2000-01-01T${value}:00`)) : "Time to be confirmed";
+  const announcementImageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
+  const announcementImageMaxBytes = 2 * 1024 * 1024;
 
   async function api(url, options = {}) {
     const response = await fetch(url, options);
     const data = await response.json().catch(() => ({}));
     if (!response.ok) { const error = new Error(data.message || "Request failed."); error.status = response.status; throw error; }
     return data;
+  }
+
+  async function filePayload(file) {
+    if (!file) return null;
+    const dataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(new Error("Could not read the selected image."));
+      reader.readAsDataURL(file);
+    });
+    return { name: file.name, type: file.type, data: dataUrl.split(",")[1] || "" };
+  }
+
+  function validateAnnouncementImage(file) {
+    if (!file) return "";
+    const extension = file.name.toLowerCase().split(".").pop();
+    if (!announcementImageTypes.has(file.type) || !["jpg", "jpeg", "png", "webp"].includes(extension)) return "Choose a JPG, JPEG, PNG or WEBP image.";
+    if (!file.size || file.size > announcementImageMaxBytes) return "The image must be smaller than 2 MB.";
+    return "";
+  }
+
+  function adminImageUrl(url) {
+    return String(url || "").replace(/^\/api\/publicity\/files\//, "/api/publicity/admin/files/");
   }
 
   function imageBlock(url, alt, className = "publicity-image") {
@@ -271,17 +296,52 @@
       <label class="field-wide"><span>Title</span><input name="title" maxlength="160" value="${esc(item?.title || "")}" required></label>
       ${announcement ? `<label class="field-wide"><span>Short summary</span><textarea name="summary" maxlength="360" required>${esc(item?.summary || "")}</textarea></label><label class="field-wide"><span>Full content (plain text)</span><textarea name="body" maxlength="20000" rows="8" required>${esc(item?.body || "")}</textarea></label>` : `<label class="field-wide"><span>Short description</span><textarea name="shortDescription" maxlength="360" required>${esc(item?.shortDescription || "")}</textarea></label><label class="field-wide"><span>Full description (plain text)</span><textarea name="description" maxlength="20000" rows="7" required>${esc(item?.description || "")}</textarea></label>`}
       <label><span>Category</span><select name="category">${categoryOptions}</select></label><label><span>Status</span><select name="status">${statusOptions}</select></label>
-      ${announcement ? `<label><span>Publication date</span><input type="datetime-local" name="publishedAt" value="${item?.publishedAt ? esc(new Date(item.publishedAt).toISOString().slice(0,16)) : ""}"></label><label><span>Featured image URL</span><input type="url" name="featuredImage" value="${esc(item?.featuredImage || "")}" placeholder="https://… or /local-path"></label><label><span>External HTTPS link</span><input type="url" name="externalUrl" value="${esc(item?.externalUrl || "")}"></label><label><span>Document attachment URL</span><input type="text" name="attachmentUrl" value="${esc(item?.attachmentUrl || "")}" placeholder="PDF, DOCX, XLSX, PPTX or TXT"></label><label class="check-field"><input type="checkbox" name="urgent" ${item?.urgent ? "checked" : ""}><span>Urgent notice</span></label><label class="check-field"><input type="checkbox" name="featured" ${item?.featured ? "checked" : ""}><span>Featured</span></label>` : `<label><span>Event date</span><input type="date" name="eventDate" value="${esc(item?.eventDate || "")}" required></label><label><span>Start time</span><input type="time" name="startTime" value="${esc(item?.startTime || "")}"></label><label><span>End time</span><input type="time" name="endTime" value="${esc(item?.endTime || "")}"></label><label><span>Venue</span><input name="venue" maxlength="200" value="${esc(item?.venue || "")}" required></label><label><span>Organizer</span><input name="organizer" maxlength="160" value="${esc(item?.organizer || "")}"></label><label><span>Poster image URL</span><input type="text" name="posterImage" value="${esc(item?.posterImage || "")}" placeholder="https://… or /local-path"></label><label><span>Registration HTTPS URL</span><input type="url" name="registrationUrl" value="${esc(item?.registrationUrl || "")}"></label><label class="check-field"><input type="checkbox" name="featured" ${item?.featured ? "checked" : ""}><span>Featured</span></label>`}
+      ${announcement ? `<label><span>Publication date</span><input type="datetime-local" name="publishedAt" value="${item?.publishedAt ? esc(new Date(item.publishedAt).toISOString().slice(0,16)) : ""}"></label><fieldset class="field-wide announcement-image-field"><legend>Featured image</legend><div class="announcement-image-controls"><label><span>Upload image</span><input type="file" name="featuredImageFile" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"><small>Choose from this device. JPG, JPEG, PNG or WEBP; maximum 2 MB.</small></label><div class="image-choice-divider" aria-hidden="true">OR</div><label><span>Featured Image URL (optional)</span><input type="text" inputmode="url" name="featuredImage" value="${esc(item?.featuredImage || "")}" placeholder="https://… or /local-path"><small>An uploaded image takes priority over this URL.</small></label></div><figure class="announcement-image-preview" ${item?.featuredImage ? "" : "hidden"}><img src="${esc(adminImageUrl(item?.featuredImage || ""))}" alt="Featured image preview"><figcaption>Image preview</figcaption></figure></fieldset><label><span>External HTTPS link</span><input type="url" name="externalUrl" value="${esc(item?.externalUrl || "")}"></label><label><span>Document attachment URL</span><input type="text" name="attachmentUrl" value="${esc(item?.attachmentUrl || "")}" placeholder="PDF, DOCX, XLSX, PPTX or TXT"></label><label class="check-field"><input type="checkbox" name="urgent" ${item?.urgent ? "checked" : ""}><span>Urgent notice</span></label><label class="check-field"><input type="checkbox" name="featured" ${item?.featured ? "checked" : ""}><span>Featured</span></label>` : `<label><span>Event date</span><input type="date" name="eventDate" value="${esc(item?.eventDate || "")}" required></label><label><span>Start time</span><input type="time" name="startTime" value="${esc(item?.startTime || "")}"></label><label><span>End time</span><input type="time" name="endTime" value="${esc(item?.endTime || "")}"></label><label><span>Venue</span><input name="venue" maxlength="200" value="${esc(item?.venue || "")}" required></label><label><span>Organizer</span><input name="organizer" maxlength="160" value="${esc(item?.organizer || "")}"></label><label><span>Poster image URL</span><input type="text" name="posterImage" value="${esc(item?.posterImage || "")}" placeholder="https://… or /local-path"></label><label><span>Registration HTTPS URL</span><input type="url" name="registrationUrl" value="${esc(item?.registrationUrl || "")}"></label><label class="check-field"><input type="checkbox" name="featured" ${item?.featured ? "checked" : ""}><span>Featured</span></label>`}
       <div class="editor-actions field-wide"><p class="form-message" aria-live="polite"></p><button class="hub-btn hub-btn-primary" type="submit">Save ${announcement ? "announcement" : "event"}</button></div></form></section></div>`;
-    const close = () => { host.innerHTML = ""; };
+    let previewObjectUrl = "";
+    const close = () => { if (previewObjectUrl) URL.revokeObjectURL(previewObjectUrl); host.innerHTML = ""; };
     host.querySelector(".editor-close").addEventListener("click", close);
     host.querySelector(".editor-backdrop").addEventListener("click", event => { if (event.target.classList.contains("editor-backdrop")) close(); });
     const form = host.querySelector("#editorForm");
+    if (announcement) {
+      const imageInput = form.elements.featuredImageFile;
+      const preview = form.querySelector(".announcement-image-preview");
+      const previewImage = preview.querySelector("img");
+      imageInput.addEventListener("change", () => {
+        const file = imageInput.files[0];
+        const error = validateAnnouncementImage(file);
+        if (previewObjectUrl) URL.revokeObjectURL(previewObjectUrl);
+        previewObjectUrl = "";
+        if (error) {
+          imageInput.value = "";
+          form.querySelector(".form-message").textContent = error;
+          if (!item?.featuredImage) preview.hidden = true;
+          return;
+        }
+        form.querySelector(".form-message").textContent = "";
+        if (!file) {
+          preview.hidden = !item?.featuredImage;
+          previewImage.src = adminImageUrl(item?.featuredImage || "");
+          return;
+        }
+        previewObjectUrl = URL.createObjectURL(file);
+        previewImage.src = previewObjectUrl;
+        preview.hidden = false;
+      });
+    }
     form.addEventListener("submit", async event => {
       event.preventDefault(); const message = form.querySelector(".form-message"); message.textContent = "Saving…";
       const values = Object.fromEntries(new FormData(form));
+      delete values.featuredImageFile;
       values.featured = form.elements.featured.checked;
-      if (announcement) values.urgent = form.elements.urgent.checked;
+      if (announcement) {
+        values.urgent = form.elements.urgent.checked;
+        const imageFile = form.elements.featuredImageFile.files[0];
+        const imageError = validateAnnouncementImage(imageFile);
+        if (imageError) { message.textContent = imageError; return; }
+        try { values.featuredImageUpload = await filePayload(imageFile); }
+        catch (error) { message.textContent = error.message; return; }
+      }
       if (values.publishedAt) values.publishedAt = new Date(values.publishedAt).toISOString();
       try {
         await api(`/api/publicity/admin/${type}${item ? `/${item.id}` : ""}`, { method: item ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(values) });

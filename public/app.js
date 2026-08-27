@@ -130,7 +130,7 @@ function openVoteModal(id) {
 }
 
 function closeVoteModal() {
-  if (paymentPollingTimer) clearInterval(paymentPollingTimer);
+  if (paymentPollingTimer) clearTimeout(paymentPollingTimer);
   paymentPollingTimer = null; byId("voteModal").classList.remove("open");
   byId("voteModal").setAttribute("aria-hidden", "true"); document.body.classList.remove("modal-open");
 }
@@ -203,13 +203,16 @@ async function startMomoPayment() {
     const data = await api("/api/awards/transactions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ nomineeId: selectedNominee.id, votes: selectedVotes, email, phone, network:provider, provider:configuredPaymentProvider }) });
     setPaymentStatus("Approve the Mobile Money prompt", data.displayText || "Complete authorization on your mobile phone."); button.textContent = "Waiting for approval...";
     const started = Date.now();
-    paymentPollingTimer = setInterval(async () => {
+    const pollPayment = async () => {
       try {
         const verify = await api(`/api/awards/transactions/${encodeURIComponent(data.reference)}/verify`,{method:"POST"});
-        if (verify.transaction?.voteCreditStatus === "credited") { clearInterval(paymentPollingTimer); paymentPollingTimer = null; await loadAwards(); closeVoteModal(); showToast("Payment verified", `Your votes were credited. Reference: ${data.reference}`); }
-        else if (["failed","cancelled","expired"].includes(verify.transaction?.paymentStatus) || Date.now() - started > 180000) { clearInterval(paymentPollingTimer); paymentPollingTimer = null; button.disabled = false; button.textContent = "Try Payment Again"; setPaymentStatus("Payment not completed", "No votes were credited. You may safely retry.", false); }
+        if (verify.transaction?.voteCreditStatus === "credited") { paymentPollingTimer = null; await loadAwards(); closeVoteModal(); showToast("Payment verified", `Your votes were credited. Reference: ${data.reference}`); return; }
+        if (["failed","cancelled","expired"].includes(verify.transaction?.paymentStatus) || Date.now() - started > 180000) { paymentPollingTimer = null; button.disabled = false; button.textContent = "Try Payment Again"; setPaymentStatus("Payment not completed", "No votes were credited. You may safely retry.", false); return; }
       } catch {}
-    }, 4000);
+      if (Date.now() - started > 180000) { paymentPollingTimer = null; button.disabled = false; button.textContent = "Try Payment Again"; setPaymentStatus("Payment not completed", "Verification timed out. No votes were credited; you may safely retry.", false); return; }
+      paymentPollingTimer = setTimeout(pollPayment, 4000);
+    };
+    paymentPollingTimer = setTimeout(pollPayment, 4000);
   } catch (error) { button.disabled = false; button.textContent = "Pay with Mobile Money"; setPaymentStatus("Could not start payment", error.message, false); }
 }
 

@@ -144,10 +144,14 @@ test("public frontend retains accessibility and responsive spacing polish", asyn
   const app = await fixture();
   try {
     const css = await (await fetch(`${app.base}/hub.css`)).text();
+    const home = await (await fetch(`${app.base}/`)).text();
+    const awards = await (await fetch(`${app.base}/awards`)).text();
     assert.match(css, /\.hub-footer-grid a[^}]*min-height:44px/);
     assert.match(css, /\.urgent-notice-content b\{white-space:normal/);
     assert.match(css, /\.hub-hero h1\{font-size:clamp\(40px,12vw,49px\)/);
     assert.match(css, /\.publicity-metrics\{grid-template-columns:repeat\(4,1fr\)\}/);
+    assert.match(home, /\/hub\.css\?v=12/);
+    assert.match(awards, /\/hub\.css\?v=12/);
   } finally { await app.close(); }
 });
 

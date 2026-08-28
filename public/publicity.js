@@ -329,6 +329,11 @@
     host.querySelector(".editor-close").addEventListener("click", close);
     host.querySelector(".editor-backdrop").addEventListener("click", event => { if (event.target.classList.contains("editor-backdrop")) close(); });
     const form = host.querySelector("#editorForm");
+    if (!announcement) {
+      const existingPosterLabel = form.elements.posterImage.closest("label");
+      existingPosterLabel.insertAdjacentHTML("beforebegin", `<fieldset class="field-wide announcement-image-field event-image-field"><legend>Event cover image</legend><div class="announcement-image-controls"><label><span>Upload Event Photo</span><input type="file" name="posterImageFile" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"><small>Choose from this device. JPG, JPEG, PNG or WEBP; maximum 2 MB.</small></label><div class="image-choice-divider" aria-hidden="true">OR</div><label><span>Event Image URL</span><input type="text" inputmode="url" name="posterImage" value="${esc(item?.posterImage || "")}" placeholder="https://… or /local-path"><small>An uploaded image takes priority over this URL.</small></label></div><figure class="announcement-image-preview event-image-preview" ${item?.posterImage ? "" : "hidden"}><img ${item?.posterImage ? `src="${esc(adminImageUrl(item.posterImage))}"` : ""} alt="Event cover image preview"><figcaption>Event image preview</figcaption><button class="image-remove-button" type="button" data-remove-event-image>Remove image</button></figure></fieldset>`);
+      existingPosterLabel.remove();
+    }
     if (announcement && item?.publishedAt) form.elements.publishedAt.value = datetimeLocal(item.publishedAt);
     let orderedInlineImages = () => [];
     if (announcement) {
@@ -439,11 +444,56 @@
         preview.hidden = true;
         message.textContent = "Featured image removed. Save the announcement to keep this change.";
       });
+    } else {
+      const imageInput = form.elements.posterImageFile;
+      const imageUrlInput = form.elements.posterImage;
+      const preview = form.querySelector(".event-image-preview");
+      const previewImage = preview.querySelector("img");
+      const message = form.querySelector(".form-message");
+      previewImage.onerror = () => { preview.hidden = true; message.textContent = "The event image could not be previewed. Check the file or URL."; };
+      previewImage.onload = () => { preview.hidden = false; if (message.textContent.includes("could not be previewed")) message.textContent = ""; };
+      imageInput.addEventListener("change", () => {
+        const file = imageInput.files[0];
+        const error = validateAnnouncementImage(file);
+        if (previewObjectUrl) URL.revokeObjectURL(previewObjectUrl);
+        previewObjectUrl = "";
+        if (error) {
+          imageInput.value = "";
+          message.textContent = error;
+          if (!item?.posterImage) preview.hidden = true;
+          return;
+        }
+        message.textContent = "";
+        if (!file) {
+          preview.hidden = !imageUrlInput.value.trim();
+          if (imageUrlInput.value.trim()) previewImage.src = adminImageUrl(imageUrlInput.value.trim());
+          return;
+        }
+        previewObjectUrl = URL.createObjectURL(file);
+        previewImage.src = previewObjectUrl;
+        preview.hidden = false;
+      });
+      imageUrlInput.addEventListener("change", () => {
+        if (imageInput.files[0]) return;
+        if (!imageUrlInput.value.trim()) { previewImage.removeAttribute("src"); preview.hidden = true; return; }
+        previewImage.src = adminImageUrl(imageUrlInput.value.trim());
+        preview.hidden = false;
+      });
+      form.querySelector("[data-remove-event-image]").addEventListener("click", () => {
+        if (previewObjectUrl) URL.revokeObjectURL(previewObjectUrl);
+        previewObjectUrl = "";
+        imageInput.value = "";
+        imageUrlInput.value = "";
+        previewImage.removeAttribute("src");
+        preview.hidden = true;
+        message.textContent = "Event image removed. Save the event to keep this change.";
+      });
     }
     form.addEventListener("submit", async event => {
       event.preventDefault(); const message = form.querySelector(".form-message"); message.textContent = "Saving…";
       const values = Object.fromEntries(new FormData(form));
       delete values.featuredImageFile;
+      delete values.posterImageFile;
       values.featured = form.elements.featured.checked;
       if (announcement) {
         values.urgent = form.elements.urgent.checked;
@@ -467,6 +517,14 @@
           message.textContent = "Uploading and saving article images…";
         }
         catch (error) { message.textContent = error.message; return; }
+      } else {
+        const imageFile = form.elements.posterImageFile.files[0];
+        const imageError = validateAnnouncementImage(imageFile);
+        if (imageError) { message.textContent = imageError; return; }
+        try {
+          values.posterImageUpload = await filePayload(imageFile, progress => { message.textContent = `Preparing event image: ${progress}%`; });
+          if (imageFile) message.textContent = "Uploading and saving event image…";
+        } catch (error) { message.textContent = error.message; return; }
       }
       if (values.publishedAt) values.publishedAt = new Date(values.publishedAt).toISOString();
       try {

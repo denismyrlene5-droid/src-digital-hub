@@ -28,6 +28,10 @@ function createPublicityRouter({ repository, uploadDirectory, requirePublicityAd
       throw error;
     }
   };
+  const saveEventImage = body => {
+    const file = uploads.save(body?.posterImageUpload, "image");
+    return { file, input: { ...body, posterImage: file ? `/api/publicity/files/${file.token}` : body?.posterImage } };
+  };
 
   router.get("/publicity/home", handle((req, res) => res.json(repository.homeFeed())));
   router.get("/publicity/urgent", handle((req, res) => res.json({ announcement: repository.urgentNotice() })));
@@ -56,6 +60,7 @@ function createPublicityRouter({ repository, uploadDirectory, requirePublicityAd
 
   router.use("/publicity/admin", requirePublicityAdmin);
   router.use("/publicity/admin/announcements", express.json({ limit: "28mb" }));
+  router.use("/publicity/admin/events", express.json({ limit: "3mb" }));
   router.use(express.json({ limit: "32kb" }));
   router.get("/publicity/admin/files/:token", handle((req, res) => {
     const token = repository.adminAnnouncementFile(req.params.token);
@@ -117,13 +122,31 @@ function createPublicityRouter({ repository, uploadDirectory, requirePublicityAd
     res.json({ event });
   }));
   router.post("/publicity/admin/events", handle((req, res) => {
-    const event = repository.createEvent(req.body, req.admin.role); audit(req.admin,"event.created","event",event.id,`${event.title}: ${event.status}`); res.status(201).json({ event });
+    const saved = saveEventImage(req.body);
+    try {
+      const event = repository.createEvent(saved.input, req.admin.role);
+      audit(req.admin,"event.created","event",event.id,`${event.title}: ${event.status}`);
+      res.status(201).json({ event });
+    } catch (error) { uploads.remove(saved.file); throw error; }
   }));
   router.put("/publicity/admin/events/:id", handle((req, res) => {
-    const event = repository.updateEvent(req.params.id, req.body, req.admin.role); audit(req.admin,"event.updated","event",event.id,`${event.title}: ${event.status}`); res.json({ event });
+    const previous = repository.getEventAdmin(req.params.id);
+    if (!previous) { const error = new Error("Event not found."); error.status = 404; throw error; }
+    const previousToken = uploadToken(previous.posterImage);
+    const saved = saveEventImage(req.body);
+    try {
+      const event = repository.updateEvent(req.params.id, saved.input, req.admin.role);
+      const currentToken = uploadToken(event.posterImage);
+      if (previousToken && previousToken !== currentToken && !repository.adminAnnouncementFile(previousToken)) uploads.remove(previousToken);
+      audit(req.admin,"event.updated","event",event.id,`${event.title}: ${event.status}`);
+      res.json({ event });
+    } catch (error) { uploads.remove(saved.file); throw error; }
   }));
   router.delete("/publicity/admin/events/:id", handle((req, res) => {
+    const previous = repository.getEventAdmin(req.params.id);
+    const previousToken = uploadToken(previous?.posterImage);
     repository.deleteEvent(req.params.id, req.admin.role);
+    if (previousToken && !repository.adminAnnouncementFile(previousToken)) uploads.remove(previousToken);
     audit(req.admin,"event.deleted","event",req.params.id,"Event removed");
     res.json({ ok: true });
   }));

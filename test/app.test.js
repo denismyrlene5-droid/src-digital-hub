@@ -550,6 +550,63 @@ test("events classify upcoming, past, and cancelled records correctly", async ()
   } finally { await app.close(); }
 });
 
+test("event cover images upload, persist through edits, display publicly, replace, and validate safely", async () => {
+  const app = await fixture();
+  const imageUpload = { name: "event.png", type: "image/png", data: Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]).toString("base64") };
+  const tomorrow = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
+  try {
+    const cookie = await adminCookie(app);
+    const createdResponse = await fetch(`${app.base}/api/publicity/admin/events`, {
+      method: "POST", headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ ...eventPayload, title: "Event Cover Image Test", eventDate: tomorrow, posterImage: "https://example.com/ignored.jpg", posterImageUpload: imageUpload })
+    });
+    assert.equal(createdResponse.status, 201);
+    const created = (await createdResponse.json()).event;
+    assert.match(created.posterImage, /^\/api\/publicity\/files\/[a-f0-9]{32}\.png$/);
+    const firstToken = created.posterImage.split("/").pop();
+    assert.equal((await fetch(`${app.base}${created.posterImage}`)).status, 404);
+    assert.equal((await fetch(`${app.base}/api/publicity/admin/files/${firstToken}`, { headers: { Cookie: cookie } })).status, 200);
+
+    const publishedResponse = await fetch(`${app.base}/api/publicity/admin/events/${created.id}`, {
+      method: "PUT", headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ ...eventPayload, title: created.title, eventDate: tomorrow, status: "published", posterImage: created.posterImage })
+    });
+    assert.equal(publishedResponse.status, 200);
+    const published = (await publishedResponse.json()).event;
+    assert.equal(published.posterImage, created.posterImage);
+    assert.equal((await fetch(`${app.base}${published.posterImage}`)).status, 200);
+    const publicEvent = (await (await fetch(`${app.base}/api/events/${published.slug}`)).json()).event;
+    assert.equal(publicEvent.posterImage, published.posterImage);
+    const homeFeed = await (await fetch(`${app.base}/api/publicity/home`)).json();
+    assert.equal(homeFeed.events.some(event => event.id === published.id && event.posterImage === published.posterImage), true);
+
+    const replacement = { name: "replacement.webp", type: "image/webp", data: Buffer.from("RIFF0000WEBP").toString("base64") };
+    const replacedResponse = await fetch(`${app.base}/api/publicity/admin/events/${created.id}`, {
+      method: "PUT", headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ ...eventPayload, title: created.title, eventDate: tomorrow, status: "published", posterImage: published.posterImage, posterImageUpload: replacement })
+    });
+    assert.equal(replacedResponse.status, 200);
+    const replaced = (await replacedResponse.json()).event;
+    assert.match(replaced.posterImage, /^\/api\/publicity\/files\/[a-f0-9]{32}\.webp$/);
+    assert.equal((await fetch(`${app.base}/api/publicity/admin/files/${firstToken}`, { headers: { Cookie: cookie } })).status, 404);
+    assert.equal((await fetch(`${app.base}${replaced.posterImage}`)).status, 200);
+    const replacementToken = replaced.posterImage.split("/").pop();
+    const removedResponse = await fetch(`${app.base}/api/publicity/admin/events/${created.id}`, {
+      method: "PUT", headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ ...eventPayload, title: created.title, eventDate: tomorrow, status: "published", posterImage: "" })
+    });
+    assert.equal(removedResponse.status, 200);
+    assert.equal((await removedResponse.json()).event.posterImage, null);
+    assert.equal((await fetch(`${app.base}/api/publicity/admin/files/${replacementToken}`, { headers: { Cookie: cookie } })).status, 404);
+
+    const invalidResponse = await fetch(`${app.base}/api/publicity/admin/events`, {
+      method: "POST", headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ ...eventPayload, posterImageUpload: { name: "malware.exe", type: "application/octet-stream", data: "TVqQ" } })
+    });
+    assert.equal(invalidResponse.status, 400);
+  } finally { await app.close(); }
+});
+
 test("invalid dates, unsafe HTML, malformed IDs, and unsafe URLs are rejected", async () => {
   const app = await fixture();
   try {
@@ -1003,7 +1060,10 @@ test("CMS migrations and content persist across a SQLite restart", () => {
     const inlineImages = JSON.stringify([{ id: "img_cccccccccccc", url: "/api/publicity/files/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png", caption: "Persistent photo caption" }]);
     first.db.prepare(`INSERT INTO announcements(title,slug,summary,body,category,status,inline_images_json,author_role)
       VALUES(?,?,?,?,?,'draft',?,'super_admin')`).run("Persistent article", "persistent-article", "A summary long enough to persist.", "A paragraph before the photo.\n\n[[image:img_cccccccccccc]]\n\nA paragraph after the photo.", "General", inlineImages);
+    first.db.prepare(`INSERT INTO events(title,slug,short_description,description,event_date,venue,category,poster_image,status,author_role)
+      VALUES(?,?,?,?,?,?,?,?,?,?)`).run("Persistent event", "persistent-event", "A persistent event cover image.", "This event description and cover image must survive an application restart.", "2099-12-20", "SRC Auditorium", "SRC", "/api/publicity/files/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.webp", "published", "super_admin");
     fs.writeFileSync(path.join(uploadDirectory, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png"), Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]));
+    fs.writeFileSync(path.join(uploadDirectory, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.webp"), Buffer.from("RIFF0000WEBP"));
     first.db.close();
     const second = createApp({ databasePath, uploadDirectory, adminPassword: "test-password", nodeEnv: "test", seedData: false });
     assert.equal(second.db.prepare("SELECT active FROM categories WHERE name=?").get("Persistent Category").active, 1);
@@ -1011,6 +1071,8 @@ test("CMS migrations and content persist across a SQLite restart", () => {
     assert.equal(fs.existsSync(uploadDirectory), true);
     assert.equal(second.db.prepare("SELECT inline_images_json value FROM announcements WHERE slug='persistent-article'").get().value, inlineImages);
     assert.equal(fs.existsSync(path.join(uploadDirectory, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png")), true);
+    assert.equal(second.db.prepare("SELECT poster_image value FROM events WHERE slug='persistent-event'").get().value, "/api/publicity/files/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.webp");
+    assert.equal(fs.existsSync(path.join(uploadDirectory, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.webp")), true);
     second.db.close();
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 });

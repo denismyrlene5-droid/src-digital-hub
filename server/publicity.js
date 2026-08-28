@@ -325,16 +325,20 @@ function createPublicityRepository(db, options = {}) {
   function publicAnnouncementFile(token) {
     if (!/^[a-f0-9]{32}\.[a-z0-9]{2,5}$/.test(String(token || ""))) return null;
     const url = `/api/publicity/files/${token}`;
-    return db.prepare(`SELECT featured_image,inline_images_json FROM announcements WHERE status='published'
+    const usedByAnnouncement = db.prepare(`SELECT featured_image,inline_images_json FROM announcements WHERE status='published'
       AND published_at IS NOT NULL AND datetime(published_at)<=datetime('now')`).all()
-      .some(row => row.featured_image === url || storedInlineImages(row.inline_images_json).some(image => image.url === url)) ? token : null;
+      .some(row => row.featured_image === url || storedInlineImages(row.inline_images_json).some(image => image.url === url));
+    const usedByEvent = db.prepare("SELECT 1 FROM events WHERE poster_image=? AND status IN ('published','cancelled','completed')").get(url);
+    return usedByAnnouncement || usedByEvent ? token : null;
   }
 
   function adminAnnouncementFile(token) {
     if (!/^[a-f0-9]{32}\.[a-z0-9]{2,5}$/.test(String(token || ""))) return null;
     const url = `/api/publicity/files/${token}`;
-    return db.prepare("SELECT featured_image,inline_images_json FROM announcements").all()
-      .some(row => row.featured_image === url || storedInlineImages(row.inline_images_json).some(image => image.url === url)) ? token : null;
+    const usedByAnnouncement = db.prepare("SELECT featured_image,inline_images_json FROM announcements").all()
+      .some(row => row.featured_image === url || storedInlineImages(row.inline_images_json).some(image => image.url === url));
+    const usedByEvent = db.prepare("SELECT 1 FROM events WHERE poster_image=?").get(url);
+    return usedByAnnouncement || usedByEvent ? token : null;
   }
 
   function createEvent(input, role) {

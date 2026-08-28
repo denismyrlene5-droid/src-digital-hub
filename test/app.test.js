@@ -101,7 +101,7 @@ test("backend source is not publicly served", async () => {
 test("Digital Hub and Awards routes are available", async () => {
   const app = await fixture();
   try {
-    for (const path of ["/", "/announcements", "/events", "/businesses", "/lost-found", "/feedback", "/media", "/executives", "/contact", "/admin", "/awards"]) {
+    for (const path of ["/", "/announcements", "/events", "/academics", "/academics/course-structure", "/businesses", "/lost-found", "/feedback", "/media", "/executives", "/contact", "/admin", "/awards"]) {
       const response = await fetch(`${app.base}${path}`);
       assert.equal(response.status, 200, path);
     }
@@ -151,8 +151,8 @@ test("public frontend retains accessibility and responsive spacing polish", asyn
     assert.match(css, /\.urgent-notice-content b\{white-space:normal/);
     assert.match(css, /\.hub-hero h1\{font-size:clamp\(40px,12vw,49px\)/);
     assert.match(css, /\.publicity-metrics\{grid-template-columns:repeat\(4,1fr\)\}/);
-    assert.match(home, /\/hub\.css\?v=13/);
-    assert.match(awards, /\/hub\.css\?v=13/);
+    assert.match(home, /\/hub\.css\?v=14/);
+    assert.match(awards, /\/hub\.css\?v=14/);
   } finally { await app.close(); }
 });
 
@@ -1146,4 +1146,93 @@ test("multipart publicity images are optimized and receive a card thumbnail", as
     assert.equal(fs.existsSync(path.join(app.uploadDirectory, token)), false);
     assert.equal(fs.existsSync(path.join(app.uploadDirectory, token.replace(".webp", ".thumb.webp"))), false);
   } finally { await app.close(); }
+});
+
+test("official Academics import exposes all programme combinations and five semesters", async () => {
+  const app = await fixture();
+  try {
+    const response = await fetch(`${app.base}/api/academics/current`);
+    const { structure } = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(structure.status, "published");
+    assert.equal(structure.programmes.length, 12);
+    for (const programme of structure.programmes) assert.deepEqual([...new Set(programme.courses.map(item => item.semester))], [1, 2, 3, 4, 5]);
+    const socialStudies = structure.programmes.find(item => item.label === "SOCIAL STUDIES");
+    assert.ok(socialStudies.courses.some(item => item.code === "ECO 308SW" && item.title === "Economy of Ghana" && item.semester === 5));
+    const mathematicsChemistry = structure.programmes.find(item => item.label === "B.ED. MATHEMATICS - MATHEMATICS MAJOR / CHEMISTRY MINOR");
+    assert.ok(mathematicsChemistry.courses.some(item => item.code === "MAT 301SW" && item.title === "Advanced Calculus I" && item.semester === 4));
+    assert.ok(mathematicsChemistry.courses.some(item => item.code === "CHE 216SW" && item.semester === 4));
+    const physicsMathematics = structure.programmes.find(item => item.label === "B.ED. SCIENCE - PHYSICS MAJOR / MATHEMATICS MINOR");
+    assert.ok(physicsMathematics.courses.some(item => item.code === "PHY 404SW" && item.semester === 5));
+    assert.ok(physicsMathematics.courses.some(item => item.code === "MAT 301SW" && item.semester === 5));
+    assert.equal(physicsMathematics.courses.some(item => !item.code || !item.title), false);
+    const source = await fetch(`${app.base}${structure.sourceDocument.url}`);
+    assert.equal(source.status, 200);
+    assert.match(source.headers.get("content-type"), /^application\/pdf/);
+  } finally { await app.close(); }
+});
+
+test("Academics drafts stay private and publishing archives the previous official structure", async () => {
+  const app = await fixture();
+  try {
+    assert.equal((await fetch(`${app.base}/api/academics/admin/versions`)).status, 401);
+    const cookie = await adminCookie(app);
+    const original = (await (await fetch(`${app.base}/api/academics/current`)).json()).structure;
+    const draftResponse = await fetch(`${app.base}/api/academics/admin/versions`, { method: "POST", headers: { "Content-Type": "application/json", Cookie: cookie }, body: JSON.stringify({ title: original.title, versionName: "Verified test revision", sourceNotes: "Test-only draft", cloneFromId: original.id }) });
+    const draft = (await draftResponse.json()).structure;
+    assert.equal(draftResponse.status, 201);
+    assert.equal(draft.status, "draft");
+    const socialStudies = draft.programmes.find(item => item.label === "SOCIAL STUDIES");
+    const course = socialStudies.courses.find(item => item.code === "EDF 102SW" && item.semester === 1);
+    const edit = await fetch(`${app.base}/api/academics/admin/courses/${course.id}`, { method: "PUT", headers: { "Content-Type": "application/json", Cookie: cookie }, body: JSON.stringify({ ...course, title: "Draft-only course title" }) });
+    assert.equal(edit.status, 200);
+    const beforePublish = (await (await fetch(`${app.base}/api/academics/current`)).json()).structure;
+    assert.equal(beforePublish.id, original.id);
+    assert.equal(beforePublish.programmes.flatMap(item => item.courses).some(item => item.title === "Draft-only course title"), false);
+    const publish = await fetch(`${app.base}/api/academics/admin/versions/${draft.id}/status`, { method: "POST", headers: { "Content-Type": "application/json", Cookie: cookie }, body: JSON.stringify({ status: "published" }) });
+    assert.equal(publish.status, 200);
+    const afterPublish = (await (await fetch(`${app.base}/api/academics/current`)).json()).structure;
+    assert.equal(afterPublish.id, draft.id);
+    assert.equal(afterPublish.programmes.flatMap(item => item.courses).some(item => item.title === "Draft-only course title"), true);
+    const versions = (await (await fetch(`${app.base}/api/academics/admin/versions`, { headers: { Cookie: cookie } })).json()).versions;
+    assert.equal(versions.find(item => item.id === original.id).status, "archived");
+  } finally { await app.close(); }
+});
+
+test("Academics administration is role-protected and retains uploaded PDF history", async () => {
+  const app = await fixture({ contentEditorPassword: "content-test-password" });
+  try {
+    const editorCookie = await adminCookie(app, "content-test-password");
+    assert.equal((await fetch(`${app.base}/api/academics/admin/versions`, { headers: { Cookie: editorCookie } })).status, 403);
+    const cookie = await adminCookie(app);
+    const original = (await (await fetch(`${app.base}/api/academics/current`)).json()).structure;
+    const draft = (await (await fetch(`${app.base}/api/academics/admin/versions`, { method: "POST", headers: { "Content-Type": "application/json", Cookie: cookie }, body: JSON.stringify({ title: original.title, versionName: "Document history test", cloneFromId: original.id }) })).json()).structure;
+    const form = new FormData();
+    form.append("document", new Blob([Buffer.from("%PDF-1.4\n1 0 obj\n<<>>\nendobj\n%%EOF")], { type: "application/pdf" }), "updated-structure.pdf");
+    const uploaded = await fetch(`${app.base}/api/academics/admin/versions/${draft.id}/documents`, { method: "POST", headers: { Cookie: cookie }, body: form });
+    assert.equal(uploaded.status, 201);
+    const detail = (await (await fetch(`${app.base}/api/academics/admin/versions/${draft.id}`, { headers: { Cookie: cookie } })).json()).structure;
+    assert.equal(detail.documents.length, 2);
+    assert.equal(detail.sourceDocument.name, "updated-structure.pdf");
+    assert.equal((await fetch(`${app.base}${detail.sourceDocument.url}`, { headers: { Cookie: cookie } })).status, 200);
+  } finally { await app.close(); }
+});
+
+test("official Academics data and source PDF survive application restarts", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "src-academics-persistence-"));
+  const databasePath = path.join(directory, "hub.sqlite");
+  const uploadDirectory = path.join(directory, "uploads");
+  try {
+    const first = createApp({ databasePath, uploadDirectory, adminPassword: "test-password", nodeEnv: "test", seedData: false });
+    const structure = first.db.prepare("SELECT id FROM academic_structures WHERE status='published'").get();
+    const document = first.db.prepare("SELECT file_token token FROM academic_documents WHERE structure_id=? AND is_current=1").get(structure.id);
+    assert.equal(first.db.prepare("SELECT COUNT(*) count FROM academic_programmes WHERE structure_id=?").get(structure.id).count, 12);
+    assert.equal(fs.existsSync(path.join(uploadDirectory, document.token)), true);
+    first.db.close();
+    fs.unlinkSync(path.join(uploadDirectory, document.token));
+    const second = createApp({ databasePath, uploadDirectory, adminPassword: "test-password", nodeEnv: "test", seedData: false });
+    assert.equal(second.db.prepare("SELECT COUNT(*) count FROM academic_structures").get().count, 1);
+    assert.equal(fs.existsSync(path.join(uploadDirectory, document.token)), true);
+    second.db.close();
+  } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 });

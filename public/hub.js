@@ -37,7 +37,8 @@
     <section class="hub-section" id="quickAccess"><div class="hub-container"><div class="hub-section-heading"><div><span class="hub-eyebrow">START HERE</span><h2>Quick access</h2></div><p>The campus information and services students need most, gathered in one place.</p></div>
       <div class="quick-grid">${[
         ["01","Announcements","Official notices and updates","/announcements"],["02","Events","What is happening on campus","/events"],["03","SRC Awards","Explore nominees and vote","/awards"],
-        ["04","Student Voice","Suggestions, concerns and ideas","/feedback"],["05","Businesses","Support student enterprises","/businesses"],["06","Lost & Found","Report or recover an item","/lost-found"]
+        ["04","Student Voice","Suggestions, concerns and ideas","/feedback"],["05","Businesses","Support student enterprises","/businesses"],["06","Lost & Found","Report or recover an item","/lost-found"],
+        ["07","Course Structure","Find your programme, semester and courses","/academics/course-structure"]
       ].map(item => `<a class="quick-card" href="${item[3]}"><span>${item[0]}</span><h3>${item[1]}</h3><p>${item[2]}</p><b aria-hidden="true">↗</b></a>`).join("")}</div></div></section>
     <section class="hub-section hub-section-tinted"><div class="hub-container"><div class="hub-section-heading"><div><span class="hub-eyebrow">STAY INFORMED</span><h2>Latest announcements</h2></div><a class="hub-text-link" href="/announcements">View all announcements →</a></div><div class="hub-three-grid" id="homeAnnouncements"><div class="publicity-loading">Loading current announcements…</div></div></div></section>
     <section class="hub-section"><div class="hub-container"><div class="hub-section-heading"><div><span class="hub-eyebrow">SAVE THE DATE</span><h2>Upcoming events</h2></div><a class="hub-text-link" href="/events">View all events →</a></div><div class="hub-three-grid" id="homeEvents"><div class="publicity-loading">Loading upcoming events…</div></div></div></section>
@@ -71,7 +72,7 @@
     main.innerHTML = `<section class="page-hero"><div class="hub-container"><span class="hub-eyebrow">${info.eyebrow}</span><h1>${info.title}</h1><p>${info.description}</p><div class="page-status"><span aria-hidden="true">●</span>${info.status}</div></div></section><section class="hub-section"><div class="hub-container">${preview}</div></section>`;
   }
 
-  const publicityPage = ["announcements", "events", "admin", "feedback", "feedback/status", "lost-found", "businesses", "media", "executives"].includes(page) || /^(announcements|events|lost-found|businesses|media|executives)\//.test(page);
+  const publicityPage = ["announcements", "events", "academics", "academics/course-structure", "admin", "feedback", "feedback/status", "lost-found", "businesses", "media", "executives"].includes(page) || /^(announcements|events|lost-found|businesses|media|executives)\//.test(page);
   if (page === "home") homePage();
   else if (!publicityPage) placeholderPage(page);
 })();

@@ -268,6 +268,7 @@
     const tabs = [
       ["overview", "Dashboard", "Dashboard"],
       context.capabilities.publicity && ["announcements", "Announcements", "Content"], context.capabilities.publicity && ["events", "Events", "Content"],
+      context.capabilities.academics && ["academics", "Academics", "Content"],
       context.capabilities.awards && ["awards", "Awards & Voting", "Awards"],
       context.capabilities.media && ["media", "Media", "Content"],
       context.capabilities.feedback && ["feedback", "Student Feedback", "Student services"], context.capabilities.lostFound && ["lostFound", "Lost & Found", "Student services"],
@@ -286,6 +287,7 @@
       const type = button.dataset.adminTab;
       if (type === "overview") renderOverview();
       else if (["announcements", "events"].includes(type)) loadAdminModule(type, publicityConfig).catch(showPageError);
+      else if (type === "academics") window.SRC_ACADEMICS_ADMIN.loadModule().catch(showPageError);
       else if (type === "awards") window.SRC_AWARDS_ADMIN.loadModule().catch(showPageError);
       else if (["media", "executives", "settings"].includes(type)) window.SRC_CONTENT_ADMIN.loadModule(type, contentConfig).catch(showPageError);
       else window.SRC_SERVICES_ADMIN.loadModule(type, serviceConfig).catch(showPageError);

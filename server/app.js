@@ -14,6 +14,8 @@ const { createContentRepository } = require("./content");
 const { createContentRouter } = require("./content-routes");
 const { createAwardsAdminRouter } = require("./awards-admin");
 const { createUploadStore } = require("./uploads");
+const { createAcademicsRepository } = require("./academics");
+const { createAcademicsRouter } = require("./academics-routes");
 
 const normalizePhone = phone => String(phone || "").replace(/[^\d+]/g, "");
 const validEmail = email => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && email.length <= 254;
@@ -50,6 +52,10 @@ function createApp(options = {}) {
   const publicity = createPublicityRepository(db,{seed:seedData});
   const services = createServicesRepository(db);
   const content = createContentRepository(db);
+  const academics = createAcademicsRepository(db, {
+    uploadDirectory,
+    seedPdfPath: path.join(__dirname, "..", "seed", "academics", "ucc-bed-5-semester-programmes-and-structures.pdf")
+  });
   const publicDirectory = path.join(__dirname, "..", "public");
   const hubTemplate = fs.readFileSync(path.join(publicDirectory, "hub.html"), "utf8");
   const paystackKey = options.paystackKey ?? process.env.PAYSTACK_SECRET_KEY ?? "";
@@ -130,6 +136,8 @@ function createApp(options = {}) {
   }));
   app.use("/api/publicity/admin",requireSameOrigin);
   app.use("/api", createPublicityRouter({ repository: publicity, uploadDirectory, requirePublicityAdmin: auth.requirePublicityAdmin, audit: content.audit }));
+  app.use("/api/academics/admin", requireSameOrigin);
+  app.use("/api/academics", createAcademicsRouter({ repository: academics, uploadDirectory, requireAcademicsAdmin: auth.requireAcademicsAdmin, audit: content.audit }));
   app.use(express.json({ limit: "32kb" }));
 
   function health(req,res){
@@ -258,6 +266,7 @@ function createApp(options = {}) {
     const role = req.admin.role;
     res.json({ role, username: req.admin.username, capabilities: {
       publicity: ["super_admin", "publicity_admin"].includes(role),
+      academics: ["super_admin", "publicity_admin"].includes(role),
       feedback: ["super_admin", "student_affairs_admin"].includes(role),
       lostFound: ["super_admin", "student_affairs_admin", "publicity_admin"].includes(role),
       businesses: ["super_admin", "publicity_admin", "student_affairs_admin"].includes(role),
@@ -386,7 +395,7 @@ function createApp(options = {}) {
     const metadata = { title: `${record.fullName} — ${record.position}`, shortDescription: record.shortBio, slug: record.slug, posterImage: record.photoUrl };
     res.type("html").send(detailHtml(req, metadata, "executive"));
   });
-  const hubRoutes = ["/", "/announcements", "/events", "/businesses", "/lost-found", "/feedback", "/feedback/status", "/media", "/executives", "/contact", "/admin"];
+  const hubRoutes = ["/", "/announcements", "/events", "/academics", "/academics/course-structure", "/businesses", "/lost-found", "/feedback", "/feedback/status", "/media", "/executives", "/contact", "/admin"];
   hubRoutes.forEach(route => app.get(route, (req, res) => res.type("html").send(hubHtml(req))));
   app.get("/awards", (req, res) => res.sendFile(path.join(publicDirectory, "index.html")));
   app.get("/awards/payment/:reference", (req,res)=>res.sendFile(path.join(publicDirectory,"index.html")));
@@ -394,7 +403,7 @@ function createApp(options = {}) {
   app.use(express.static(publicDirectory, { dotfiles: "deny", index: false }));
   app.use("/api", (req, res) => res.status(404).json({ ok: false, message: "API endpoint not found." }));
   app.use((error, req, res, next) => {
-    if (error?.code === "LIMIT_FILE_SIZE") error = Object.assign(new Error("Image must be smaller than 2 MB."), { status: 400 });
+    if (error?.code === "LIMIT_FILE_SIZE") error = Object.assign(new Error(req.path.startsWith("/api/academics/") ? "PDF must be smaller than 15 MB." : "Image must be smaller than 2 MB."), { status: 400 });
     else if (String(error?.code || "").startsWith("LIMIT_")) error = Object.assign(new Error("The upload could not be accepted."), { status: 400 });
     if (!error.status || error.status >= 500) console.error("Request failed:", error.message);
     if (res.headersSent) return next(error);

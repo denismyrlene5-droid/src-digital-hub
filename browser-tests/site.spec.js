@@ -26,7 +26,7 @@ test.afterAll(async () => {
   if (runtime) fs.rmSync(runtime, { recursive: true, force: true });
 });
 
-const publicRoutes = ["/", "/announcements", "/events", "/awards", "/businesses", "/lost-found", "/feedback", "/media", "/executives", "/contact"];
+const publicRoutes = ["/", "/announcements", "/events", "/academics", "/academics/course-structure", "/awards", "/businesses", "/lost-found", "/feedback", "/media", "/executives", "/contact"];
 
 for (const route of publicRoutes) {
   test(`${route} loads without horizontal overflow`, async ({ page }) => {
@@ -46,4 +46,14 @@ test("admin dialog traps focus and closes with Escape", async ({ page }) => {
   await expect(page.getByRole("dialog")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
+});
+
+test("Academics programme, semester, and search controls filter official courses", async ({ page }) => {
+  await page.goto("/academics/course-structure");
+  await page.getByLabel("Programme / combination").selectOption({ label: "B.ED. MATHEMATICS - MATHEMATICS MAJOR / CHEMISTRY MINOR" });
+  await page.getByRole("tab", { name: "Semester 4" }).click();
+  await page.getByLabel("Search course code or course title").fill("Advanced Calculus");
+  await expect(page.getByRole("cell", { name: "MAT 301SW" })).toBeVisible();
+  await expect(page.getByRole("cell", { name: "Advanced Calculus I" })).toBeVisible();
+  await expect(page.locator("#academicCourses tbody tr")).toHaveCount(1);
 });

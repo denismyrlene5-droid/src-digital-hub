@@ -51,6 +51,12 @@ Media albums and photos are stored as database metadata plus files outside the p
 
 Executive profiles support terms, display order, active/inactive history, responsibilities, optional public contact details, and server-controlled administration. No real office-holder data is seeded.
 
+## Academics
+
+The public `/academics` and `/academics/course-structure` pages expose the currently published UCC Institute of Education B.Ed. five-semester structure. Programme combinations, reusable courses, semester assignments, credit hours, remarks, version status, and source-document history are stored in SQLite. The supplied official 14-page PDF is retained as the import source and copied to `UPLOAD_DIRECTORY` on first initialization.
+
+Super Admin and Publicity Admin accounts manage Academics inside the existing `/admin` dashboard. Create a new draft by cloning the current structure, make programme/course/document changes, verify the draft, and publish it. Publishing archives the previous version atomically; published and archived versions cannot be edited or permanently deleted through the normal interface.
+
 The unified admin dashboard exposes only role-authorized navigation and APIs. Individual accounts record the username and role in `audit_log`; legacy role-password login remains available during migration. Important changes record the action, resource identifier, timestamp, and a short safe summary. Feedback messages, internal notes, passwords, and secrets are excluded.
 
 Uploads are stored outside the public directory in `data/uploads` with random filenames. Announcement and event images use multipart disk-streamed uploads, are decoded by Sharp, auto-oriented, resized, compressed to WebP, and receive a card thumbnail. Legacy upload callers remain backward compatible. This local storage is suitable for a single persistent-volume deployment; larger deployments should use managed object storage, malware scanning, retention rules, backups, and image redaction/moderation workflows.

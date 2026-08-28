@@ -51,10 +51,28 @@ function createUploadStore(directory) {
     catch (error) { try { fs.unlinkSync(path.join(directory, token)); } catch {} throw error; }
     return { token, name, mime: "image/webp", size: full.length, originalSize: inputSize };
   }
+  function savePdf(file) {
+    if (!file?.path) return null;
+    const name = String(file.originalname || "").trim();
+    const mime = String(file.mimetype || "").toLowerCase();
+    const size = Number(file.size || 0);
+    if (mime !== "application/pdf" || name.toLowerCase().split(".").pop() !== "pdf") throw uploadError("Choose a PDF document.");
+    if (!/^[A-Za-z0-9][A-Za-z0-9._ -]{0,119}$/.test(name) || name.includes("..")) throw uploadError("Invalid file name.");
+    if (!size || size > 15 * 1024 * 1024) throw uploadError("PDF must be smaller than 15 MB.");
+    const descriptor = fs.openSync(file.path, "r");
+    const signature = Buffer.alloc(5);
+    const trailer = Buffer.alloc(Math.min(size, 1024));
+    try { fs.readSync(descriptor, signature, 0, 5, 0); fs.readSync(descriptor, trailer, 0, trailer.length, Math.max(0, size - trailer.length)); } finally { fs.closeSync(descriptor); }
+    if (signature.toString() !== "%PDF-") throw uploadError("The uploaded document is not a valid PDF.");
+    if (!trailer.toString("latin1").includes("%%EOF")) throw uploadError("The uploaded document is incomplete or not a valid PDF.");
+    const token = `${crypto.randomBytes(16).toString("hex")}.pdf`;
+    fs.renameSync(file.path, path.join(directory, token));
+    return { token, name, mime, size };
+  }
   function remove(file) { const token = typeof file === "string" ? file : file?.token; if (!token || !/^[a-f0-9]{32}\.[a-z0-9]{2,5}$/.test(token)) return; for (const candidate of [token, token.replace(/\.[^.]+$/, ".thumb.webp")]) try { fs.unlinkSync(path.join(directory, candidate)); } catch {} }
   function absolute(token) { if (!/^[a-f0-9]{32}\.[a-z0-9]{2,5}$/.test(String(token || ""))) return null; return path.join(directory, token); }
   function thumbnailAbsolute(token) { const thumbnail = absolute(token)?.replace(/\.[^.]+$/, ".thumb.webp"); return thumbnail && fs.existsSync(thumbnail) ? thumbnail : absolute(token); }
-  return { save, saveImage, remove, absolute, thumbnailAbsolute, directory };
+  return { save, saveImage, savePdf, remove, absolute, thumbnailAbsolute, directory };
 }
 
 module.exports = { createUploadStore };

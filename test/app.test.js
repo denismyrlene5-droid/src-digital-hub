@@ -150,8 +150,8 @@ test("public frontend retains accessibility and responsive spacing polish", asyn
     assert.match(css, /\.urgent-notice-content b\{white-space:normal/);
     assert.match(css, /\.hub-hero h1\{font-size:clamp\(40px,12vw,49px\)/);
     assert.match(css, /\.publicity-metrics\{grid-template-columns:repeat\(4,1fr\)\}/);
-    assert.match(home, /\/hub\.css\?v=12/);
-    assert.match(awards, /\/hub\.css\?v=12/);
+    assert.match(home, /\/hub\.css\?v=13/);
+    assert.match(awards, /\/hub\.css\?v=13/);
   } finally { await app.close(); }
 });
 
@@ -320,7 +320,10 @@ test("production blocks simulation and emits production security headers",async(
 test("staging simulation works while incomplete live-provider configuration fails safely",async()=>{
   const staging=await fixture({environment:"staging",paymentProvider:"simulation",simulationEnabled:true,seedData:true});
   try{assert.equal((await createSimulatedTransaction(staging,{votes:1})).status,201);}finally{await staging.close();}
-  assert.throws(()=>createApp({databasePath:":memory:",environment:"production",baseUrl:"https://hub.example.edu",paymentProvider:"paystack_live",paystackKey:"",adminPassword:"production-super-admin-password"}),/live server secret key/i);
+  const uploadDirectory=fs.mkdtempSync(path.join(os.tmpdir(),"src-live-config-test-"));
+  try {
+    assert.throws(()=>createApp({databasePath:":memory:",uploadDirectory,environment:"production",baseUrl:"https://hub.example.edu",paymentProvider:"paystack_live",paystackKey:"",adminPassword:"production-super-admin-password"}),/live server secret key/i);
+  } finally { fs.rmSync(uploadDirectory,{recursive:true,force:true}); }
 });
 
 test("staging does not seed demonstration content unless explicitly requested",async()=>{
@@ -454,6 +457,61 @@ test("announcement featured images upload on create and edit, take priority over
       body: JSON.stringify({ ...announcementPayload, featuredImageUpload: { name: "malware.exe", type: "application/octet-stream", data: "TVqQ" } })
     });
     assert.equal(invalidResponse.status, 400);
+  } finally { await app.close(); }
+});
+
+test("article inline images upload, persist in paragraph order, replace safely, and validate content", async () => {
+  const app = await fixture();
+  const pngUpload = { name: "campus.png", type: "image/png", data: Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]).toString("base64") };
+  const webpUpload = { name: "students.webp", type: "image/webp", data: Buffer.from("RIFF0000WEBP").toString("base64") };
+  const firstId = "img_aaaaaaaaaaaa";
+  const secondId = "img_bbbbbbbbbbbb";
+  const articleBody = `Opening paragraph with enough useful article content.\n\n[[image:${firstId}]]\n\nMiddle paragraph explains the campus update clearly.\n\n[[image:${secondId}]]\n\nClosing paragraph completes the published story.`;
+  try {
+    const cookie = await adminCookie(app);
+    const createdResponse = await fetch(`${app.base}/api/publicity/admin/announcements`, {
+      method: "POST", headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ ...announcementPayload, title: "Campus article photo story", body: articleBody, status: "published", inlineImages: [
+        { id: firstId, caption: "Students gathering on campus", upload: pngUpload },
+        { id: secondId, caption: "The programme in progress", upload: webpUpload }
+      ] })
+    });
+    assert.equal(createdResponse.status, 201);
+    const created = (await createdResponse.json()).announcement;
+    assert.deepEqual(created.inlineImages.map(image => image.id), [firstId, secondId]);
+    assert.match(created.inlineImages[0].url, /^\/api\/publicity\/files\/[a-f0-9]{32}\.png$/);
+    assert.match(created.inlineImages[1].url, /^\/api\/publicity\/files\/[a-f0-9]{32}\.webp$/);
+    assert.equal((await fetch(`${app.base}${created.inlineImages[0].url}`)).status, 200);
+    assert.equal((await fetch(`${app.base}${created.inlineImages[1].url}`)).status, 200);
+    const publicArticle = (await (await fetch(`${app.base}/api/announcements/${created.slug}`)).json()).announcement;
+    assert.equal(publicArticle.body, articleBody);
+    assert.deepEqual(publicArticle.inlineImages.map(image => image.caption), ["Students gathering on campus", "The programme in progress"]);
+
+    const oldFirstToken = created.inlineImages[0].url.split("/").pop();
+    const replacement = { name: "replacement.jpg", type: "image/jpeg", data: Buffer.from([0xff,0xd8,0xff,0xd9]).toString("base64") };
+    const updatedResponse = await fetch(`${app.base}/api/publicity/admin/announcements/${created.id}`, {
+      method: "PUT", headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ ...announcementPayload, title: created.title, body: articleBody.replace(`\n\n[[image:${secondId}]]`, ""), status: "published", inlineImages: [
+        { id: firstId, caption: "Updated campus photo", url: created.inlineImages[0].url, upload: replacement }
+      ] })
+    });
+    assert.equal(updatedResponse.status, 200);
+    const updated = (await updatedResponse.json()).announcement;
+    assert.equal(updated.inlineImages.length, 1);
+    assert.match(updated.inlineImages[0].url, /^\/api\/publicity\/files\/[a-f0-9]{32}\.jpg$/);
+    assert.equal((await fetch(`${app.base}/api/publicity/admin/files/${oldFirstToken}`, { headers: { Cookie: cookie } })).status, 404);
+    assert.equal((await fetch(`${app.base}${created.inlineImages[1].url}`)).status, 404);
+
+    const invalidMarker = await fetch(`${app.base}/api/publicity/admin/announcements`, {
+      method: "POST", headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ ...announcementPayload, body: `${announcementPayload.body}\n\n[[image:${firstId}]]`, inlineImages: [] })
+    });
+    assert.equal(invalidMarker.status, 400);
+    const invalidCaption = await fetch(`${app.base}/api/publicity/admin/announcements`, {
+      method: "POST", headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ ...announcementPayload, body: `${announcementPayload.body}\n\n[[image:${firstId}]]`, inlineImages: [{ id: firstId, url: "https://example.com/photo.jpg", caption: "<script>unsafe</script>" }] })
+    });
+    assert.equal(invalidCaption.status, 400);
   } finally { await app.close(); }
 });
 
@@ -942,11 +1000,17 @@ test("CMS migrations and content persist across a SQLite restart", () => {
     const first = createApp({ databasePath, uploadDirectory, adminPassword: "test-password", nodeEnv: "test", seedData: false });
     first.db.prepare("INSERT INTO categories(name,sort_order,active) VALUES(?,?,?)").run("Persistent Category", 1, 1);
     first.db.prepare("UPDATE site_settings SET setting_value=? WHERE setting_key='welcomeText'").run("Persistent CMS welcome text");
+    const inlineImages = JSON.stringify([{ id: "img_cccccccccccc", url: "/api/publicity/files/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png", caption: "Persistent photo caption" }]);
+    first.db.prepare(`INSERT INTO announcements(title,slug,summary,body,category,status,inline_images_json,author_role)
+      VALUES(?,?,?,?,?,'draft',?,'super_admin')`).run("Persistent article", "persistent-article", "A summary long enough to persist.", "A paragraph before the photo.\n\n[[image:img_cccccccccccc]]\n\nA paragraph after the photo.", "General", inlineImages);
+    fs.writeFileSync(path.join(uploadDirectory, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png"), Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]));
     first.db.close();
     const second = createApp({ databasePath, uploadDirectory, adminPassword: "test-password", nodeEnv: "test", seedData: false });
     assert.equal(second.db.prepare("SELECT active FROM categories WHERE name=?").get("Persistent Category").active, 1);
     assert.equal(second.db.prepare("SELECT setting_value value FROM site_settings WHERE setting_key='welcomeText'").get().value, "Persistent CMS welcome text");
     assert.equal(fs.existsSync(uploadDirectory), true);
+    assert.equal(second.db.prepare("SELECT inline_images_json value FROM announcements WHERE slug='persistent-article'").get().value, inlineImages);
+    assert.equal(fs.existsSync(path.join(uploadDirectory, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png")), true);
     second.db.close();
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 });

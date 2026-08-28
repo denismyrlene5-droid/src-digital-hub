@@ -8,9 +8,25 @@ function createPublicityRouter({ repository, uploadDirectory, requirePublicityAd
     try { fn(req, res, next); } catch (error) { next(error); }
   };
   const uploadToken = value => String(value || "").match(/^\/api\/publicity\/files\/([a-f0-9]{32}\.[a-z0-9]{2,5})$/)?.[1] || null;
-  const saveFeaturedImage = body => {
-    const file = uploads.save(body?.featuredImageUpload, "image");
-    return { file, input: { ...body, featuredImage: file ? `/api/publicity/files/${file.token}` : body?.featuredImage } };
+  const announcementTokens = announcement => new Set([
+    uploadToken(announcement?.featuredImage),
+    ...(Array.isArray(announcement?.inlineImages) ? announcement.inlineImages.map(image => uploadToken(image.url)) : [])
+  ].filter(Boolean));
+  const saveAnnouncementImages = body => {
+    const files = [];
+    try {
+      const featured = uploads.save(body?.featuredImageUpload, "image");
+      if (featured) files.push(featured);
+      const inlineImages = (Array.isArray(body?.inlineImages) ? body.inlineImages : []).map(image => {
+        const saved = uploads.save(image?.upload, "image");
+        if (saved) files.push(saved);
+        return { id: image?.id, caption: image?.caption, url: saved ? `/api/publicity/files/${saved.token}` : image?.url };
+      });
+      return { files, input: { ...body, featuredImage: featured ? `/api/publicity/files/${featured.token}` : body?.featuredImage, inlineImages } };
+    } catch (error) {
+      files.forEach(file => uploads.remove(file));
+      throw error;
+    }
   };
 
   router.get("/publicity/home", handle((req, res) => res.json(repository.homeFeed())));
@@ -39,7 +55,7 @@ function createPublicityRouter({ repository, uploadDirectory, requirePublicityAd
   }));
 
   router.use("/publicity/admin", requirePublicityAdmin);
-  router.use("/publicity/admin/announcements", express.json({ limit: "3mb" }));
+  router.use("/publicity/admin/announcements", express.json({ limit: "28mb" }));
   router.use(express.json({ limit: "32kb" }));
   router.get("/publicity/admin/files/:token", handle((req, res) => {
     const token = repository.adminAnnouncementFile(req.params.token);
@@ -63,30 +79,31 @@ function createPublicityRouter({ repository, uploadDirectory, requirePublicityAd
     res.json({ announcement });
   }));
   router.post("/publicity/admin/announcements", handle((req, res) => {
-    const saved = saveFeaturedImage(req.body);
+    const saved = saveAnnouncementImages(req.body);
     try {
       const announcement = repository.createAnnouncement(saved.input, req.admin.role);
       audit(req.admin,"announcement.created","announcement",announcement.id,`${announcement.title}: ${announcement.status}`);
       res.status(201).json({ announcement });
-    } catch (error) { uploads.remove(saved.file); throw error; }
+    } catch (error) { saved.files.forEach(file => uploads.remove(file)); throw error; }
   }));
   router.put("/publicity/admin/announcements/:id", handle((req, res) => {
     const previous = repository.getAnnouncementAdmin(req.params.id);
     if (!previous) { const error = new Error("Announcement not found."); error.status = 404; throw error; }
-    const saved = saveFeaturedImage(req.body);
+    const previousTokens = announcementTokens(previous);
+    const saved = saveAnnouncementImages(req.body);
     try {
       const announcement = repository.updateAnnouncement(req.params.id, saved.input, req.admin.role);
-      const previousToken = uploadToken(previous.featuredImage);
-      const currentToken = uploadToken(announcement.featuredImage);
-      if (previousToken && previousToken !== currentToken) uploads.remove(previousToken);
+      const currentTokens = announcementTokens(announcement);
+      for (const token of previousTokens) if (!currentTokens.has(token) && !repository.adminAnnouncementFile(token)) uploads.remove(token);
       audit(req.admin,"announcement.updated","announcement",announcement.id,`${announcement.title}: ${announcement.status}`);
       res.json({ announcement });
-    } catch (error) { uploads.remove(saved.file); throw error; }
+    } catch (error) { saved.files.forEach(file => uploads.remove(file)); throw error; }
   }));
   router.delete("/publicity/admin/announcements/:id", handle((req, res) => {
     const previous = repository.getAnnouncementAdmin(req.params.id);
+    const previousTokens = announcementTokens(previous);
     repository.deleteAnnouncement(req.params.id, req.admin.role);
-    uploads.remove(uploadToken(previous?.featuredImage));
+    for (const token of previousTokens) if (!repository.adminAnnouncementFile(token)) uploads.remove(token);
     audit(req.admin,"announcement.deleted","announcement",req.params.id,"Announcement removed");
     res.json({ ok: true });
   }));

@@ -2,6 +2,9 @@ const ANNOUNCEMENT_CATEGORIES = ["General", "Academic", "SRC", "Events", "Opport
 const ANNOUNCEMENT_STATUSES = ["draft", "published", "archived"];
 const EVENT_CATEGORIES = ["Academic", "Entertainment", "Sports", "Leadership", "Social", "Awards", "Other"];
 const EVENT_STATUSES = ["draft", "published", "cancelled", "completed"];
+const INLINE_IMAGE_LIMIT = 8;
+const INLINE_IMAGE_ID = /^img_[a-f0-9]{12,32}$/;
+const INLINE_IMAGE_MARKER = /\[\[image:(img_[a-f0-9]{12,32})\]\]/g;
 
 function httpError(message, status = 400) {
   const error = new Error(message);
@@ -79,6 +82,36 @@ function slugify(value) {
     .replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 90) || "item";
 }
 
+function storedInlineImages(value) {
+  try {
+    const parsed = JSON.parse(String(value || "[]"));
+    return Array.isArray(parsed) ? parsed.filter(item => item && INLINE_IMAGE_ID.test(String(item.id || "")) && typeof item.url === "string") : [];
+  } catch { return []; }
+}
+
+function validateInlineImages(value, body) {
+  const input = value == null || value === "" ? [] : value;
+  if (!Array.isArray(input)) throw httpError("Inline images must be an array.");
+  if (input.length > INLINE_IMAGE_LIMIT) throw httpError(`Articles support up to ${INLINE_IMAGE_LIMIT} inline images.`);
+  const ids = new Set();
+  const images = input.map((item, index) => {
+    const id = String(item?.id || "").trim();
+    if (!INLINE_IMAGE_ID.test(id) || ids.has(id)) throw httpError(`Inline image ${index + 1} has an invalid identifier.`);
+    ids.add(id);
+    return {
+      id,
+      url: safeUrl(item?.url, `Inline image ${index + 1}`),
+      caption: text(item?.caption, `Inline image ${index + 1} caption`, { max: 240 })
+    };
+  });
+  if (images.some(image => !image.url)) throw httpError("Every inline image needs an uploaded photo or image URL.");
+  if (String(body).replace(INLINE_IMAGE_MARKER, "").includes("[[image:")) throw httpError("Article content contains an invalid image marker.");
+  const markers = [...String(body).matchAll(INLINE_IMAGE_MARKER)].map(match => match[1]);
+  if (new Set(markers).size !== markers.length) throw httpError("Each inline image marker may appear only once.");
+  if (markers.length !== images.length || markers.some(id => !ids.has(id))) throw httpError("Every inline image must have exactly one matching position in the article content.");
+  return images;
+}
+
 function mapAnnouncement(row) {
   if (!row) return null;
   return {
@@ -86,6 +119,7 @@ function mapAnnouncement(row) {
     category: row.category, publishedAt: row.published_at, createdAt: row.created_at,
     updatedAt: row.updated_at, status: row.status, urgent: Boolean(row.urgent),
     featured: Boolean(row.featured), featuredImage: row.featured_image,
+    inlineImages: storedInlineImages(row.inline_images_json),
     externalUrl: row.external_url, attachmentUrl: row.attachment_url, authorRole: row.author_role
   };
 }
@@ -103,15 +137,19 @@ function mapEvent(row) {
 
 function validateAnnouncement(input) {
   const status = choice(input.status, ANNOUNCEMENT_STATUSES, "announcement status", "draft");
+  const body = text(input.body, "Content", { min: 20, max: 20000, required: true });
+  const readableBody = body.replace(INLINE_IMAGE_MARKER, "").trim();
+  if (readableBody.length < 20) throw httpError("Content must include at least 20 characters of article text.");
   return {
     title: text(input.title, "Title", { min: 3, max: 160, required: true }),
     summary: text(input.summary, "Summary", { min: 10, max: 360, required: true }),
-    body: text(input.body, "Content", { min: 20, max: 20000, required: true }),
+    body,
     category: choice(input.category, ANNOUNCEMENT_CATEGORIES, "announcement category", "General"),
     status,
     urgent: boolean(input.urgent),
     featured: boolean(input.featured),
     featuredImage: safeUrl(input.featuredImage, "Featured image"),
+    inlineImages: validateInlineImages(input.inlineImages, body),
     externalUrl: safeUrl(input.externalUrl, "External link", { externalOnly: true }),
     attachmentUrl: safeUrl(input.attachmentUrl, "Attachment", { documentsOnly: true }),
     publishedAt: status === "published" ? (validTimestamp(input.publishedAt, "Publication date") || new Date().toISOString()) : validTimestamp(input.publishedAt, "Publication date")
@@ -154,6 +192,7 @@ function createPublicityRepository(db, options = {}) {
       urgent INTEGER NOT NULL DEFAULT 0,
       featured INTEGER NOT NULL DEFAULT 0,
       featured_image TEXT,
+      inline_images_json TEXT NOT NULL DEFAULT '[]',
       external_url TEXT,
       attachment_url TEXT,
       author_role TEXT
@@ -183,6 +222,8 @@ function createPublicityRepository(db, options = {}) {
     CREATE INDEX IF NOT EXISTS idx_events_public ON events(status, event_date, start_time);
     CREATE INDEX IF NOT EXISTS idx_events_category ON events(category, status);
   `);
+  const announcementColumns = new Set(db.prepare("PRAGMA table_info(announcements)").all().map(column => column.name));
+  if (!announcementColumns.has("inline_images_json")) db.exec("ALTER TABLE announcements ADD COLUMN inline_images_json TEXT NOT NULL DEFAULT '[]'");
   if(options.seed!==false) seedPublicity(db);
   db.exec("PRAGMA optimize");
 
@@ -255,8 +296,8 @@ function createPublicityRepository(db, options = {}) {
   function createAnnouncement(input, role) {
     const item = validateAnnouncement(input);
     const slug = uniqueSlug("announcements", item.title);
-    const result = db.prepare(`INSERT INTO announcements(title,slug,summary,body,category,published_at,status,urgent,featured,featured_image,external_url,attachment_url,author_role)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(item.title, slug, item.summary, item.body, item.category, item.publishedAt, item.status, Number(item.urgent), Number(item.featured), item.featuredImage, item.externalUrl, item.attachmentUrl, role);
+    const result = db.prepare(`INSERT INTO announcements(title,slug,summary,body,category,published_at,status,urgent,featured,featured_image,inline_images_json,external_url,attachment_url,author_role)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(item.title, slug, item.summary, item.body, item.category, item.publishedAt, item.status, Number(item.urgent), Number(item.featured), item.featuredImage, JSON.stringify(item.inlineImages), item.externalUrl, item.attachmentUrl, role);
     audit("create_announcement", result.lastInsertRowid, role);
     return getAnnouncementAdmin(result.lastInsertRowid);
   }
@@ -266,8 +307,8 @@ function createPublicityRepository(db, options = {}) {
     const existing = getAnnouncementAdmin(id);
     if (!existing) throw httpError("Announcement not found.", 404);
     const item = validateAnnouncement(input);
-    db.prepare(`UPDATE announcements SET title=?,summary=?,body=?,category=?,published_at=?,status=?,urgent=?,featured=?,featured_image=?,external_url=?,attachment_url=?,author_role=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`)
-      .run(item.title, item.summary, item.body, item.category, item.publishedAt, item.status, Number(item.urgent), Number(item.featured), item.featuredImage, item.externalUrl, item.attachmentUrl, role, id);
+    db.prepare(`UPDATE announcements SET title=?,summary=?,body=?,category=?,published_at=?,status=?,urgent=?,featured=?,featured_image=?,inline_images_json=?,external_url=?,attachment_url=?,author_role=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`)
+      .run(item.title, item.summary, item.body, item.category, item.publishedAt, item.status, Number(item.urgent), Number(item.featured), item.featuredImage, JSON.stringify(item.inlineImages), item.externalUrl, item.attachmentUrl, role, id);
     audit("update_announcement", id, role);
     return getAnnouncementAdmin(id);
   }
@@ -284,13 +325,16 @@ function createPublicityRepository(db, options = {}) {
   function publicAnnouncementFile(token) {
     if (!/^[a-f0-9]{32}\.[a-z0-9]{2,5}$/.test(String(token || ""))) return null;
     const url = `/api/publicity/files/${token}`;
-    return db.prepare(`SELECT 1 FROM announcements WHERE featured_image=? AND status='published'
-      AND published_at IS NOT NULL AND datetime(published_at)<=datetime('now')`).get(url) ? token : null;
+    return db.prepare(`SELECT featured_image,inline_images_json FROM announcements WHERE status='published'
+      AND published_at IS NOT NULL AND datetime(published_at)<=datetime('now')`).all()
+      .some(row => row.featured_image === url || storedInlineImages(row.inline_images_json).some(image => image.url === url)) ? token : null;
   }
 
   function adminAnnouncementFile(token) {
     if (!/^[a-f0-9]{32}\.[a-z0-9]{2,5}$/.test(String(token || ""))) return null;
-    return db.prepare("SELECT 1 FROM announcements WHERE featured_image=?").get(`/api/publicity/files/${token}`) ? token : null;
+    const url = `/api/publicity/files/${token}`;
+    return db.prepare("SELECT featured_image,inline_images_json FROM announcements").all()
+      .some(row => row.featured_image === url || storedInlineImages(row.inline_images_json).some(image => image.url === url)) ? token : null;
   }
 
   function createEvent(input, role) {

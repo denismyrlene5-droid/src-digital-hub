@@ -4,6 +4,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const sharp = require("sharp");
 const { createApp } = require("../server/app");
 const { createPaystackProvider } = require("../server/payment-providers");
 
@@ -1087,4 +1088,62 @@ test("legacy open Awards configuration migrates once to the configured pre-launc
     second.db.prepare("UPDATE awards_settings SET voting_state='open',opens_at=NULL WHERE id=1").run();second.db.close();
     const third=createApp({databasePath,uploadDirectory,adminPassword:"test-password",nodeEnv:"test",seedData:false});assert.equal(third.db.prepare("SELECT voting_state FROM awards_settings WHERE id=1").get().voting_state,"open");third.db.close();
   }finally{fs.rmSync(directory,{recursive:true,force:true});}
+});
+
+test("publicity lists return bounded pagination metadata", async () => {
+  const app = await fixture();
+  try {
+    const insert = app.db.prepare(`INSERT INTO announcements(title,slug,summary,body,category,published_at,status,author_role)
+      VALUES(?,?,?,?,?,CURRENT_TIMESTAMP,'published','super_admin')`);
+    for (let index = 0; index < 17; index += 1) insert.run(`Paginated notice ${index}`, `paginated-notice-${index}`, "A published summary for pagination testing.", "A complete published announcement body for pagination testing.", "General");
+    const response = await fetch(`${app.base}/api/announcements?page=2&pageSize=5`);
+    const data = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(data.announcements.length, 5);
+    assert.equal(data.pagination.page, 2);
+    assert.equal(data.pagination.pageSize, 5);
+    assert.equal(data.pagination.totalItems >= 17, true);
+    assert.equal(data.pagination.hasPrevious, true);
+  } finally { await app.close(); }
+});
+
+test("individual administrator accounts authenticate by username and reach audit records", async () => {
+  const app = await fixture({ adminUsers: [{ username: "denis.admin", password: "individual-test-password", role: "publicity_admin" }] });
+  try {
+    const login = await fetch(`${app.base}/api/admin/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: "denis.admin", password: "individual-test-password" }) });
+    const body = await login.json();
+    assert.equal(login.status, 200);
+    assert.equal(body.role, "publicity_admin");
+    assert.equal(body.username, "denis.admin");
+    const cookie = login.headers.get("set-cookie").split(";")[0];
+    const created = await fetch(`${app.base}/api/publicity/admin/announcements`, { method: "POST", headers: { "Content-Type": "application/json", Cookie: cookie }, body: JSON.stringify(announcementPayload) });
+    assert.equal(created.status, 201);
+    assert.equal(app.db.prepare("SELECT admin_username username FROM audit_log WHERE action='announcement.created' ORDER BY id DESC LIMIT 1").get().username, "denis.admin");
+  } finally { await app.close(); }
+});
+
+test("multipart publicity images are optimized and receive a card thumbnail", async () => {
+  const app = await fixture();
+  try {
+    const cookie = await adminCookie(app);
+    const png = await sharp({ create: { width: 32, height: 32, channels: 3, background: "#0b4b32" } }).png().toBuffer();
+    const form = new FormData();
+    form.append("image", new Blob([png], { type: "image/png" }), "campus.png");
+    const uploadedResponse = await fetch(`${app.base}/api/publicity/admin/uploads/image`, { method: "POST", headers: { Cookie: cookie }, body: form });
+    const uploaded = await uploadedResponse.json();
+    assert.equal(uploadedResponse.status, 201);
+    assert.match(uploaded.imageUrl, /^\/api\/publicity\/files\/[a-f0-9]{32}\.webp$/);
+    const createdResponse = await fetch(`${app.base}/api/publicity/admin/announcements`, { method: "POST", headers: { "Content-Type": "application/json", Cookie: cookie }, body: JSON.stringify({ ...announcementPayload, status: "published", publishedAt: new Date().toISOString(), featuredImage: uploaded.imageUrl }) });
+    const created = (await createdResponse.json()).announcement;
+    assert.equal(createdResponse.status, 201);
+    const token = uploaded.imageUrl.split("/").pop();
+    assert.equal(fs.existsSync(path.join(app.uploadDirectory, token)), true);
+    assert.equal(fs.existsSync(path.join(app.uploadDirectory, token.replace(".webp", ".thumb.webp"))), true);
+    const cardImage = await fetch(`${app.base}${uploaded.imageUrl}?variant=card`);
+    assert.equal(cardImage.status, 200);
+    assert.match(cardImage.headers.get("content-type"), /^image\/webp/);
+    await fetch(`${app.base}/api/publicity/admin/announcements/${created.id}`, { method: "DELETE", headers: { Cookie: cookie } });
+    assert.equal(fs.existsSync(path.join(app.uploadDirectory, token)), false);
+    assert.equal(fs.existsSync(path.join(app.uploadDirectory, token.replace(".webp", ".thumb.webp"))), false);
+  } finally { await app.close(); }
 });

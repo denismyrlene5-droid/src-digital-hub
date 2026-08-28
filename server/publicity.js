@@ -1,3 +1,5 @@
+const { pagination, metadata } = require("./pagination");
+
 const ANNOUNCEMENT_CATEGORIES = ["General", "Academic", "SRC", "Events", "Opportunities", "Emergency"];
 const ANNOUNCEMENT_STATUSES = ["draft", "published", "archived"];
 const EVENT_CATEGORIES = ["Academic", "Entertainment", "Sports", "Leadership", "Social", "Awards", "Other"];
@@ -238,28 +240,38 @@ function createPublicityRepository(db, options = {}) {
     return candidate;
   }
 
-  function listAnnouncementsPublic({ category = "", q = "" } = {}) {
+  function listAnnouncementsPublic({ category = "", q = "", page, pageSize } = {}) {
     const clauses = ["status='published'", "published_at IS NOT NULL", "datetime(published_at)<=datetime('now')"];
     const params = [];
     if (category && ANNOUNCEMENT_CATEGORIES.includes(category)) { clauses.push("category=?"); params.push(category); }
     if (q) { clauses.push("(title LIKE ? OR summary LIKE ? OR body LIKE ?)"); const term = `%${String(q).slice(0, 100)}%`; params.push(term, term, term); }
-    return db.prepare(`SELECT * FROM announcements WHERE ${clauses.join(" AND ")} ORDER BY datetime(published_at) DESC`).all(...params).map(mapAnnouncement);
+    const paging = pagination({ page, pageSize }, 12, 36);
+    const where = clauses.join(" AND ");
+    const total = db.prepare(`SELECT COUNT(*) count FROM announcements WHERE ${where}`).get(...params).count;
+    const items = db.prepare(`SELECT * FROM announcements WHERE ${where} ORDER BY datetime(published_at) DESC LIMIT ? OFFSET ?`).all(...params, paging.pageSize, paging.offset).map(mapAnnouncement);
+    return { items, pagination: metadata(total, paging.page, paging.pageSize) };
   }
 
-  function listEventsPublic() {
-    const rows = db.prepare("SELECT * FROM events WHERE status IN ('published','cancelled','completed') ORDER BY event_date,start_time").all().map(mapEvent);
+  function listEventsPublic({ upcomingPage, pastPage, pageSize } = {}) {
     const today = new Date().toISOString().slice(0, 10);
-    const upcoming = rows.filter(event => event.status === "published" && event.eventDate >= today)
-      .sort((a, b) => `${a.eventDate} ${a.startTime || "00:00"}`.localeCompare(`${b.eventDate} ${b.startTime || "00:00"}`));
-    const past = rows.filter(event => !(event.status === "published" && event.eventDate >= today))
-      .sort((a, b) => `${b.eventDate} ${b.startTime || "00:00"}`.localeCompare(`${a.eventDate} ${a.startTime || "00:00"}`));
-    return { upcoming, past };
+    const upcomingPaging = pagination({ page: upcomingPage, pageSize }, 9, 36);
+    const pastPaging = pagination({ page: pastPage, pageSize }, 9, 36);
+    const upcomingWhere = "status='published' AND event_date>=?";
+    const pastWhere = "status IN ('published','cancelled','completed') AND NOT (status='published' AND event_date>=?)";
+    const upcomingTotal = db.prepare(`SELECT COUNT(*) count FROM events WHERE ${upcomingWhere}`).get(today).count;
+    const pastTotal = db.prepare(`SELECT COUNT(*) count FROM events WHERE ${pastWhere}`).get(today).count;
+    const upcoming = db.prepare(`SELECT * FROM events WHERE ${upcomingWhere} ORDER BY event_date,start_time LIMIT ? OFFSET ?`).all(today, upcomingPaging.pageSize, upcomingPaging.offset).map(mapEvent);
+    const past = db.prepare(`SELECT * FROM events WHERE ${pastWhere} ORDER BY event_date DESC,start_time DESC LIMIT ? OFFSET ?`).all(today, pastPaging.pageSize, pastPaging.offset).map(mapEvent);
+    return { upcoming, past, pagination: {
+      upcoming: metadata(upcomingTotal, upcomingPaging.page, upcomingPaging.pageSize),
+      past: metadata(pastTotal, pastPaging.page, pastPaging.pageSize)
+    } };
   }
 
   function homeFeed() {
     const announcements = db.prepare(`SELECT * FROM announcements WHERE status='published' AND published_at IS NOT NULL
       AND datetime(published_at)<=datetime('now') ORDER BY urgent DESC,featured DESC,datetime(published_at) DESC LIMIT 3`).all().map(mapAnnouncement);
-    const events = listEventsPublic().upcoming.slice(0, 3);
+    const events = listEventsPublic({ pageSize: 3 }).upcoming;
     return { announcements, events };
   }
 
@@ -277,20 +289,28 @@ function createPublicityRepository(db, options = {}) {
     return mapEvent(db.prepare("SELECT * FROM events WHERE slug=? AND status IN ('published','cancelled','completed')").get(String(slug)));
   }
 
-  function listAnnouncementsAdmin({ q = "", status = "", category = "" } = {}) {
+  function listAnnouncementsAdmin({ q = "", status = "", category = "", page, pageSize } = {}) {
     const clauses = ["1=1"], params = [];
     if (status && ANNOUNCEMENT_STATUSES.includes(status)) { clauses.push("status=?"); params.push(status); }
     if (category && ANNOUNCEMENT_CATEGORIES.includes(category)) { clauses.push("category=?"); params.push(category); }
     if (q) { clauses.push("(title LIKE ? OR summary LIKE ?)"); const term = `%${String(q).slice(0, 100)}%`; params.push(term, term); }
-    return db.prepare(`SELECT * FROM announcements WHERE ${clauses.join(" AND ")} ORDER BY datetime(updated_at) DESC`).all(...params).map(mapAnnouncement);
+    const paging = pagination({ page, pageSize }, 25, 100);
+    const where = clauses.join(" AND ");
+    const total = db.prepare(`SELECT COUNT(*) count FROM announcements WHERE ${where}`).get(...params).count;
+    const items = db.prepare(`SELECT * FROM announcements WHERE ${where} ORDER BY datetime(updated_at) DESC LIMIT ? OFFSET ?`).all(...params, paging.pageSize, paging.offset).map(mapAnnouncement);
+    return { items, pagination: metadata(total, paging.page, paging.pageSize) };
   }
 
-  function listEventsAdmin({ q = "", status = "", category = "" } = {}) {
+  function listEventsAdmin({ q = "", status = "", category = "", page, pageSize } = {}) {
     const clauses = ["1=1"], params = [];
     if (status && EVENT_STATUSES.includes(status)) { clauses.push("status=?"); params.push(status); }
     if (category && EVENT_CATEGORIES.includes(category)) { clauses.push("category=?"); params.push(category); }
     if (q) { clauses.push("(title LIKE ? OR short_description LIKE ? OR venue LIKE ?)"); const term = `%${String(q).slice(0, 100)}%`; params.push(term, term, term); }
-    return db.prepare(`SELECT * FROM events WHERE ${clauses.join(" AND ")} ORDER BY event_date DESC,updated_at DESC`).all(...params).map(mapEvent);
+    const paging = pagination({ page, pageSize }, 25, 100);
+    const where = clauses.join(" AND ");
+    const total = db.prepare(`SELECT COUNT(*) count FROM events WHERE ${where}`).get(...params).count;
+    const items = db.prepare(`SELECT * FROM events WHERE ${where} ORDER BY event_date DESC,updated_at DESC LIMIT ? OFFSET ?`).all(...params, paging.pageSize, paging.offset).map(mapEvent);
+    return { items, pagination: metadata(total, paging.page, paging.pageSize) };
   }
 
   function createAnnouncement(input, role) {
@@ -381,7 +401,7 @@ function createPublicityRepository(db, options = {}) {
       (SELECT COUNT(*) FROM events WHERE status='published' AND event_date>=date('now')) AS upcomingEvents,
       (SELECT COUNT(*) FROM events WHERE status='published' AND substr(event_date,1,7)=strftime('%Y-%m','now')) AS eventsThisMonth,
       (SELECT COUNT(*) FROM events WHERE status='draft') AS draftEvents`).get();
-    return { ...counts, recentAnnouncements: listAnnouncementsAdmin().slice(0, 5), upcomingEventsList: listEventsPublic().upcoming.slice(0, 5) };
+    return { ...counts, recentAnnouncements: listAnnouncementsAdmin({ pageSize: 5 }).items, upcomingEventsList: listEventsPublic({ pageSize: 5 }).upcoming };
   }
 
   return {

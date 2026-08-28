@@ -1,12 +1,18 @@
 const express = require("express");
+const crypto = require("crypto");
+const fs = require("fs");
+const multer = require("multer");
 const { createUploadStore } = require("./uploads");
 
 function createPublicityRouter({ repository, uploadDirectory, requirePublicityAdmin, audit = () => {} }) {
   const router = express.Router();
   const uploads = createUploadStore(uploadDirectory);
-  const handle = fn => (req, res, next) => {
-    try { fn(req, res, next); } catch (error) { next(error); }
-  };
+  const handle = fn => async (req, res, next) => { try { await fn(req, res, next); } catch (error) { next(error); } };
+  const imageUpload = multer({
+    storage: multer.diskStorage({ destination: uploadDirectory, filename: (req, file, callback) => callback(null, `${crypto.randomBytes(16).toString("hex")}.upload`) }),
+    limits: { fileSize: 2 * 1024 * 1024, files: 1, fields: 2 },
+    fileFilter: (req, file, callback) => callback(null, ["image/jpeg", "image/png", "image/webp"].includes(file.mimetype))
+  });
   const uploadToken = value => String(value || "").match(/^\/api\/publicity\/files\/([a-f0-9]{32}\.[a-z0-9]{2,5})$/)?.[1] || null;
   const announcementTokens = announcement => new Set([
     uploadToken(announcement?.featuredImage),
@@ -35,16 +41,16 @@ function createPublicityRouter({ repository, uploadDirectory, requirePublicityAd
 
   router.get("/publicity/home", handle((req, res) => res.json(repository.homeFeed())));
   router.get("/publicity/urgent", handle((req, res) => res.json({ announcement: repository.urgentNotice() })));
-  router.get("/announcements", handle((req, res) => res.json({
-    categories: repository.categories.announcements,
-    announcements: repository.listAnnouncementsPublic({ category: req.query.category, q: req.query.q })
-  })));
+  router.get("/announcements", handle((req, res) => {
+    const result = repository.listAnnouncementsPublic(req.query);
+    res.json({ categories: repository.categories.announcements, announcements: result.items, pagination: result.pagination });
+  }));
   router.get("/announcements/:slug", handle((req, res) => {
     const announcement = repository.getAnnouncementBySlug(req.params.slug);
     if (!announcement) return res.status(404).json({ ok: false, message: "Announcement not found." });
     res.json({ announcement });
   }));
-  router.get("/events", handle((req, res) => res.json({ categories: repository.categories.events, ...repository.listEventsPublic() })));
+  router.get("/events", handle((req, res) => res.json({ categories: repository.categories.events, ...repository.listEventsPublic(req.query) })));
   router.get("/events/:slug", handle((req, res) => {
     const event = repository.getEventBySlug(req.params.slug);
     if (!event) return res.status(404).json({ ok: false, message: "Event not found." });
@@ -52,13 +58,25 @@ function createPublicityRouter({ repository, uploadDirectory, requirePublicityAd
   }));
   router.get("/publicity/files/:token", handle((req, res) => {
     const token = repository.publicAnnouncementFile(req.params.token);
-    const file = token && uploads.absolute(token);
+    const file = token && (req.query.variant === "card" ? uploads.thumbnailAbsolute(token) : uploads.absolute(token));
     if (!file) return res.sendStatus(404);
     res.setHeader("Cache-Control", "public, max-age=3600");
     res.sendFile(file);
   }));
 
   router.use("/publicity/admin", requirePublicityAdmin);
+  router.post("/publicity/admin/uploads/image", imageUpload.single("image"), handle(async (req, res) => {
+    if (!req.file) return res.status(400).json({ ok: false, message: "Choose a JPG, PNG, or WEBP image." });
+    try {
+      const saved = await uploads.saveImage(req.file);
+      res.status(201).json({ ok: true, imageUrl: `/api/publicity/files/${saved.token}`, size: saved.size, originalSize: saved.originalSize });
+    } finally { if (req.file?.path) try { fs.unlinkSync(req.file.path); } catch {} }
+  }));
+  router.delete("/publicity/admin/uploads/:token", handle((req, res) => {
+    if (repository.adminAnnouncementFile(req.params.token)) return res.status(409).json({ ok: false, message: "This image is already in use." });
+    uploads.remove(req.params.token);
+    res.json({ ok: true });
+  }));
   router.use("/publicity/admin/announcements", express.json({ limit: "28mb" }));
   router.use("/publicity/admin/events", express.json({ limit: "3mb" }));
   router.use(express.json({ limit: "32kb" }));
@@ -75,9 +93,10 @@ function createPublicityRouter({ repository, uploadDirectory, requirePublicityAd
     statuses: repository.statuses
   })));
   router.get("/publicity/admin/dashboard", handle((req, res) => res.json({ role: req.admin.role, ...repository.dashboard() })));
-  router.get("/publicity/admin/announcements", handle((req, res) => res.json({
-    announcements: repository.listAnnouncementsAdmin({ q: req.query.q, status: req.query.status, category: req.query.category })
-  })));
+  router.get("/publicity/admin/announcements", handle((req, res) => {
+    const result = repository.listAnnouncementsAdmin(req.query);
+    res.json({ announcements: result.items, pagination: result.pagination });
+  }));
   router.get("/publicity/admin/announcements/:id", handle((req, res) => {
     const announcement = repository.getAnnouncementAdmin(req.params.id);
     if (!announcement) return res.status(404).json({ ok: false, message: "Announcement not found." });
@@ -113,9 +132,10 @@ function createPublicityRouter({ repository, uploadDirectory, requirePublicityAd
     res.json({ ok: true });
   }));
 
-  router.get("/publicity/admin/events", handle((req, res) => res.json({
-    events: repository.listEventsAdmin({ q: req.query.q, status: req.query.status, category: req.query.category })
-  })));
+  router.get("/publicity/admin/events", handle((req, res) => {
+    const result = repository.listEventsAdmin(req.query);
+    res.json({ events: result.items, pagination: result.pagination });
+  }));
   router.get("/publicity/admin/events/:id", handle((req, res) => {
     const event = repository.getEventAdmin(req.params.id);
     if (!event) return res.status(404).json({ ok: false, message: "Event not found." });

@@ -1,6 +1,7 @@
 (function () {
   const main = document.getElementById("hubMain");
   if (!main) return;
+  const ui = window.SRC_UI;
   const path = window.location.pathname.replace(/\/$/, "") || "/";
   const esc = value => String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
   const formatDate = value => value ? new Intl.DateTimeFormat("en-GH", { year: "numeric", month: "long", day: "numeric" }).format(new Date(value.length === 10 ? `${value}T00:00:00` : value)) : "Not scheduled";
@@ -21,16 +22,18 @@
     return data;
   }
 
-  async function filePayload(file, onProgress = () => {}) {
+  async function uploadPublicityImage(file) {
     if (!file) return null;
-    const dataUrl = await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result || ""));
-      reader.onerror = () => reject(new Error("Could not read the selected image."));
-      reader.onprogress = event => { if (event.lengthComputable) onProgress(Math.round((event.loaded / event.total) * 100)); };
-      reader.readAsDataURL(file);
-    });
-    return { name: file.name, type: file.type, data: dataUrl.split(",")[1] || "" };
+    const form = new FormData();
+    form.append("image", file, file.name);
+    return api("/api/publicity/admin/uploads/image", { method: "POST", body: form });
+  }
+
+  async function removeUnclaimedImages(urls) {
+    await Promise.all(urls.map(url => {
+      const token = String(url || "").match(/^\/api\/publicity\/files\/([a-f0-9]{32}\.[a-z0-9]{2,5})$/)?.[1];
+      return token ? api(`/api/publicity/admin/uploads/${token}`, { method: "DELETE" }).catch(() => null) : null;
+    }));
   }
 
   function validateAnnouncementImage(file) {
@@ -49,10 +52,11 @@
     return url ? `<img class="${className}" src="${esc(url)}" alt="${esc(alt)}" loading="lazy">`
       : `<div class="${className} publicity-image-fallback" role="img" aria-label="No image supplied"><span aria-hidden="true">SRC</span></div>`;
   }
+  const cardImageUrl = url => /^\/api\/publicity\/files\//.test(String(url || "")) ? `${url}?variant=card` : url;
 
   function announcementCard(item) {
     return `<article class="hub-card publicity-card ${item.urgent ? "is-urgent" : ""}">
-      ${imageBlock(item.featuredImage, item.title)}
+      ${imageBlock(cardImageUrl(item.featuredImage), item.title)}
       <div class="publicity-card-body"><div class="hub-card-meta"><span class="hub-badge">${esc(item.category)}</span><time datetime="${esc(item.publishedAt)}">${formatDate(item.publishedAt)}</time></div>
       ${item.urgent ? '<span class="urgent-badge">Important notice</span>' : ""}<h3>${esc(item.title)}</h3><p>${esc(item.summary)}</p>
       <a class="hub-btn hub-btn-outline" href="/announcements/${encodeURIComponent(item.slug)}">Read more</a></div></article>`;
@@ -61,7 +65,7 @@
   function eventCard(item) {
     const status = item.status === "cancelled" ? '<span class="cancelled-badge">Cancelled</span>' : "";
     return `<article class="hub-card publicity-card event-publicity-card">
-      ${imageBlock(item.posterImage, `${item.title} poster`)}
+      ${imageBlock(cardImageUrl(item.posterImage), `${item.title} poster`)}
       <div class="publicity-card-body"><div class="hub-card-meta"><span class="hub-badge">${esc(item.category)}</span><time datetime="${esc(item.eventDate)}">${formatDate(item.eventDate)}</time></div>
       ${status}<h3>${esc(item.title)}</h3><p class="event-facts"><b>${esc(formatTime(item.startTime))}</b><span>${esc(item.venue)}</span></p><p>${esc(item.shortDescription)}</p>
       <div class="card-actions"><a class="hub-btn hub-btn-outline" href="/events/${encodeURIComponent(item.slug)}">View details</a>
@@ -95,33 +99,47 @@
         <label><span>Search announcements</span><input type="search" name="q" placeholder="Search title or content"></label>
         <label><span>Category</span><select name="category"><option value="">All categories</option></select></label>
         <button class="hub-btn hub-btn-primary" type="submit">Apply filters</button><button class="hub-btn hub-btn-quiet" type="reset">Clear</button>
-      </form><div class="publicity-results-heading"><h2>Published announcements</h2><span id="announcementCount"></span></div><div class="hub-three-grid" id="announcementList"><div class="publicity-loading">Loading announcements…</div></div></div></section>`;
+      </form><div class="publicity-results-heading"><h2>Published announcements</h2><span id="announcementCount"></span></div><div class="hub-three-grid" id="announcementList"><div class="publicity-loading">Loading announcements…</div></div><div id="announcementPagination"></div></div></section>`;
     const form = document.getElementById("announcementFilters");
     const list = document.getElementById("announcementList");
-    async function load() {
+    let page = 1;
+    async function load(requestedPage = page) {
+      page = requestedPage;
       list.innerHTML = '<div class="publicity-loading">Loading announcements…</div>';
       const params = new URLSearchParams(new FormData(form));
+      params.set("page", page);
       const data = await api(`/api/announcements?${params}`);
       const select = form.elements.category;
       if (select.options.length === 1) data.categories.forEach(category => select.add(new Option(category, category)));
-      document.getElementById("announcementCount").textContent = `${data.announcements.length} result${data.announcements.length === 1 ? "" : "s"}`;
+      document.getElementById("announcementCount").textContent = `${data.pagination.totalItems} result${data.pagination.totalItems === 1 ? "" : "s"}`;
       list.innerHTML = data.announcements.length ? data.announcements.map(announcementCard).join("") : '<div class="publicity-empty"><strong>No announcements found</strong><span>Try a different search or category.</span></div>';
+      const paginationHost = document.getElementById("announcementPagination");
+      paginationHost.innerHTML = ui.paginationMarkup(data.pagination, "Announcement");
+      ui.bindPagination(paginationHost, nextPage => { load(nextPage).catch(showPageError); list.scrollIntoView({ behavior: "smooth", block: "start" }); });
     }
-    form.addEventListener("submit", event => { event.preventDefault(); load().catch(showPageError); });
-    form.addEventListener("reset", () => setTimeout(() => load().catch(showPageError)));
+    form.addEventListener("submit", event => { event.preventDefault(); load(1).catch(showPageError); });
+    form.addEventListener("reset", () => setTimeout(() => load(1).catch(showPageError)));
     await load();
   }
 
   async function eventsPage() {
     document.title = "Events | SRC Digital Hub";
     main.innerHTML = `${pageHero("Campus calendar", "Events", "Explore upcoming SRC programs and keep a record of completed or cancelled campus activities.")}
-      <section class="hub-section"><div class="hub-container"><div class="publicity-results-heading"><div><span class="hub-eyebrow">NEXT ON CAMPUS</span><h2>Upcoming events</h2></div></div><div class="hub-three-grid" id="upcomingEvents"><div class="publicity-loading">Loading upcoming events…</div></div></div></section>
-      <section class="hub-section hub-section-tinted"><div class="hub-container"><div class="publicity-results-heading"><div><span class="hub-eyebrow">EVENT ARCHIVE</span><h2>Past and cancelled events</h2></div></div><div class="hub-three-grid" id="pastEvents"><div class="publicity-loading">Loading event archive…</div></div></div></section>`;
-    try {
-      const data = await api("/api/events");
+      <section class="hub-section"><div class="hub-container"><div class="publicity-results-heading"><div><span class="hub-eyebrow">NEXT ON CAMPUS</span><h2>Upcoming events</h2></div></div><div class="hub-three-grid" id="upcomingEvents"><div class="publicity-loading">Loading upcoming events…</div></div><div id="upcomingPagination"></div></div></section>
+      <section class="hub-section hub-section-tinted"><div class="hub-container"><div class="publicity-results-heading"><div><span class="hub-eyebrow">EVENT ARCHIVE</span><h2>Past and cancelled events</h2></div></div><div class="hub-three-grid" id="pastEvents"><div class="publicity-loading">Loading event archive…</div></div><div id="pastPagination"></div></div></section>`;
+    let upcomingPage = 1;
+    let pastPage = 1;
+    const load = async () => {
+      const data = await api(`/api/events?upcomingPage=${upcomingPage}&pastPage=${pastPage}`);
       document.getElementById("upcomingEvents").innerHTML = data.upcoming.length ? data.upcoming.map(eventCard).join("") : '<div class="publicity-empty">No upcoming events are currently published.</div>';
       document.getElementById("pastEvents").innerHTML = data.past.length ? data.past.map(eventCard).join("") : '<div class="publicity-empty">No past events are available yet.</div>';
-    } catch (error) { showPageError(error); }
+      for (const [scope, pagination] of Object.entries(data.pagination)) {
+        const host = document.getElementById(`${scope}Pagination`);
+        host.innerHTML = ui.paginationMarkup(pagination, `${scope} event`);
+        ui.bindPagination(host, nextPage => { if (scope === "upcoming") upcomingPage = nextPage; else pastPage = nextPage; load().catch(showPageError); });
+      }
+    };
+    try { await load(); } catch (error) { showPageError(error); }
   }
 
   function bodyParagraphs(value) {
@@ -214,10 +232,10 @@
   }
 
   function renderAdminLogin(root) {
-    root.innerHTML = `<form class="publicity-login hub-card" id="publicityLogin"><span class="hub-badge">Authorized administrators only</span><h2>Sign in to the Hub</h2><p>Use a configured administrator credential. Access is limited by role on the server.</p><label><span>Password</span><input type="password" name="password" autocomplete="current-password" required></label><button class="hub-btn hub-btn-primary" type="submit">Sign in</button><p class="form-message" aria-live="polite"></p></form>`;
+    root.innerHTML = `<form class="publicity-login hub-card" id="publicityLogin"><span class="hub-badge">Authorized administrators only</span><h2>Sign in to the Hub</h2><p>Use your administrator username and password. Existing role-password access remains available during migration.</p><label><span>Username</span><input name="username" autocomplete="username" maxlength="50" placeholder="Optional for legacy access"></label><label><span>Password</span><input type="password" name="password" autocomplete="current-password" required></label><button class="hub-btn hub-btn-primary" type="submit">Sign in</button><p class="form-message" aria-live="polite"></p></form>`;
     root.querySelector("form").addEventListener("submit", async event => {
       event.preventDefault(); const message = root.querySelector(".form-message"); message.textContent = "Signing in…";
-      try { await api("/api/admin/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password: event.target.password.value }) }); await loadAdmin(); }
+      try { await api("/api/admin/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: event.target.username.value.trim(), password: event.target.password.value }) }); await loadAdmin(); }
       catch (error) { message.textContent = error.message; }
     });
   }
@@ -282,21 +300,25 @@
   async function loadAdminModule(type, config) {
     const module = document.getElementById("adminModule");
     const singular = type === "announcements" ? "Announcement" : "Event";
-    module.innerHTML = `<div class="admin-module-head"><div><h2>${type === "announcements" ? "Announcements" : "Events"}</h2><p>Create, review, publish, archive, cancel, or complete publicity records.</p></div><button class="hub-btn hub-btn-primary" data-create="${type}" type="button">Create ${singular}</button></div><form class="admin-filters" id="adminFilters"><input type="search" name="q" placeholder="Search ${type}"><select name="status"><option value="">All statuses</option>${config.statuses[type].map(value => `<option value="${value}">${value}</option>`).join("")}</select><select name="category"><option value="">All categories</option>${config.categories[type].map(value => `<option value="${value}">${value}</option>`).join("")}</select><button class="hub-btn hub-btn-quiet" type="submit">Filter</button></form><div class="admin-records publicity-loading">Loading ${type}…</div>`;
+    module.innerHTML = `<div class="admin-module-head"><div><h2>${type === "announcements" ? "Announcements" : "Events"}</h2><p>Create, review, publish, archive, cancel, or complete publicity records.</p></div><button class="hub-btn hub-btn-primary" data-create="${type}" type="button">Create ${singular}</button></div><form class="admin-filters" id="adminFilters"><input type="search" name="q" placeholder="Search ${type}"><select name="status"><option value="">All statuses</option>${config.statuses[type].map(value => `<option value="${value}">${value}</option>`).join("")}</select><select name="category"><option value="">All categories</option>${config.categories[type].map(value => `<option value="${value}">${value}</option>`).join("")}</select><button class="hub-btn hub-btn-quiet" type="submit">Filter</button></form><div class="admin-records publicity-loading">Loading ${type}…</div><div id="adminPagination"></div>`;
     module.querySelector("[data-create]").addEventListener("click", () => openEditor(type, null, config));
     const filters = module.querySelector("#adminFilters");
-    filters.addEventListener("submit", event => { event.preventDefault(); loadRecords(type, config); });
-    await loadRecords(type, config);
+    filters.addEventListener("submit", event => { event.preventDefault(); loadRecords(type, config, 1); });
+    await loadRecords(type, config, 1);
   }
 
-  async function loadRecords(type, config) {
+  async function loadRecords(type, config, page = 1) {
     const form = document.getElementById("adminFilters");
     const target = document.querySelector(".admin-records");
     const params = new URLSearchParams(new FormData(form));
+    params.set("page", page);
     const data = await api(`/api/publicity/admin/${type}?${params}`);
     const records = data[type];
-    if (!records.length) { target.innerHTML = '<div class="publicity-empty">No matching records.</div>'; return; }
-    target.innerHTML = `<div class="admin-table-wrap"><table class="admin-table"><thead><tr>${type === "announcements" ? "<th>Title</th><th>Category</th><th>Status</th><th>Publication</th><th>Flags</th>" : "<th>Event</th><th>Date</th><th>Venue</th><th>Category</th><th>Status</th><th>Featured</th>"}<th>Actions</th></tr></thead><tbody>${records.map(item => type === "announcements" ? `<tr><td data-label="Title"><strong>${esc(item.title)}</strong></td><td data-label="Category">${esc(item.category)}</td><td data-label="Status"><span class="status-badge">${esc(item.status)}</span></td><td data-label="Publication">${item.publishedAt ? formatDate(item.publishedAt) : "Not published"}</td><td data-label="Flags">${item.urgent ? "Urgent " : ""}${item.featured ? "Featured" : ""}</td><td data-label="Actions"><button data-edit="${item.id}">Edit</button><button class="danger" data-delete="${item.id}">Delete</button></td></tr>` : `<tr><td data-label="Event"><strong>${esc(item.title)}</strong></td><td data-label="Date">${formatDate(item.eventDate)}</td><td data-label="Venue">${esc(item.venue)}</td><td data-label="Category">${esc(item.category)}</td><td data-label="Status"><span class="status-badge">${esc(item.status)}</span></td><td data-label="Featured">${item.featured ? "Yes" : "No"}</td><td data-label="Actions"><button data-edit="${item.id}">Edit</button><button class="danger" data-delete="${item.id}">Delete</button></td></tr>`).join("")}</tbody></table></div>`;
+    target.innerHTML = records.length ? `<div class="admin-table-wrap"><table class="admin-table"><thead><tr>${type === "announcements" ? "<th>Title</th><th>Category</th><th>Status</th><th>Publication</th><th>Flags</th>" : "<th>Event</th><th>Date</th><th>Venue</th><th>Category</th><th>Status</th><th>Featured</th>"}<th>Actions</th></tr></thead><tbody>${records.map(item => type === "announcements" ? `<tr><td data-label="Title"><strong>${esc(item.title)}</strong></td><td data-label="Category">${esc(item.category)}</td><td data-label="Status"><span class="status-badge">${esc(item.status)}</span></td><td data-label="Publication">${item.publishedAt ? formatDate(item.publishedAt) : "Not published"}</td><td data-label="Flags">${item.urgent ? "Urgent " : ""}${item.featured ? "Featured" : ""}</td><td data-label="Actions"><button data-edit="${item.id}">Edit</button><button class="danger" data-delete="${item.id}">Delete</button></td></tr>` : `<tr><td data-label="Event"><strong>${esc(item.title)}</strong></td><td data-label="Date">${formatDate(item.eventDate)}</td><td data-label="Venue">${esc(item.venue)}</td><td data-label="Category">${esc(item.category)}</td><td data-label="Status"><span class="status-badge">${esc(item.status)}</span></td><td data-label="Featured">${item.featured ? "Yes" : "No"}</td><td data-label="Actions"><button data-edit="${item.id}">Edit</button><button class="danger" data-delete="${item.id}">Delete</button></td></tr>`).join("")}</tbody></table></div>` : '<div class="publicity-empty">No matching records.</div>';
+    const paginationHost = document.getElementById("adminPagination");
+    paginationHost.innerHTML = ui.paginationMarkup(data.pagination, `Admin ${type}`);
+    ui.bindPagination(paginationHost, nextPage => loadRecords(type, config, nextPage));
+    if (!records.length) return;
     target.querySelectorAll("[data-edit]").forEach(button => button.addEventListener("click", async () => {
       const data = await api(`/api/publicity/admin/${type}/${button.dataset.edit}`);
       openEditor(type, data[type === "announcements" ? "announcement" : "event"], config);
@@ -321,13 +343,11 @@
       <div class="editor-actions field-wide"><p class="form-message" aria-live="polite"></p><button class="hub-btn hub-btn-primary" type="submit">Save ${announcement ? "announcement" : "event"}</button></div></form></section></div>`;
     let previewObjectUrl = "";
     let inlineImages = announcement ? (Array.isArray(item?.inlineImages) ? item.inlineImages : []).map(image => ({ ...image, file: null, objectUrl: "" })) : [];
-    const close = () => {
+    const releaseMedia = () => {
       if (previewObjectUrl) URL.revokeObjectURL(previewObjectUrl);
       inlineImages.forEach(image => { if (image.objectUrl) URL.revokeObjectURL(image.objectUrl); });
-      host.innerHTML = "";
     };
-    host.querySelector(".editor-close").addEventListener("click", close);
-    host.querySelector(".editor-backdrop").addEventListener("click", event => { if (event.target.classList.contains("editor-backdrop")) close(); });
+    const close = ui.bindDialog(host, { onClose: releaseMedia });
     const form = host.querySelector("#editorForm");
     if (!announcement) {
       const existingPosterLabel = form.elements.posterImage.closest("label");
@@ -491,6 +511,7 @@
     }
     form.addEventListener("submit", async event => {
       event.preventDefault(); const message = form.querySelector(".form-message"); message.textContent = "Saving…";
+      const unclaimedImages = [];
       const values = Object.fromEntries(new FormData(form));
       delete values.featuredImageFile;
       delete values.posterImageFile;
@@ -509,28 +530,37 @@
           const prepare = async file => {
             if (!file) return null;
             const number = ++prepared;
-            return filePayload(file, progress => { message.textContent = `Preparing image ${number} of ${totalFiles}: ${progress}%`; });
+            message.textContent = `Uploading image ${number} of ${totalFiles}…`;
+            const uploaded = await uploadPublicityImage(file);
+            unclaimedImages.push(uploaded.imageUrl);
+            return uploaded.imageUrl;
           };
-          values.featuredImageUpload = await prepare(imageFile);
+          const featuredImage = await prepare(imageFile);
+          if (featuredImage) values.featuredImage = featuredImage;
           values.inlineImages = [];
-          for (const image of orderedImages) values.inlineImages.push({ id: image.id, url: image.url, caption: image.caption, upload: await prepare(image.file) });
-          message.textContent = "Uploading and saving article images…";
+          for (const image of orderedImages) values.inlineImages.push({ id: image.id, url: await prepare(image.file) || image.url, caption: image.caption });
+          message.textContent = "Saving article…";
         }
-        catch (error) { message.textContent = error.message; return; }
+        catch (error) { await removeUnclaimedImages(unclaimedImages); message.textContent = error.message; return; }
       } else {
         const imageFile = form.elements.posterImageFile.files[0];
         const imageError = validateAnnouncementImage(imageFile);
         if (imageError) { message.textContent = imageError; return; }
         try {
-          values.posterImageUpload = await filePayload(imageFile, progress => { message.textContent = `Preparing event image: ${progress}%`; });
-          if (imageFile) message.textContent = "Uploading and saving event image…";
-        } catch (error) { message.textContent = error.message; return; }
+          if (imageFile) {
+            message.textContent = "Uploading event image…";
+            const uploaded = await uploadPublicityImage(imageFile);
+            values.posterImage = uploaded.imageUrl;
+            unclaimedImages.push(uploaded.imageUrl);
+            message.textContent = "Saving event…";
+          }
+        } catch (error) { await removeUnclaimedImages(unclaimedImages); message.textContent = error.message; return; }
       }
       if (values.publishedAt) values.publishedAt = new Date(values.publishedAt).toISOString();
       try {
         await api(`/api/publicity/admin/${type}${item ? `/${item.id}` : ""}`, { method: item ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(values) });
         close(); await loadAdmin();
-      } catch (error) { message.textContent = error.message; }
+      } catch (error) { await removeUnclaimedImages(unclaimedImages); message.textContent = error.message; }
     });
     form.querySelector("input,textarea,select")?.focus();
   }

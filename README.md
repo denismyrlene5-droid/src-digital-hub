@@ -32,6 +32,7 @@ Copy `.env.example` to `.env` and use long, distinct passwords:
 - `STUDENT_AFFAIRS_ADMIN_PASSWORD` — private feedback and Lost & Found moderation
 - `AWARDS_ADMIN_PASSWORD` — Awards administration only
 - `CONTENT_EDITOR_PASSWORD` — draft content, media, and executive editing without publish/delete authority
+- `ADMIN_USERS_JSON` — optional individual username accounts, for example an array of `{ "username": "name", "password": "<deployment-secret>", "role": "publicity_admin" }` records. Supported roles match the five roles above. Keep the value only in the deployment secret store and include the full active account list on every restart.
 - `DATABASE_PATH` — SQLite path; default `data/src-awards.sqlite`
 - `PAYSTACK_SECRET_KEY` — optional Paystack test secret only
 - `PORT`, `NODE_ENV`
@@ -50,9 +51,9 @@ Media albums and photos are stored as database metadata plus files outside the p
 
 Executive profiles support terms, display order, active/inactive history, responsibilities, optional public contact details, and server-controlled administration. No real office-holder data is seeded.
 
-The unified admin dashboard exposes only role-authorized navigation and APIs. Important changes are recorded in `audit_log` with the administrator role, action, resource identifier, timestamp, and a short safe summary. Feedback messages, internal notes, passwords, and secrets are excluded.
+The unified admin dashboard exposes only role-authorized navigation and APIs. Individual accounts record the username and role in `audit_log`; legacy role-password login remains available during migration. Important changes record the action, resource identifier, timestamp, and a short safe summary. Feedback messages, internal notes, passwords, and secrets are excluded.
 
-Uploads are stored outside the public directory in `data/uploads` with random filenames. The server checks extension, MIME declaration, size, safe filename shape, and basic file signatures. This local storage is suitable for development; production should use managed object storage, malware scanning, retention rules, backups, and image redaction/moderation workflows.
+Uploads are stored outside the public directory in `data/uploads` with random filenames. Announcement and event images use multipart disk-streamed uploads, are decoded by Sharp, auto-oriented, resized, compressed to WebP, and receive a card thumbnail. Legacy upload callers remain backward compatible. This local storage is suitable for a single persistent-volume deployment; larger deployments should use managed object storage, malware scanning, retention rules, backups, and image redaction/moderation workflows.
 
 ## Awards and payments
 
@@ -115,7 +116,7 @@ Do not place any payment credential in `public/`, the database settings table, l
 
 ## Validation
 
-Run `npm test`. There is no compile/build, lint, or static type-check pipeline because the frontend is served as plain HTML/CSS/JavaScript. Use `node --check` for JavaScript syntax validation.
+Run `npm test` for API/regression tests, `npm run lint` for JavaScript quality checks, and `npm run test:browser` for desktop/mobile Chromium checks. There is no compile/build step because the frontend is served as plain HTML/CSS/JavaScript.
 
 ## Production-readiness documentation
 

@@ -17,6 +17,13 @@ const { createUploadStore } = require("./uploads");
 
 const normalizePhone = phone => String(phone || "").replace(/[^\d+]/g, "");
 const validEmail = email => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && email.length <= 254;
+function parseAdminUsers(value) {
+  if (!String(value || "").trim()) return [];
+  let parsed;
+  try { parsed = JSON.parse(value); } catch { throw new Error("ADMIN_USERS_JSON must be valid JSON."); }
+  if (!Array.isArray(parsed) || parsed.length > 50) throw new Error("ADMIN_USERS_JSON must be an array of administrator accounts.");
+  return parsed;
+}
 function parseVote(body) {
   const nomineeId = Number(body?.nomineeId);
   const votes = Number(body?.votes);
@@ -53,11 +60,17 @@ function createApp(options = {}) {
   const studentAffairsAdminPassword = options.studentAffairsAdminPassword ?? process.env.STUDENT_AFFAIRS_ADMIN_PASSWORD ?? "";
   const awardsAdminPassword = options.awardsAdminPassword ?? process.env.AWARDS_ADMIN_PASSWORD ?? "";
   const contentEditorPassword = options.contentEditorPassword ?? process.env.CONTENT_EDITOR_PASSWORD ?? "";
+  const adminUsers = options.adminUsers ?? parseAdminUsers(process.env.ADMIN_USERS_JSON);
   const minimumPasswordLength=production?16:12;
   const rolePasswords={ADMIN_PASSWORD:adminPassword,PUBLICITY_ADMIN_PASSWORD:publicityAdminPassword,STUDENT_AFFAIRS_ADMIN_PASSWORD:studentAffairsAdminPassword,AWARDS_ADMIN_PASSWORD:awardsAdminPassword,CONTENT_EDITOR_PASSWORD:contentEditorPassword};
   for(const [name,password] of Object.entries(rolePasswords))if(password&&password.length<minimumPasswordLength)throw new Error(`${name} must be at least ${minimumPasswordLength} characters long.`);
   const configuredPasswords=Object.values(rolePasswords).filter(Boolean);if(new Set(configuredPasswords).size!==configuredPasswords.length)throw new Error("Each configured administrator role must use a distinct password.");
-  if(production&&!adminPassword)throw new Error("Production requires ADMIN_PASSWORD for first-admin provisioning.");
+  for (const account of adminUsers) if (String(account?.password || "").length < minimumPasswordLength) throw new Error(`Every ADMIN_USERS_JSON password must be at least ${minimumPasswordLength} characters long.`);
+  const configuredUsernames = adminUsers.map(account => String(account?.username || "").toLowerCase());
+  if (new Set(configuredUsernames).size !== configuredUsernames.length) throw new Error("Each ADMIN_USERS_JSON username must be unique.");
+  const allAdminPasswords = [...configuredPasswords, ...adminUsers.map(account => String(account?.password || ""))];
+  if (new Set(allAdminPasswords).size !== allAdminPasswords.length) throw new Error("Each administrator account must use a distinct password.");
+  if(production&&!adminPassword&&!adminUsers.some(account=>account?.role==="super_admin"))throw new Error("Production requires a configured Super Admin account.");
   const simulationRequested = paymentProvider === "simulation" && (options.simulationEnabled ?? !["0", "false", "off"].includes(String(process.env.SIMULATED_PAYMENTS_ENABLED || "true").toLowerCase()));
   if (production && simulationRequested) throw new Error("Simulated payments cannot be enabled in production.");
   if(production&&paymentProvider==="paystack_test")throw new Error("Paystack test mode cannot be used in production.");
@@ -68,7 +81,7 @@ function createApp(options = {}) {
   const paystackMode=paymentProvider==="paystack_live"?"live":"test";
   const paystackProvider = createPaystackProvider({ secretKey: paymentProvider.startsWith("paystack_") ? paystackKey : "", mode:paystackMode, fetchImpl: options.fetchImpl, diagnosticsEnabled: staging, diagnosticLogger: options.paymentDiagnosticLogger || console.info });
   const securityEvent=(event,details={})=>console.warn(JSON.stringify({timestamp:new Date().toISOString(),category:"security",event,...details}));
-  const auth = createAuth({ adminPassword, publicityAdminPassword, studentAffairsAdminPassword, awardsAdminPassword, contentEditorPassword, secureCookies: production || staging, onSecurityEvent:securityEvent });
+  const auth = createAuth({ db, adminUsers, adminPassword, publicityAdminPassword, studentAffairsAdminPassword, awardsAdminPassword, contentEditorPassword, secureCookies: production || staging, onSecurityEvent:securityEvent });
   const paymentLimit = rateLimit({ windowMs: 60_000, max: 20 });
   const requireSameOrigin=(req,res,next)=>{
     if(["GET","HEAD","OPTIONS"].includes(req.method))return next();
@@ -243,7 +256,7 @@ function createApp(options = {}) {
   app.post("/api/admin/logout", auth.requireAnyAdmin, auth.logout);
   app.get("/api/admin/context", auth.requireAnyAdmin, (req, res) => {
     const role = req.admin.role;
-    res.json({ role, capabilities: {
+    res.json({ role, username: req.admin.username, capabilities: {
       publicity: ["super_admin", "publicity_admin"].includes(role),
       feedback: ["super_admin", "student_affairs_admin"].includes(role),
       lostFound: ["super_admin", "student_affairs_admin", "publicity_admin"].includes(role),
@@ -381,6 +394,8 @@ function createApp(options = {}) {
   app.use(express.static(publicDirectory, { dotfiles: "deny", index: false }));
   app.use("/api", (req, res) => res.status(404).json({ ok: false, message: "API endpoint not found." }));
   app.use((error, req, res, next) => {
+    if (error?.code === "LIMIT_FILE_SIZE") error = Object.assign(new Error("Image must be smaller than 2 MB."), { status: 400 });
+    else if (String(error?.code || "").startsWith("LIMIT_")) error = Object.assign(new Error("The upload could not be accepted."), { status: 400 });
     if (!error.status || error.status >= 500) console.error("Request failed:", error.message);
     if (res.headersSent) return next(error);
     res.status(error.status || 500).json({ ok: false, message: error.status ? error.message : "Internal server error." });

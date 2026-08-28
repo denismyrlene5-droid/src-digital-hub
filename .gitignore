@@ -31,6 +31,8 @@ backups/
 
 # Test and tool output
 coverage/
+test-results/
+playwright-report/
 .nyc_output/
 .cache/
 .temp/

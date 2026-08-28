@@ -254,7 +254,7 @@ function setupAdmin() {
   byId("closeAdmin").addEventListener("click", close); overlay.addEventListener("click", event => { if (event.target === overlay) close(); });
   byId("adminLogin").addEventListener("submit", async event => {
     event.preventDefault(); byId("adminLoginMessage").textContent = "";
-    try { await api("/api/admin/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password: byId("adminPassword").value }) }); byId("adminPassword").value = ""; await loadAdmin(); }
+    try { await api("/api/admin/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: byId("adminUsername")?.value.trim() || "", password: byId("adminPassword").value }) }); byId("adminPassword").value = ""; await loadAdmin(); }
     catch (error) { byId("adminLoginMessage").textContent = error.message; }
   });
   byId("adminLogout").addEventListener("click", async () => { await api("/api/admin/logout", { method: "POST" }); await loadAdmin(); });

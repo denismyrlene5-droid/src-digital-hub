@@ -3,7 +3,7 @@
   async function api(url,options={}){const response=await fetch(url,options);const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.message||"Request failed.");return data;}
   async function filePayload(file){if(!file)return null;return{name:file.name,type:file.type,data:(await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(",")[1]||"");reader.onerror=reject;reader.readAsDataURL(file);})).toString()};}
   function modal(title,body){return`<div class="editor-backdrop"><section class="publicity-editor" role="dialog" aria-modal="true" aria-labelledby="awardsEditorTitle"><div class="editor-head"><h2 id="awardsEditorTitle">${esc(title)}</h2><button class="editor-close" type="button" aria-label="Close">×</button></div>${body}</section></div>`;}
-  function closeBinder(host){const close=()=>host.innerHTML="";host.querySelector(".editor-close").addEventListener("click",close);host.querySelector(".editor-backdrop").addEventListener("click",event=>{if(event.target===event.currentTarget)close();});return close;}
+  function closeBinder(host){return window.SRC_UI.bindDialog(host);}
   function message(host,text,error=false){const target=host.querySelector(".admin-module-message");if(target){target.textContent=text;target.classList.toggle("is-error",error);}}
 
   async function loadModule(){

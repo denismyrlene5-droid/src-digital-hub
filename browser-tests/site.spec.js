@@ -88,6 +88,83 @@ test("business admin saves a published listing with preview and public search", 
   await expect(page.getByRole("link", { name: "Message WISE Browser Bakery on WhatsApp" }).first()).toHaveAttribute("href", /wa\.me\/233241234567\?text=/);
 });
 
+test("business admin remains fully usable at supported phone widths", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop", "The explicit viewport matrix runs once.");
+  test.setTimeout(120_000);
+  const phoneWidths = [320, 375, 390, 430];
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
+
+  for (const width of phoneWidths) {
+    await page.setViewportSize({ width, height: 720 });
+    await page.goto("/admin");
+    const password = page.getByLabel("Password");
+    if (await password.isVisible().catch(() => false)) {
+      await password.fill("browser-test-password");
+      await page.getByRole("button", { name: "Sign in" }).click();
+    }
+    await page.getByRole("button", { name: "Student Businesses" }).click();
+    await page.getByRole("button", { name: "Add business" }).click();
+    const dialog = page.getByRole("dialog");
+    const name = `Mobile Test Business ${width}`;
+    await dialog.getByLabel("Business name *").fill(name);
+    await dialog.getByLabel("Short description *").fill("A temporary responsive test business used to verify the mobile administration flow.");
+    await dialog.getByLabel("Category *").selectOption("Technology");
+    await dialog.getByLabel("Phone").fill("024 123 4567");
+    await dialog.getByLabel("Business image / logo").setInputFiles({ name: `mobile-${width}.png`, mimeType: "image/png", buffer: png });
+    await dialog.getByLabel("Products / services *").fill("Phone setup, laptop support, and campus technology services.");
+    const saveButton = dialog.getByRole("button", { name: "Save business" });
+    if (width === 390) {
+      await page.setViewportSize({ width, height: 420 });
+      await saveButton.scrollIntoViewIfNeeded();
+      const savePosition = await saveButton.evaluate(button => ({ bottom: button.getBoundingClientRect().bottom, viewportHeight: document.documentElement.clientHeight }));
+      expect(savePosition.bottom).toBeLessThanOrEqual(savePosition.viewportHeight + 1);
+    }
+    const createdResponse = page.waitForResponse(response => response.url().endsWith("/api/services/admin/businesses") && response.request().method() === "POST");
+    await saveButton.click();
+    expect((await createdResponse).status()).toBe(201);
+    await expect(page.getByText("Business added successfully.")).toBeVisible();
+
+    await page.reload();
+    await page.getByRole("button", { name: "Student Businesses" }).click();
+    let row = page.getByRole("row").filter({ hasText: name });
+    await expect(row).toBeVisible();
+    const actionMetrics = await row.locator(".admin-business-actions").evaluate(element => ({
+      overflow: element.scrollWidth - element.clientWidth,
+      buttons: [...element.querySelectorAll("button")].map(button => ({ height: button.getBoundingClientRect().height, right: button.getBoundingClientRect().right })),
+      viewportWidth: document.documentElement.clientWidth
+    }));
+    expect(actionMetrics.overflow).toBeLessThanOrEqual(1);
+    expect(actionMetrics.buttons.every(button => button.height >= 44 && button.right <= actionMetrics.viewportWidth + 1)).toBe(true);
+
+    await row.getByRole("button", { name: "Edit" }).click();
+    const editDialog = page.getByRole("dialog");
+    await editDialog.getByLabel("Short description *").fill("Updated successfully from the mobile Business administration test flow.");
+    const updatedResponse = page.waitForResponse(response => response.url().includes("/api/services/admin/businesses/") && response.request().method() === "PUT");
+    await editDialog.getByRole("button", { name: "Save business" }).click();
+    expect((await updatedResponse).status()).toBe(200);
+    await expect(page.getByText("Business updated successfully.")).toBeVisible();
+
+    row = page.getByRole("row").filter({ hasText: name });
+    await row.getByRole("button", { name: "Feature", exact: true }).click();
+    await expect(page.getByText("Business marked as Featured.")).toBeVisible();
+    row = page.getByRole("row").filter({ hasText: name });
+    await row.getByRole("button", { name: "Unpublish", exact: true }).click();
+    await expect(page.getByText("Business unpublished successfully.")).toBeVisible();
+    row = page.getByRole("row").filter({ hasText: name });
+    await row.getByRole("button", { name: "Publish", exact: true }).click();
+    await expect(page.getByText("Business published successfully.")).toBeVisible();
+
+    row = page.getByRole("row").filter({ hasText: name });
+    page.once("dialog", confirmation => confirmation.accept());
+    const deletedResponse = page.waitForResponse(response => response.url().includes("/api/services/admin/businesses/") && response.request().method() === "DELETE");
+    await row.getByRole("button", { name: "Delete" }).click();
+    expect((await deletedResponse).status()).toBe(200);
+    await expect(page.getByText("Business deleted successfully.")).toBeVisible();
+    await expect(page.getByRole("row").filter({ hasText: name })).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+  }
+});
+
 test("Academics programme, semester, and search controls filter official courses", async ({ page }) => {
   await page.goto("/academics/course-structure");
   await page.getByLabel("Programme / combination").selectOption({ label: "B.ED. MATHEMATICS - MATHEMATICS MAJOR / CHEMISTRY MINOR" });

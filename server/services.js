@@ -228,7 +228,9 @@ function createServicesRepository(db) {
     if (!phone && !whatsapp && !instagram) throw httpError("Provide at least one public contact method.");
     const location = text(input.location ?? record.location, "General location", { max: 160 }) || "";
     const products = text(input.productsServices ?? record.productsServices, "Products/services", { required: true, min: 5, max: 1500 });
-    const featured = bool(input.featured); const published = approval === "approved" && bool(input.published);
+    const featured = input.featured === undefined ? record.featured : bool(input.featured);
+    const requestedPublished = input.published === undefined ? record.published : bool(input.published);
+    const published = approval === "approved" && requestedPublished;
     const moderatorNotes = text(input.moderatorNotes ?? record.moderatorNotes, "Moderator notes", { max: 5000 }) || null;
     const logoToken = logo?.token || (bool(input.removeLogo) ? null : record.logoToken);
     db.prepare("UPDATE student_businesses SET business_name=?,owner_name=?,category=?,description=?,phone=?,whatsapp=?,instagram=?,location=?,products_services=?,logo_token=?,approval_status=?,published=?,featured=?,moderator_notes=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").run(name, owner, category, description, phone, whatsapp, instagram, location, products, logoToken, approval, published ? 1 : 0, featured ? 1 : 0, moderatorNotes, validId(id));

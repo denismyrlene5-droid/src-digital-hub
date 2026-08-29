@@ -151,7 +151,7 @@ test("public frontend retains accessibility and responsive spacing polish", asyn
     assert.match(css, /\.urgent-notice-content b\{white-space:normal/);
     assert.match(css, /\.hub-hero h1\{font-size:clamp\(40px,12vw,49px\)/);
     assert.match(css, /\.publicity-metrics\{grid-template-columns:repeat\(4,1fr\)\}/);
-    assert.match(home, /\/hub\.css\?v=14/);
+    assert.match(home, /\/hub\.css\?v=15/);
     assert.match(awards, /\/hub\.css\?v=14/);
   } finally { await app.close(); }
 });
@@ -753,6 +753,10 @@ test("businesses require approval and publication before public or featured disp
     const approvedBusiness = (await approved.json()).business;
     assert.equal((await (await fetch(`${app.base}/api/services/businesses`)).json()).businesses.length, 1);
     assert.equal((await (await fetch(`${app.base}/api/services/businesses/featured`)).json()).businesses.length, 1);
+    const unfeatured = await fetch(`${app.base}/api/services/admin/businesses/${business.id}`, { method: "PUT", headers: { "Content-Type": "application/json", Cookie: cookie }, body: JSON.stringify({ featured: false }) });
+    assert.equal(unfeatured.status, 200);
+    assert.equal((await unfeatured.json()).business.published, true);
+    assert.equal((await (await fetch(`${app.base}/api/services/businesses`)).json()).businesses.length, 1);
     const profileHtml = await (await fetch(`${app.base}/businesses/${approvedBusiness.slug}`)).text();
     assert.match(profileHtml, /<title>Campus Print Lab \| SRC Digital Hub<\/title>/);
     assert.doesNotMatch(profileHtml, /\/og\.png/);

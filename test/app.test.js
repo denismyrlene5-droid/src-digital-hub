@@ -759,6 +759,33 @@ test("businesses require approval and publication before public or featured disp
   } finally { await app.close(); }
 });
 
+test("business admins can create entries without a location and remove a managed logo", async () => {
+  const app = await fixture({ publicityAdminPassword: "publicity-password" });
+  try {
+    const cookie = await adminCookie(app, "publicity-password");
+    const created = await fetch(`${app.base}/api/services/admin/businesses`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ ...businessPayload, location: "", approvalStatus: "approved", published: true, featured: true, upload: pngUpload })
+    });
+    assert.equal(created.status, 201);
+    const business = (await created.json()).business;
+    assert.equal(business.location, "");
+    assert.ok(business.logoToken);
+    assert.equal(fs.existsSync(path.join(app.uploadDirectory, business.logoToken)), true);
+    assert.equal((await fetch(`${app.base}/api/services/admin/businesses/${business.id}/logo`, { headers: { Cookie: cookie } })).status, 200);
+    assert.equal((await fetch(`${app.base}/api/services/admin/businesses/${business.id}/logo`)).status, 401);
+    const removed = await fetch(`${app.base}/api/services/admin/businesses/${business.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ removeLogo: true })
+    });
+    assert.equal(removed.status, 200);
+    assert.equal((await removed.json()).business.logoToken, null);
+    assert.equal(fs.existsSync(path.join(app.uploadDirectory, business.logoToken)), false);
+  } finally { await app.close(); }
+});
+
 test("unsafe business contact input and oversized service fields are rejected", async () => {
   const app = await fixture();
   try {

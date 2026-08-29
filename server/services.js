@@ -192,7 +192,7 @@ function createServicesRepository(db) {
     const whatsapp = validPhone(input.whatsapp, "WhatsApp number");
     const instagram = validInstagram(input.instagram);
     if (!phone && !whatsapp && !instagram) throw httpError("Provide at least one public contact method.");
-    const location = text(input.location, "General location", { required: true, min: 2, max: 160 });
+    const location = text(input.location, "General location", { max: 160 }) || "";
     const products = text(input.productsServices, "Products/services", { required: true, min: 5, max: 1500 });
     const slug = uniqueSlug("student_businesses", `${name}-${crypto.randomBytes(3).toString("hex")}`);
     const result = db.prepare(`INSERT INTO student_businesses(slug,business_name,owner_name,description,category,phone,whatsapp,instagram,location,products_services,logo_token) VALUES(?,?,?,?,?,?,?,?,?,?,?)`).run(slug, name, owner, description, category, phone, whatsapp, instagram, location, products, logo?.token || null);
@@ -226,11 +226,12 @@ function createServicesRepository(db) {
     const whatsapp = validPhone(input.whatsapp ?? record.whatsapp, "WhatsApp number");
     const instagram = validInstagram(input.instagram ?? record.instagram);
     if (!phone && !whatsapp && !instagram) throw httpError("Provide at least one public contact method.");
-    const location = text(input.location ?? record.location, "General location", { required: true, min: 2, max: 160 });
+    const location = text(input.location ?? record.location, "General location", { max: 160 }) || "";
     const products = text(input.productsServices ?? record.productsServices, "Products/services", { required: true, min: 5, max: 1500 });
     const featured = bool(input.featured); const published = approval === "approved" && bool(input.published);
     const moderatorNotes = text(input.moderatorNotes ?? record.moderatorNotes, "Moderator notes", { max: 5000 }) || null;
-    db.prepare("UPDATE student_businesses SET business_name=?,owner_name=?,category=?,description=?,phone=?,whatsapp=?,instagram=?,location=?,products_services=?,logo_token=COALESCE(?,logo_token),approval_status=?,published=?,featured=?,moderator_notes=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").run(name, owner, category, description, phone, whatsapp, instagram, location, products, logo?.token || null, approval, published ? 1 : 0, featured ? 1 : 0, moderatorNotes, validId(id));
+    const logoToken = logo?.token || (bool(input.removeLogo) ? null : record.logoToken);
+    db.prepare("UPDATE student_businesses SET business_name=?,owner_name=?,category=?,description=?,phone=?,whatsapp=?,instagram=?,location=?,products_services=?,logo_token=?,approval_status=?,published=?,featured=?,moderator_notes=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").run(name, owner, category, description, phone, whatsapp, instagram, location, products, logoToken, approval, published ? 1 : 0, featured ? 1 : 0, moderatorNotes, validId(id));
     return getBusinessAdmin(id);
   }
   function deleteBusiness(id) { const result = db.prepare("DELETE FROM student_businesses WHERE id=?").run(validId(id)); if (!result.changes) throw httpError("Business not found.", 404); }

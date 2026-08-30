@@ -48,6 +48,63 @@ test("admin dialog traps focus and closes with Escape", async ({ page }) => {
   await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 
+test("announcement rich editor publishes long-form content with multiple images across responsive widths", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop", "The explicit editor viewport matrix runs once.");
+  test.setTimeout(90_000);
+  await page.goto("/admin");
+  await page.getByLabel("Password").fill("browser-test-password");
+  await page.getByRole("button", { name: "Sign in" }).click();
+
+  for (const width of [375, 768, 1280]) {
+    await page.setViewportSize({ width, height: width === 375 ? 667 : 800 });
+    await page.getByRole("button", { name: "Announcements" }).click();
+    await page.getByRole("button", { name: "Create Announcement" }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByRole("toolbar", { name: "Full content formatting" })).toBeVisible();
+    const layout = await dialog.evaluate(element => ({ right: element.getBoundingClientRect().right, viewport: document.documentElement.clientWidth, scrollable: element.scrollHeight >= element.clientHeight }));
+    expect(layout.right).toBeLessThanOrEqual(layout.viewport + 1);
+    await page.keyboard.press("Escape");
+  }
+
+  await page.setViewportSize({ width: 390, height: 720 });
+  await page.getByRole("button", { name: "Create Announcement" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Title").fill("Rich editor browser announcement");
+  await dialog.getByLabel("Short summary").fill("This short summary appears on the announcement card without the complete article.");
+  const editor = dialog.getByRole("textbox", { name: "Full Content" });
+  await editor.evaluate(element => { element.innerHTML = "<h2>Campus publishing update</h2><p>This is the complete article introduction with <strong>important information</strong> for every student.</p><h3>What students should do</h3><ul><li>Read the full notice</li><li>Share the verified update</li></ul><ol><li>Check the date</li><li>Follow the instructions</li></ol><p><em>Thank you for staying informed.</em> <a href=\"https://example.com/details\">Official details</a></p>"; const input = document.createEvent("Event"); input.initEvent("input", true, false); element.dispatchEvent(input); });
+  await editor.click();
+  await page.keyboard.press("Control+End");
+  await dialog.getByRole("button", { name: "+ Insert Photo" }).click();
+  await dialog.locator("[data-inline-url]").first().fill("/assets/ucc-wise-src-logo.jpg");
+  await editor.click();
+  await page.keyboard.press("Control+End");
+  await dialog.getByRole("button", { name: "+ Insert Photo" }).click();
+  await dialog.locator("[data-inline-url]").nth(1).fill("/assets/ucc-wise-src-logo.jpg");
+  await dialog.getByLabel("Status").selectOption("published");
+  const save = dialog.getByRole("button", { name: "Save announcement" });
+  await save.scrollIntoViewIfNeeded();
+  const savePosition = await save.evaluate(button => ({ bottom: button.getBoundingClientRect().bottom, viewport: document.documentElement.clientHeight }));
+  expect(savePosition.bottom).toBeLessThanOrEqual(savePosition.viewport + 1);
+  const createdResponse = page.waitForResponse(response => response.url().endsWith("/api/publicity/admin/announcements") && response.request().method() === "POST");
+  await save.click();
+  expect((await createdResponse).status()).toBe(201);
+  await page.getByRole("button", { name: "Announcements" }).click();
+  await expect(page.getByRole("row").filter({ hasText: "Rich editor browser announcement" })).toBeVisible();
+
+  await page.goto("/announcements");
+  const card = page.locator("article").filter({ hasText: "Rich editor browser announcement" });
+  await expect(card).toContainText("This short summary appears on the announcement card");
+  await expect(card).not.toContainText("Campus publishing update");
+  await card.getByRole("link", { name: "Read more" }).click();
+  await expect(page.getByRole("heading", { name: "Campus publishing update" })).toBeVisible();
+  await expect(page.locator(".detail-content strong")).toHaveText("important information");
+  await expect(page.locator(".detail-content ul li")).toHaveCount(2);
+  await expect(page.locator(".detail-content ol li")).toHaveCount(2);
+  await expect(page.locator(".article-inline-image img")).toHaveCount(2);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+});
+
 test("business admin saves a published listing with preview and public search", async ({ page }) => {
   await page.goto("/admin");
   await page.getByLabel("Password").fill("browser-test-password");

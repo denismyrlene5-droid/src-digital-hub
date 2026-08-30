@@ -5,7 +5,9 @@ const os = require("node:os");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const sharp = require("sharp");
+const { DatabaseSync } = require("node:sqlite");
 const { createApp } = require("../server/app");
+const { createPublicityRepository } = require("../server/publicity");
 const { createPaystackProvider } = require("../server/payment-providers");
 
 async function fixture(options = {}) {
@@ -151,7 +153,7 @@ test("public frontend retains accessibility and responsive spacing polish", asyn
     assert.match(css, /\.urgent-notice-content b\{white-space:normal/);
     assert.match(css, /\.hub-hero h1\{font-size:clamp\(40px,12vw,49px\)/);
     assert.match(css, /\.publicity-metrics\{grid-template-columns:repeat\(4,1fr\)\}/);
-    assert.match(home, /\/hub\.css\?v=15/);
+    assert.match(home, /\/hub\.css\?v=16/);
     assert.match(awards, /\/hub\.css\?v=14/);
   } finally { await app.close(); }
 });
@@ -424,6 +426,54 @@ test("draft announcements stay private while published urgent announcements are 
     assert.equal((await fetch(`${app.base}/api/publicity/admin/announcements/${draft.id}`, { method: "DELETE", headers: { Cookie: cookie } })).status, 200);
     assert.equal((await fetch(`${app.base}/api/announcements/${draft.slug}`)).status, 404);
   } finally { await app.close(); }
+});
+
+test("long-form announcement content is migrated, sanitized, searchable, and returned only on detail pages", async () => {
+  const app = await fixture();
+  try {
+    const columns = app.db.prepare("PRAGMA table_info(announcements)").all().map(column => column.name);
+    assert.equal(columns.includes("full_content"), true);
+    const cookie = await adminCookie(app);
+    const longParagraph = "This detailed campus update provides complete information for students and preserves the full publishing workflow. ".repeat(240);
+    const fullContent = `<h2 onclick="alert(1)">Important details</h2><p>${longParagraph}<strong>Bring your student ID.</strong> <em>Arrive early.</em></p><h3>What to expect</h3><ul><li>Registration support</li><li>Academic guidance</li></ul><ol><li>Read the notice</li><li><a href="https://example.com/details" onclick="alert(1)">Open the official details</a></li></ol><script>alert("unsafe")</script>`;
+    assert.equal(fullContent.length > 20000, true);
+    const createdResponse = await fetch(`${app.base}/api/publicity/admin/announcements`, {
+      method: "POST", headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ ...announcementPayload, title: "Complete long-form campus update", status: "published", fullContent })
+    });
+    assert.equal(createdResponse.status, 201);
+    const created = (await createdResponse.json()).announcement;
+    assert.match(created.fullContent, /<h2>Important details<\/h2>/);
+    assert.match(created.fullContent, /<strong>Bring your student ID\.<\/strong>/);
+    assert.match(created.fullContent, /<ul><li>Registration support<\/li>/);
+    assert.match(created.fullContent, /href="https:\/\/example\.com\/details" target="_blank" rel="noopener noreferrer"/);
+    assert.doesNotMatch(created.fullContent, /onclick|script|alert/);
+    assert.equal(app.db.prepare("SELECT full_content FROM announcements WHERE id=?").get(created.id).full_content, created.fullContent);
+
+    const cards = await (await fetch(`${app.base}/api/announcements?q=complete%20information`)).json();
+    const card = cards.announcements.find(item => item.id === created.id);
+    assert.equal(card.summary, announcementPayload.summary);
+    assert.equal("body" in card, false);
+    assert.equal("fullContent" in card, false);
+    const detail = (await (await fetch(`${app.base}/api/announcements/${created.slug}`)).json()).announcement;
+    assert.equal(detail.fullContent, created.fullContent);
+  } finally { await app.close(); }
+});
+
+test("legacy announcement rows survive the full-content migration", () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    createPublicityRepository(db, { seed: false });
+    db.exec("ALTER TABLE announcements DROP COLUMN full_content");
+    db.prepare(`INSERT INTO announcements(title,slug,summary,body,category,status,author_role)
+      VALUES(?,?,?,?,?,'draft','legacy')`).run("Legacy announcement", "legacy-announcement", "A preserved legacy summary.", "A preserved legacy article body with enough content for readers.", "General");
+    const repository = createPublicityRepository(db, { seed: false });
+    const columns = db.prepare("PRAGMA table_info(announcements)").all().map(column => column.name);
+    assert.equal(columns.includes("full_content"), true);
+    const legacy = repository.getAnnouncementAdmin(1);
+    assert.equal(legacy.body, "A preserved legacy article body with enough content for readers.");
+    assert.equal(legacy.fullContent, "<p>A preserved legacy article body with enough content for readers.</p>");
+  } finally { db.close(); }
 });
 
 test("announcement featured images upload on create and edit, take priority over URLs, and stay access-controlled", async () => {

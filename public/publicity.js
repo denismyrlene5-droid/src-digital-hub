@@ -149,6 +149,12 @@
   function articleBody(item) {
     const images = new Map((Array.isArray(item.inlineImages) ? item.inlineImages : []).map(image => [image.id, image]));
     const marker = /\[\[image:(img_[a-f0-9]{12,32})\]\]/g;
+    if (item.fullContent) {
+      return String(item.fullContent).replace(/<p>\s*\[\[image:(img_[a-f0-9]{12,32})\]\]\s*<\/p>|\[\[image:(img_[a-f0-9]{12,32})\]\]/g, (match, paragraphId, inlineId) => {
+        const image = images.get(paragraphId || inlineId);
+        return image?.url ? `<figure class="article-inline-image"><img src="${esc(image.url)}" alt="${esc(image.caption || item.title)}" loading="lazy">${image.caption ? `<figcaption>${esc(image.caption)}</figcaption>` : ""}</figure>` : "";
+      });
+    }
     let cursor = 0;
     let html = "";
     for (const match of String(item.body || "").matchAll(marker)) {
@@ -158,6 +164,13 @@
       cursor = match.index + match[0].length;
     }
     return html + bodyParagraphs(String(item.body || "").slice(cursor));
+  }
+
+  function richContentEditor() {
+    return `<div class="field-wide rich-content-field"><span id="fullContentLabel">Full Content</span><div class="rich-text-toolbar" role="toolbar" aria-label="Full content formatting">
+      <button type="button" data-rich-command="formatBlock" data-rich-value="p">Paragraph</button><button type="button" data-rich-command="formatBlock" data-rich-value="h2">Heading 2</button><button type="button" data-rich-command="formatBlock" data-rich-value="h3">Heading 3</button>
+      <button type="button" data-rich-command="bold" aria-label="Bold"><strong>B</strong></button><button type="button" data-rich-command="italic" aria-label="Italic"><em>I</em></button><button type="button" data-rich-command="insertUnorderedList">Bulleted list</button><button type="button" data-rich-command="insertOrderedList">Numbered list</button><button type="button" data-rich-link>Link</button>
+    </div><div class="rich-text-editor" id="announcementFullContent" contenteditable="true" role="textbox" aria-multiline="true" aria-labelledby="fullContentLabel" data-placeholder="Write the complete announcement here…"></div><textarea name="fullContent" hidden></textarea><textarea name="body" hidden></textarea><small>Use the toolbar for headings, emphasis, lists and links. Add article photos below.</small></div>`;
   }
 
   function setupShare(record) {
@@ -339,10 +352,15 @@
     const statusOptions = config.statuses[type].map(value => `<option value="${value}" ${item?.status === value ? "selected" : ""}>${value}</option>`).join("");
     host.innerHTML = `<div class="editor-backdrop"><section class="publicity-editor" role="dialog" aria-modal="true" aria-labelledby="editorTitle"><div class="editor-head"><div><span class="hub-badge">${item ? "Edit" : "Create"}</span><h2 id="editorTitle">${announcement ? "Announcement" : "Event"}</h2></div><button class="editor-close" type="button" aria-label="Close editor">×</button></div><form id="editorForm">
       <label class="field-wide"><span>Title</span><input name="title" maxlength="160" value="${esc(item?.title || "")}" required></label>
-      ${announcement ? `<label class="field-wide"><span>Short summary</span><textarea name="summary" maxlength="360" required>${esc(item?.summary || "")}</textarea></label><label class="field-wide"><span>Full content (plain text)</span><textarea name="body" maxlength="20000" rows="8" required>${esc(item?.body || "")}</textarea></label><div class="field-wide article-inline-tools"><button class="hub-btn hub-btn-outline" type="button" data-insert-photo>+ Insert Photo</button><small>Place the cursor in the content first. The photo will stay at that exact position between paragraphs.</small></div><div class="field-wide article-inline-editor" id="inlineImageEditor"></div>` : `<label class="field-wide"><span>Short description</span><textarea name="shortDescription" maxlength="360" required>${esc(item?.shortDescription || "")}</textarea></label><label class="field-wide"><span>Full description (plain text)</span><textarea name="description" maxlength="20000" rows="7" required>${esc(item?.description || "")}</textarea></label>`}
+      ${announcement ? `<label class="field-wide"><span>Short summary</span><textarea name="summary" maxlength="360" required>${esc(item?.summary || "")}</textarea></label>${richContentEditor()}<div class="field-wide article-inline-tools"><button class="hub-btn hub-btn-outline" type="button" data-insert-photo>+ Insert Photo</button><small>Place the cursor in Full Content first. The photo will stay at that position in the article.</small></div><div class="field-wide article-inline-editor" id="inlineImageEditor"></div>` : `<label class="field-wide"><span>Short description</span><textarea name="shortDescription" maxlength="360" required>${esc(item?.shortDescription || "")}</textarea></label><label class="field-wide"><span>Full description (plain text)</span><textarea name="description" maxlength="20000" rows="7" required>${esc(item?.description || "")}</textarea></label>`}
       <label><span>Category</span><select name="category">${categoryOptions}</select></label><label><span>Status</span><select name="status">${statusOptions}</select></label>
       ${announcement ? `<label><span>Publication date</span><input type="datetime-local" name="publishedAt" value="${item?.publishedAt ? esc(new Date(item.publishedAt).toISOString().slice(0,16)) : ""}"></label><fieldset class="field-wide announcement-image-field"><legend>Featured image</legend><div class="announcement-image-controls"><label><span>Upload Featured Image</span><input type="file" name="featuredImageFile" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"><small>Choose from this device. JPG, JPEG, PNG or WEBP; maximum 2 MB.</small></label><div class="image-choice-divider" aria-hidden="true">OR</div><label><span>Featured Image URL (optional)</span><input type="text" inputmode="url" name="featuredImage" value="${esc(item?.featuredImage || "")}" placeholder="https://… or /local-path"><small>An uploaded image takes priority over this URL.</small></label></div><figure class="announcement-image-preview" ${item?.featuredImage ? "" : "hidden"}><img ${item?.featuredImage ? `src="${esc(adminImageUrl(item.featuredImage))}"` : ""} alt="Featured image preview"><figcaption>Image preview</figcaption><button class="image-remove-button" type="button" data-remove-featured>Remove image</button></figure></fieldset><label><span>External HTTPS link</span><input type="url" name="externalUrl" value="${esc(item?.externalUrl || "")}"></label><label><span>Document attachment URL</span><input type="text" name="attachmentUrl" value="${esc(item?.attachmentUrl || "")}" placeholder="PDF, DOCX, XLSX, PPTX or TXT"></label><label class="check-field"><input type="checkbox" name="urgent" ${item?.urgent ? "checked" : ""}><span>Urgent notice</span></label><label class="check-field"><input type="checkbox" name="featured" ${item?.featured ? "checked" : ""}><span>Featured</span></label>` : `<label><span>Event date</span><input type="date" name="eventDate" value="${esc(item?.eventDate || "")}" required></label><label><span>Start time</span><input type="time" name="startTime" value="${esc(item?.startTime || "")}"></label><label><span>End time</span><input type="time" name="endTime" value="${esc(item?.endTime || "")}"></label><label><span>Venue</span><input name="venue" maxlength="200" value="${esc(item?.venue || "")}" required></label><label><span>Organizer</span><input name="organizer" maxlength="160" value="${esc(item?.organizer || "")}"></label><label><span>Poster image URL</span><input type="text" name="posterImage" value="${esc(item?.posterImage || "")}" placeholder="https://… or /local-path"></label><label><span>Registration HTTPS URL</span><input type="url" name="registrationUrl" value="${esc(item?.registrationUrl || "")}"></label><label class="check-field"><input type="checkbox" name="featured" ${item?.featured ? "checked" : ""}><span>Featured</span></label>`}
       <div class="editor-actions field-wide"><p class="form-message" aria-live="polite"></p><button class="hub-btn hub-btn-primary" type="submit">Save ${announcement ? "announcement" : "event"}</button></div></form></section></div>`;
+    if (announcement) {
+      host.querySelector(".editor-backdrop").classList.add("announcement-editor-backdrop");
+      host.querySelector(".publicity-editor").classList.add("announcement-editor-dialog");
+      host.querySelector("#editorForm").classList.add("announcement-editor-form");
+    }
     let previewObjectUrl = "";
     let inlineImages = announcement ? (Array.isArray(item?.inlineImages) ? item.inlineImages : []).map(image => ({ ...image, file: null, objectUrl: "" })) : [];
     const releaseMedia = () => {
@@ -358,16 +376,50 @@
     }
     if (announcement && item?.publishedAt) form.elements.publishedAt.value = datetimeLocal(item.publishedAt);
     let orderedInlineImages = () => [];
+    let richEditor = null;
     if (announcement) {
       const imageInput = form.elements.featuredImageFile;
       const imageUrlInput = form.elements.featuredImage;
       const preview = form.querySelector(".announcement-image-preview");
       const previewImage = preview.querySelector("img");
       const message = form.querySelector(".form-message");
-      const bodyInput = form.elements.body;
+      richEditor = form.querySelector("#announcementFullContent");
+      richEditor.innerHTML = item?.fullContent || (item?.body ? bodyParagraphs(item.body) : "<p><br></p>");
       const inlineHost = form.querySelector("#inlineImageEditor");
       const markerFor = id => `[[image:${id}]]`;
-      orderedInlineImages = () => [...inlineImages].sort((a, b) => bodyInput.value.indexOf(markerFor(a.id)) - bodyInput.value.indexOf(markerFor(b.id)));
+      const editorHtml = () => richEditor.innerHTML;
+      orderedInlineImages = () => [...inlineImages].sort((a, b) => editorHtml().indexOf(markerFor(a.id)) - editorHtml().indexOf(markerFor(b.id)));
+      let savedRange = null;
+      const rememberSelection = () => {
+        const selection = window.getSelection();
+        if (selection?.rangeCount && richEditor.contains(selection.anchorNode)) savedRange = selection.getRangeAt(0).cloneRange();
+      };
+      const restoreSelection = () => {
+        richEditor.focus();
+        if (!savedRange) return;
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(savedRange);
+      };
+      ["input", "keyup", "mouseup", "touchend"].forEach(name => richEditor.addEventListener(name, rememberSelection));
+      form.querySelectorAll("[data-rich-command]").forEach(button => {
+        button.addEventListener("pointerdown", event => event.preventDefault());
+        button.addEventListener("click", () => {
+          restoreSelection();
+          document.execCommand(button.dataset.richCommand, false, button.dataset.richValue || null);
+          rememberSelection();
+        });
+      });
+      const linkButton = form.querySelector("[data-rich-link]");
+      linkButton.addEventListener("pointerdown", event => event.preventDefault());
+      linkButton.addEventListener("click", () => {
+        restoreSelection();
+        const href = window.prompt("Enter an HTTPS or local link URL:", "https://");
+        if (!href) return;
+        if (!href.startsWith("https://") && !/^\/(?!\/)/.test(href)) { message.textContent = "Article links must use HTTPS or a local path."; return; }
+        document.execCommand("createLink", false, href);
+        rememberSelection();
+      });
       const setPreviewErrorHandling = (image, container) => {
         image.onerror = () => { container.hidden = true; message.textContent = "The selected image could not be previewed. Check the file or URL."; };
         image.onload = () => { container.hidden = false; if (message.textContent.includes("could not be previewed")) message.textContent = ""; };
@@ -403,7 +455,7 @@
           });
           card.querySelector("[data-remove-inline]").addEventListener("click", () => {
             if (image.objectUrl) URL.revokeObjectURL(image.objectUrl);
-            bodyInput.value = bodyInput.value.replace(markerFor(image.id), "").replace(/\n{3,}/g, "\n\n").trim();
+            richEditor.innerHTML = richEditor.innerHTML.replace(markerFor(image.id), "");
             inlineImages = inlineImages.filter(candidate => candidate.id !== image.id);
             renderInlineImages();
           });
@@ -414,7 +466,7 @@
             const other = currentOrder[otherIndex];
             if (!other) return;
             const placeholder = `[[swap_${Date.now()}]]`;
-            bodyInput.value = bodyInput.value.replace(markerFor(image.id), placeholder).replace(markerFor(other.id), markerFor(image.id)).replace(placeholder, markerFor(other.id));
+            richEditor.innerHTML = richEditor.innerHTML.replace(markerFor(image.id), placeholder).replace(markerFor(other.id), markerFor(image.id)).replace(placeholder, markerFor(other.id));
             renderInlineImages();
           }));
         });
@@ -422,9 +474,10 @@
       form.querySelector("[data-insert-photo]").addEventListener("click", () => {
         if (inlineImages.length >= 8) { message.textContent = "Articles support up to 8 inline photos."; return; }
         const id = `img_${crypto.randomUUID().replaceAll("-", "").slice(0, 16)}`;
-        const position = bodyInput.selectionStart;
-        const insertion = `${position && !bodyInput.value.slice(0, position).endsWith("\n\n") ? "\n\n" : ""}${markerFor(id)}\n\n`;
-        bodyInput.setRangeText(insertion, position, bodyInput.selectionEnd, "end");
+        restoreSelection();
+        document.execCommand("insertHTML", false, `<p>${markerFor(id)}</p><p><br></p>`);
+        if (!richEditor.innerHTML.includes(markerFor(id))) richEditor.insertAdjacentHTML("beforeend", `<p>${markerFor(id)}</p><p><br></p>`);
+        rememberSelection();
         inlineImages.push({ id, url: "", caption: "", file: null, objectUrl: "" });
         renderInlineImages();
         inlineHost.querySelector(`[data-inline-id="${id}"] [data-inline-file]`)?.focus();
@@ -520,6 +573,8 @@
       values.featured = form.elements.featured.checked;
       if (announcement) {
         values.urgent = form.elements.urgent.checked;
+        values.fullContent = richEditor.innerHTML.trim();
+        values.body = richEditor.innerText.trim();
         const imageFile = form.elements.featuredImageFile.files[0];
         const imageError = validateAnnouncementImage(imageFile);
         if (imageError) { message.textContent = imageError; return; }

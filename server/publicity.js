@@ -7,6 +7,8 @@ const EVENT_STATUSES = ["draft", "published", "cancelled", "completed"];
 const INLINE_IMAGE_LIMIT = 8;
 const INLINE_IMAGE_ID = /^img_[a-f0-9]{12,32}$/;
 const INLINE_IMAGE_MARKER = /\[\[image:(img_[a-f0-9]{12,32})\]\]/g;
+const RICH_CONTENT_MAX_LENGTH = 500000;
+const RICH_CONTENT_TAGS = new Set(["p", "h2", "h3", "strong", "em", "ul", "ol", "li", "a", "br"]);
 
 function httpError(message, status = 400) {
   const error = new Error(message);
@@ -48,6 +50,64 @@ function safeUrl(value, name, { documentsOnly = false, externalOnly = false } = 
     }
   }
   return clean;
+}
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]);
+}
+
+function decodeHtmlText(value) {
+  return String(value).replace(/&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos|nbsp);/gi, (entity, code) => {
+    const lower = code.toLowerCase();
+    if (lower === "amp") return "&";
+    if (lower === "lt") return "<";
+    if (lower === "gt") return ">";
+    if (lower === "quot") return '"';
+    if (lower === "apos") return "'";
+    if (lower === "nbsp") return " ";
+    const number = lower.startsWith("#x") ? Number.parseInt(lower.slice(2), 16) : Number.parseInt(lower.slice(1), 10);
+    return Number.isSafeInteger(number) && number > 0 && number <= 0x10ffff ? String.fromCodePoint(number) : "";
+  });
+}
+
+function sanitizeRichContent(value) {
+  const raw = String(value ?? "").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "").trim();
+  if (raw.length > RICH_CONTENT_MAX_LENGTH) throw httpError("Full content is too large.");
+  const withoutDangerousBlocks = raw.replace(/<(script|style|iframe|object|embed|svg|math)[^>]*>[\s\S]*?<\/\1\s*>/gi, "");
+  const tokens = withoutDangerousBlocks.match(/<[^>]*>|[^<]+|</g) || [];
+  const html = tokens.map(token => {
+    if (!token.startsWith("<") || token === "<") return escapeHtml(decodeHtmlText(token));
+    const parsed = token.match(/^<\s*(\/?)\s*([a-z0-9]+)([^>]*)>$/i);
+    if (!parsed) return "";
+    const closing = Boolean(parsed[1]);
+    let tag = parsed[2].toLowerCase();
+    if (tag === "b") tag = "strong";
+    if (tag === "i") tag = "em";
+    if (!RICH_CONTENT_TAGS.has(tag)) return "";
+    if (closing) return tag === "br" ? "" : `</${tag}>`;
+    if (tag === "br") return "<br>";
+    if (tag !== "a") return `<${tag}>`;
+    const hrefMatch = parsed[3].match(/\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/i);
+    if (!hrefMatch) return "<a>";
+    const href = safeUrl(hrefMatch[1] ?? hrefMatch[2] ?? hrefMatch[3], "Article link");
+    return `<a href="${escapeHtml(href)}"${href.startsWith("https://") ? ' target="_blank" rel="noopener noreferrer"' : ""}>`;
+  }).join("");
+  const readable = plainTextFromRichContent(html).replace(INLINE_IMAGE_MARKER, "").trim();
+  if (readable.length < 20) throw httpError("Full content must include at least 20 characters of article text.");
+  return html;
+}
+
+function plainTextFromRichContent(value) {
+  return decodeHtmlText(String(value || "")
+    .replace(/<br\s*\/?\s*>/gi, "\n")
+    .replace(/<\/(p|h2|h3|li|ul|ol)>/gi, "\n\n")
+    .replace(/<[^>]+>/g, ""))
+    .replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function legacyBodyToRichContent(value) {
+  return String(value || "").split(/\n{2,}/).filter(paragraph => paragraph.trim())
+    .map(paragraph => `<p>${escapeHtml(paragraph).replace(/\n/g, "<br>")}</p>`).join("");
 }
 
 function validDate(value, name) {
@@ -118,12 +178,22 @@ function mapAnnouncement(row) {
   if (!row) return null;
   return {
     id: row.id, title: row.title, slug: row.slug, summary: row.summary, body: row.body,
+    fullContent: row.full_content || legacyBodyToRichContent(row.body),
     category: row.category, publishedAt: row.published_at, createdAt: row.created_at,
     updatedAt: row.updated_at, status: row.status, urgent: Boolean(row.urgent),
     featured: Boolean(row.featured), featuredImage: row.featured_image,
     inlineImages: storedInlineImages(row.inline_images_json),
     externalUrl: row.external_url, attachmentUrl: row.attachment_url, authorRole: row.author_role
   };
+}
+
+function mapAnnouncementCard(row) {
+  const item = mapAnnouncement(row);
+  if (!item) return null;
+  delete item.body;
+  delete item.fullContent;
+  delete item.inlineImages;
+  return item;
 }
 
 function mapEvent(row) {
@@ -139,19 +209,20 @@ function mapEvent(row) {
 
 function validateAnnouncement(input) {
   const status = choice(input.status, ANNOUNCEMENT_STATUSES, "announcement status", "draft");
-  const body = text(input.body, "Content", { min: 20, max: 20000, required: true });
-  const readableBody = body.replace(INLINE_IMAGE_MARKER, "").trim();
-  if (readableBody.length < 20) throw httpError("Content must include at least 20 characters of article text.");
+  const legacyBody = input.fullContent == null ? text(input.body, "Content", { min: 20, max: RICH_CONTENT_MAX_LENGTH, required: true }) : "";
+  const fullContent = sanitizeRichContent(input.fullContent == null ? legacyBodyToRichContent(legacyBody) : input.fullContent);
+  const body = plainTextFromRichContent(fullContent);
   return {
     title: text(input.title, "Title", { min: 3, max: 160, required: true }),
     summary: text(input.summary, "Summary", { min: 10, max: 360, required: true }),
     body,
+    fullContent,
     category: choice(input.category, ANNOUNCEMENT_CATEGORIES, "announcement category", "General"),
     status,
     urgent: boolean(input.urgent),
     featured: boolean(input.featured),
     featuredImage: safeUrl(input.featuredImage, "Featured image"),
-    inlineImages: validateInlineImages(input.inlineImages, body),
+    inlineImages: validateInlineImages(input.inlineImages, fullContent),
     externalUrl: safeUrl(input.externalUrl, "External link", { externalOnly: true }),
     attachmentUrl: safeUrl(input.attachmentUrl, "Attachment", { documentsOnly: true }),
     publishedAt: status === "published" ? (validTimestamp(input.publishedAt, "Publication date") || new Date().toISOString()) : validTimestamp(input.publishedAt, "Publication date")
@@ -186,6 +257,7 @@ function createPublicityRepository(db, options = {}) {
       slug TEXT NOT NULL UNIQUE,
       summary TEXT NOT NULL,
       body TEXT NOT NULL,
+      full_content TEXT NOT NULL DEFAULT '',
       category TEXT NOT NULL,
       published_at TEXT,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -225,6 +297,7 @@ function createPublicityRepository(db, options = {}) {
     CREATE INDEX IF NOT EXISTS idx_events_category ON events(category, status);
   `);
   const announcementColumns = new Set(db.prepare("PRAGMA table_info(announcements)").all().map(column => column.name));
+  if (!announcementColumns.has("full_content")) db.exec("ALTER TABLE announcements ADD COLUMN full_content TEXT NOT NULL DEFAULT ''");
   if (!announcementColumns.has("inline_images_json")) db.exec("ALTER TABLE announcements ADD COLUMN inline_images_json TEXT NOT NULL DEFAULT '[]'");
   if(options.seed!==false) seedPublicity(db);
   db.exec("PRAGMA optimize");
@@ -244,11 +317,11 @@ function createPublicityRepository(db, options = {}) {
     const clauses = ["status='published'", "published_at IS NOT NULL", "datetime(published_at)<=datetime('now')"];
     const params = [];
     if (category && ANNOUNCEMENT_CATEGORIES.includes(category)) { clauses.push("category=?"); params.push(category); }
-    if (q) { clauses.push("(title LIKE ? OR summary LIKE ? OR body LIKE ?)"); const term = `%${String(q).slice(0, 100)}%`; params.push(term, term, term); }
+    if (q) { clauses.push("(title LIKE ? OR summary LIKE ? OR body LIKE ? OR full_content LIKE ?)"); const term = `%${String(q).slice(0, 100)}%`; params.push(term, term, term, term); }
     const paging = pagination({ page, pageSize }, 12, 36);
     const where = clauses.join(" AND ");
     const total = db.prepare(`SELECT COUNT(*) count FROM announcements WHERE ${where}`).get(...params).count;
-    const items = db.prepare(`SELECT * FROM announcements WHERE ${where} ORDER BY datetime(published_at) DESC LIMIT ? OFFSET ?`).all(...params, paging.pageSize, paging.offset).map(mapAnnouncement);
+    const items = db.prepare(`SELECT * FROM announcements WHERE ${where} ORDER BY datetime(published_at) DESC LIMIT ? OFFSET ?`).all(...params, paging.pageSize, paging.offset).map(mapAnnouncementCard);
     return { items, pagination: metadata(total, paging.page, paging.pageSize) };
   }
 
@@ -270,13 +343,13 @@ function createPublicityRepository(db, options = {}) {
 
   function homeFeed() {
     const announcements = db.prepare(`SELECT * FROM announcements WHERE status='published' AND published_at IS NOT NULL
-      AND datetime(published_at)<=datetime('now') ORDER BY urgent DESC,featured DESC,datetime(published_at) DESC LIMIT 3`).all().map(mapAnnouncement);
+      AND datetime(published_at)<=datetime('now') ORDER BY urgent DESC,featured DESC,datetime(published_at) DESC LIMIT 3`).all().map(mapAnnouncementCard);
     const events = listEventsPublic({ pageSize: 3 }).upcoming;
     return { announcements, events };
   }
 
   function urgentNotice() {
-    return mapAnnouncement(db.prepare(`SELECT * FROM announcements WHERE status='published' AND urgent=1
+    return mapAnnouncementCard(db.prepare(`SELECT * FROM announcements WHERE status='published' AND urgent=1
       AND published_at IS NOT NULL AND datetime(published_at)<=datetime('now') ORDER BY featured DESC,datetime(published_at) DESC LIMIT 1`).get());
   }
 
@@ -316,8 +389,8 @@ function createPublicityRepository(db, options = {}) {
   function createAnnouncement(input, role) {
     const item = validateAnnouncement(input);
     const slug = uniqueSlug("announcements", item.title);
-    const result = db.prepare(`INSERT INTO announcements(title,slug,summary,body,category,published_at,status,urgent,featured,featured_image,inline_images_json,external_url,attachment_url,author_role)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(item.title, slug, item.summary, item.body, item.category, item.publishedAt, item.status, Number(item.urgent), Number(item.featured), item.featuredImage, JSON.stringify(item.inlineImages), item.externalUrl, item.attachmentUrl, role);
+    const result = db.prepare(`INSERT INTO announcements(title,slug,summary,body,full_content,category,published_at,status,urgent,featured,featured_image,inline_images_json,external_url,attachment_url,author_role)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(item.title, slug, item.summary, item.body, item.fullContent, item.category, item.publishedAt, item.status, Number(item.urgent), Number(item.featured), item.featuredImage, JSON.stringify(item.inlineImages), item.externalUrl, item.attachmentUrl, role);
     audit("create_announcement", result.lastInsertRowid, role);
     return getAnnouncementAdmin(result.lastInsertRowid);
   }
@@ -327,8 +400,8 @@ function createPublicityRepository(db, options = {}) {
     const existing = getAnnouncementAdmin(id);
     if (!existing) throw httpError("Announcement not found.", 404);
     const item = validateAnnouncement(input);
-    db.prepare(`UPDATE announcements SET title=?,summary=?,body=?,category=?,published_at=?,status=?,urgent=?,featured=?,featured_image=?,inline_images_json=?,external_url=?,attachment_url=?,author_role=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`)
-      .run(item.title, item.summary, item.body, item.category, item.publishedAt, item.status, Number(item.urgent), Number(item.featured), item.featuredImage, JSON.stringify(item.inlineImages), item.externalUrl, item.attachmentUrl, role, id);
+    db.prepare(`UPDATE announcements SET title=?,summary=?,body=?,full_content=?,category=?,published_at=?,status=?,urgent=?,featured=?,featured_image=?,inline_images_json=?,external_url=?,attachment_url=?,author_role=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`)
+      .run(item.title, item.summary, item.body, item.fullContent, item.category, item.publishedAt, item.status, Number(item.urgent), Number(item.featured), item.featuredImage, JSON.stringify(item.inlineImages), item.externalUrl, item.attachmentUrl, role, id);
     audit("update_announcement", id, role);
     return getAnnouncementAdmin(id);
   }

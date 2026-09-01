@@ -21,7 +21,7 @@
   }
 
   function winnerMarkup(winner) {
-    return winner ? `<div class="pulse-winner"><span>Verified winner</span><strong>🎉 Winner: ${esc(winner.displayName)} — ${esc(winner.level)}</strong>${winner.message ? `<p>${esc(winner.message)}</p>` : ""}</div>` : "";
+    return winner ? `<div class="pulse-winner"><span>Verified winner</span><strong>🎉 Winner: ${esc(winner.displayName)} — ${esc(winner.level)}</strong></div>` : "";
   }
   function totalsMarkup(totals) {
     if (!Array.isArray(totals)) return "";
@@ -120,17 +120,20 @@
       const pagination = host.querySelector("#pulseEntryPagination"); pagination.innerHTML = window.SRC_UI.paginationMarkup(data.pagination, "Campus Pulse entries"); window.SRC_UI.bindPagination(pagination, next => { page = next; loadEntries(); });
     };
     filters.addEventListener("submit", event => { event.preventDefault(); page = 1; loadEntries(); });
-    const activeDraw = details.draws.find(draw => draw.drawStatus === "active");
+    let activeDraw = details.draws.find(draw => draw.drawStatus === "active");
     const renderWinnerEditor = draw => {
       const target = host.querySelector("#pulseWinnerEditor"); if (!draw) { target.innerHTML = ""; return; }
-      target.innerHTML = `<form id="pulseWinnerForm"><h4>Active winner verification</h4><p>Private winner: <strong>${esc(draw.firstName)} · ${esc(draw.level)}</strong></p><label><span>Prize status</span><select name="prizeStatus"><option>pending</option><option>contacted</option><option>delivered</option></select></label><label class="check-field"><input type="checkbox" name="winnerVerified" ${draw.winnerVerified ? "checked" : ""}><span>Winner contacted and verified</span></label><label class="check-field"><input type="checkbox" name="publicConsent" ${draw.publicConsent ? "checked" : ""}><span>Winner consented to public display</span></label><label><span>Approved display name</span><input name="publicDisplayName" maxlength="80" value="${esc(draw.publicDisplayName || draw.firstName)}"></label><label><span>Approved public level</span><input name="publicLevel" maxlength="60" value="${esc(draw.publicLevel || draw.level)}"></label><label class="field-wide"><span>Public winner message</span><input name="publicMessage" maxlength="240" value="${esc(draw.publicMessage || "")}"></label><button class="hub-btn hub-btn-primary" type="submit">Save winner status</button></form>`;
+      target.innerHTML = `<form id="pulseWinnerForm"><h4>Active winner verification</h4><p>Private winner: <strong>${esc(draw.firstName)} · ${esc(draw.level)}</strong></p><label><span>Prize status</span><select name="prizeStatus"><option>pending</option><option>contacted</option><option>delivered</option></select></label><label class="check-field"><input type="checkbox" name="winnerVerified" ${draw.winnerVerified ? "checked" : ""}><span>Winner contacted and verified</span></label><label class="check-field"><input type="checkbox" name="publicConsent" ${draw.publicConsent ? "checked" : ""}><span>Winner consented to public display</span></label><label><span>Approved display name</span><input name="publicDisplayName" maxlength="80" value="${esc(draw.publicDisplayName || draw.firstName)}"></label><label><span>Approved public level</span><input name="publicLevel" maxlength="60" value="${esc(draw.publicLevel || draw.level)}"></label><button class="hub-btn hub-btn-primary" type="submit">Save winner status</button></form>`;
       const form = target.querySelector("form"); form.elements.prizeStatus.value = draw.prizeStatus; form.addEventListener("submit", async event => { event.preventDefault(); const values = Object.fromEntries(new FormData(form)); values.winnerVerified = form.elements.winnerVerified.checked; values.publicConsent = form.elements.publicConsent.checked; try { await api(`/api/campus-pulse/admin/draws/${draw.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(values) }); close(); await reload(); } catch (error) { message.textContent = error.message; } });
     };
     renderWinnerEditor(activeDraw);
-    host.querySelector("[data-draw]").addEventListener("click", async () => {
+    const drawButton = host.querySelector("[data-draw]");
+    drawButton.addEventListener("click", async () => {
+      if (drawButton.disabled) return;
       let redrawReason = ""; if (activeDraw) { redrawReason = window.prompt("Enter the required reason for this authorized redraw:") || ""; if (!redrawReason) return; }
       if (!window.confirm(activeDraw ? "Select a new random winner? The original winner and draw record will be preserved." : "Select and finalize one random winner from eligible entries?")) return;
-      try { const result = await api(`/api/campus-pulse/admin/questions/${question.id}/draw`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ redrawReason }) }); message.textContent = "Random winner selected securely."; renderWinnerEditor(result.draw); host.querySelector("#pulseDraws").insertAdjacentHTML("afterbegin", drawMarkup(result.draw)); await loadEntries(); } catch (error) { message.textContent = error.message; }
+      drawButton.disabled = true;
+      try { const result = await api(`/api/campus-pulse/admin/questions/${question.id}/draw`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ redrawReason }) }); activeDraw = result.draw; drawButton.textContent = "Authorized redraw"; message.textContent = "Random winner selected securely."; renderWinnerEditor(result.draw); host.querySelector("#pulseDraws").insertAdjacentHTML("afterbegin", drawMarkup(result.draw)); await loadEntries(); } catch (error) { message.textContent = error.message; } finally { drawButton.disabled = false; }
     });
     await loadEntries();
   }

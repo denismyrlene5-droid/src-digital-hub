@@ -1376,6 +1376,8 @@ test("Campus Pulse starts with one preserved draft and protects all administrati
     assert.equal(dashboard.questions[0].status, "draft");
     assert.equal(dashboard.questions[0].question, "What do you think the big mystery is?");
     assert.equal(dashboard.questions[0].options.length, 4);
+    assert.equal((await fetch(`${app.base}/api/campus-pulse/admin/questions/${dashboard.questions[0].id}/entries`)).status, 401);
+    assert.equal((await fetch(`${app.base}/api/campus-pulse/admin/questions/${dashboard.questions[0].id}`)).status, 401);
     assert.equal((await fetch(`${app.base}/api/campus-pulse/admin/questions/${dashboard.questions[0].id}/export.csv`)).status, 401);
   } finally { await app.close(); }
 });
@@ -1388,6 +1390,13 @@ test("Campus Pulse validates formats, UTC schedules, one active question, and no
     assert.equal(missingOffset.response.status, 400);
     const tooFewOptions = await createPulseQuestion(app, cookie, { options: ["Only one"] });
     assert.equal(tooFewOptions.response.status, 400);
+    const shortAnswer = await createPulseQuestion(app, cookie, { question: "What should Campus Pulse ask next?", type: "short_answer", options: [], status: "draft", opensAt: "", closesAt: "" });
+    assert.equal(shortAnswer.response.status, 201);
+    assert.equal(shortAnswer.data.question.options.length, 0);
+    const unknownType = await createPulseQuestion(app, cookie, { type: "poll", status: "draft", opensAt: "", closesAt: "" });
+    assert.equal(unknownType.response.status, 400);
+    const directArchive = await createPulseQuestion(app, cookie, { status: "archived", opensAt: "", closesAt: "" });
+    assert.equal(directArchive.response.status, 400);
     const created = await createPulseQuestion(app, cookie);
     assert.equal(created.response.status, 201);
     const question = created.data.question;
@@ -1463,6 +1472,10 @@ test("Campus Pulse public APIs stay private while CSV, invalidation, draws, and 
       method: "PUT", headers: { "Content-Type": "application/json", Cookie: cookie }, body: JSON.stringify({ status: "invalid", reason: "Student record could not be verified" })
     });
     assert.equal(invalid.status, 200);
+    assert.equal(app.db.prepare("SELECT action FROM campus_pulse_audit WHERE entity_type='entry' AND entity_id=? ORDER BY id DESC LIMIT 1").get(String(entries[0].id)).action, "entry_invalid");
+    const publicAfterInvalidation = await (await fetch(`${app.base}/api/campus-pulse`)).json();
+    assert.equal(publicAfterInvalidation.pulse.question.validEntryCount, 2);
+    assert.equal(publicAfterInvalidation.pulse.question.totals.reduce((sum, item) => sum + Number(item.count), 0), 2);
     const csvResponse = await fetch(`${app.base}/api/campus-pulse/admin/questions/${question.id}/export.csv`, { headers: { Cookie: cookie } });
     const csv = await csvResponse.text();
     assert.equal(csvResponse.status, 200);
@@ -1485,9 +1498,17 @@ test("Campus Pulse public APIs stay private while CSV, invalidation, draws, and 
     });
     assert.equal(publishWinner.status, 200);
     const publicAfter = await (await fetch(`${app.base}/api/campus-pulse`)).json();
-    assert.deepEqual(publicAfter.pulse.winner, { displayName: "Campus Winner", level: "Level 300", message: "Congratulations!" });
+    assert.deepEqual(publicAfter.pulse.winner, { displayName: "Campus Winner", level: "Level 300" });
+    assert.equal("message" in publicAfter.pulse.winner, false);
     assert.equal(JSON.stringify(publicAfter).includes(draw.phone), false);
     assert.equal(JSON.stringify(publicAfter).includes(draw.studentId), false);
+
+    const stillEligible = app.db.prepare("SELECT id FROM campus_pulse_entries WHERE question_id=? AND status='eligible' LIMIT 1").get(question.id);
+    assert.ok(stillEligible);
+    const lateInvalidation = await fetch(`${app.base}/api/campus-pulse/admin/entries/${stillEligible.id}/status`, {
+      method: "PUT", headers: { "Content-Type": "application/json", Cookie: cookie }, body: JSON.stringify({ status: "invalid", reason: "Attempted after the finalized draw" })
+    });
+    assert.equal(lateInvalidation.status, 409);
 
     const redrawWithoutReason = await fetch(`${app.base}/api/campus-pulse/admin/questions/${question.id}/draw`, { method: "POST", headers: { "Content-Type": "application/json", Cookie: cookie }, body: "{}" });
     assert.equal(redrawWithoutReason.status, 400);

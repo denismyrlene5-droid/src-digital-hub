@@ -3,6 +3,7 @@ const { pagination, metadata } = require("./pagination");
 
 const QUESTION_TYPES = ["multiple_choice", "short_answer", "multiple_choice_explanation"];
 const QUESTION_STATUSES = ["draft", "scheduled", "published", "paused", "closed", "archived"];
+const EDITABLE_QUESTION_STATUSES = ["draft", "scheduled", "published", "paused", "closed"];
 const TOTALS_VISIBILITY = ["immediate", "after_closing", "private"];
 const ENTRY_STATUSES = ["eligible", "invalid", "winner", "not_selected"];
 const PRIZE_STATUSES = ["pending", "contacted", "delivered"];
@@ -197,13 +198,13 @@ function createCampusPulseRepository(db, options = {}) {
     return db.prepare(`SELECT * FROM campus_pulse_questions WHERE status='published' AND datetime(opens_at)<=datetime(?) AND datetime(closes_at)>datetime(?) ORDER BY id DESC LIMIT 1`).get(current, current);
   }
   function publicWinner(questionId) {
-    const row = db.prepare(`SELECT d.public_display_name displayName,d.public_level level,d.public_message message
+    const row = db.prepare(`SELECT d.public_display_name displayName,d.public_level level
       FROM campus_pulse_draws d WHERE d.question_id=? AND d.draw_status='active' AND d.winner_verified=1 AND d.public_consent=1
       AND d.public_display_name IS NOT NULL AND d.public_level IS NOT NULL`).get(questionId);
     return row || null;
   }
   function latestPublicWinner() {
-    return db.prepare(`SELECT d.public_display_name displayName,d.public_level level,d.public_message message
+    return db.prepare(`SELECT d.public_display_name displayName,d.public_level level
       FROM campus_pulse_draws d JOIN campus_pulse_questions q ON q.id=d.question_id
       WHERE d.draw_status='active' AND d.winner_verified=1 AND d.public_consent=1
       AND d.public_display_name IS NOT NULL AND d.public_level IS NOT NULL
@@ -224,7 +225,7 @@ function createCampusPulseRepository(db, options = {}) {
   }
   function validateQuestion(input) {
     const type = choice(input.type, QUESTION_TYPES, "question type");
-    const status = choice(input.status, QUESTION_STATUSES, "question status", "draft");
+    const status = choice(input.status, EDITABLE_QUESTION_STATUSES, "question status", "draft");
     const opensAt = timestamp(input.opensAt, "Opening date", !["draft", "archived"].includes(status));
     const closesAt = timestamp(input.closesAt, "Closing date", !["draft", "archived"].includes(status));
     if (opensAt && closesAt && Date.parse(closesAt) <= Date.parse(opensAt)) throw httpError("Closing date must be after the opening date.");
@@ -313,7 +314,7 @@ function createCampusPulseRepository(db, options = {}) {
   function updateEntryStatus(entryValue, input, admin) {
     const entryId = id(entryValue, "entry"); const row = db.prepare("SELECT * FROM campus_pulse_entries WHERE id=?").get(entryId); if (!row) throw httpError("Entry not found.", 404);
     const status = choice(input.status, ["eligible", "invalid"], "entry status"); const reason = status === "invalid" ? cleanText(input.reason, "Invalid reason", { min: 5, max: 500, required: true }) : null;
-    if (row.status === "winner" && db.prepare("SELECT 1 FROM campus_pulse_draws WHERE selected_entry_id=? AND draw_status='active'").get(entryId)) throw httpError("The active winner cannot be invalidated. Complete an authorized redraw first.", 409);
+    if (db.prepare("SELECT 1 FROM campus_pulse_draws WHERE question_id=? LIMIT 1").get(row.question_id)) throw httpError("Entry eligibility is locked after the first winner draw.", 409);
     db.prepare("UPDATE campus_pulse_entries SET status=?,invalid_reason=?,updated_at=? WHERE id=?").run(status, reason, nowIso(clock), entryId);
     audit(admin, `entry_${status}`, "entry", entryId, status === "invalid" ? `Entry invalidated: ${reason}` : "Entry restored to eligible");
     return { id: entryId, status, invalidReason: reason };

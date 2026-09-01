@@ -230,14 +230,15 @@
     const root = document.getElementById("publicityAdmin");
     try {
       const context = await api("/api/admin/context");
-      const [serviceDashboard, serviceConfig, publicityDashboard, publicityConfig, contentDashboard, contentConfig, activity, awardsDashboard] = await Promise.all([
+      const [serviceDashboard, serviceConfig, publicityDashboard, publicityConfig, contentDashboard, contentConfig, activity, awardsDashboard, pulseDashboard] = await Promise.all([
         api("/api/services/admin/dashboard"), api("/api/services/admin/config"),
         context.capabilities.publicity ? api("/api/publicity/admin/dashboard") : Promise.resolve(null),
         context.capabilities.publicity ? api("/api/publicity/admin/config") : Promise.resolve(null),
         api("/api/content/admin/dashboard"), api("/api/content/admin/config"), api("/api/content/admin/audit?limit=12"),
-        context.capabilities.awards ? api("/api/admin/summary") : Promise.resolve(null)
+        context.capabilities.awards ? api("/api/admin/summary") : Promise.resolve(null),
+        context.capabilities.campusPulse ? api("/api/campus-pulse/admin/dashboard") : Promise.resolve(null)
       ]);
-      renderAdminDashboard(root, { context, serviceDashboard, serviceConfig, publicityDashboard, publicityConfig, contentDashboard, contentConfig, activity: activity.activity, awardsDashboard });
+      renderAdminDashboard(root, { context, serviceDashboard, serviceConfig, publicityDashboard, publicityConfig, contentDashboard, contentConfig, activity: activity.activity, awardsDashboard, pulseDashboard });
     } catch (error) {
       if (error.status === 401) renderAdminLogin(root);
       else root.innerHTML = `<div class="publicity-empty"><strong>Access unavailable</strong><span>${esc(error.message)}</span></div>`;
@@ -254,7 +255,7 @@
   }
 
   function renderAdminDashboard(root, bundle) {
-    const { context, serviceDashboard: services, serviceConfig, publicityDashboard: publicity, publicityConfig, contentDashboard: content, contentConfig, activity, awardsDashboard: awards } = bundle;
+    const { context, serviceDashboard: services, serviceConfig, publicityDashboard: publicity, publicityConfig, contentDashboard: content, contentConfig, activity, awardsDashboard: awards, pulseDashboard: pulse } = bundle;
     const metrics = [
       context.capabilities.feedback && [services.feedback.total, "Total feedback"],
       context.capabilities.feedback && [services.feedback.received, "Unread feedback"],
@@ -273,6 +274,7 @@
       context.capabilities.publicity && [publicity.urgentNotices, "Urgent notices"],
       context.capabilities.media && [content.publishedAlbums, "Published albums"],
       context.capabilities.executives && [content.activeExecutives, "Active executives"],
+      context.capabilities.campusPulse && [pulse.validEntries, "Campus Pulse valid entries"],
       context.capabilities.awards && [awards.categories, "Award categories"],
       context.capabilities.awards && [awards.nominees, "Award nominees"],
       context.capabilities.awards && [awards.totalVotes, "Total votes"],
@@ -281,6 +283,7 @@
     const tabs = [
       ["overview", "Dashboard", "Dashboard"],
       context.capabilities.publicity && ["announcements", "Announcements", "Content"], context.capabilities.publicity && ["events", "Events", "Content"],
+      context.capabilities.campusPulse && ["campusPulse", "Campus Pulse", "Content"],
       context.capabilities.academics && ["academics", "Academics", "Content"],
       context.capabilities.awards && ["awards", "Awards & Voting", "Awards"],
       context.capabilities.media && ["media", "Media", "Content"],
@@ -301,6 +304,7 @@
       if (type === "overview") renderOverview();
       else if (["announcements", "events"].includes(type)) loadAdminModule(type, publicityConfig).catch(showPageError);
       else if (type === "academics") window.SRC_ACADEMICS_ADMIN.loadModule().catch(showPageError);
+      else if (type === "campusPulse") window.SRC_CAMPUS_PULSE_ADMIN.loadModule().catch(showPageError);
       else if (type === "awards") window.SRC_AWARDS_ADMIN.loadModule().catch(showPageError);
       else if (["media", "executives", "settings"].includes(type)) window.SRC_CONTENT_ADMIN.loadModule(type, contentConfig).catch(showPageError);
       else window.SRC_SERVICES_ADMIN.loadModule(type, serviceConfig).catch(showPageError);

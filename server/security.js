@@ -116,6 +116,7 @@ function createAuth({ db, adminUsers = [], adminPassword, publicityAdminPassword
     requireAnyAdmin: requireRole("super_admin", "publicity_admin", "student_affairs_admin", "awards_admin", "content_editor"),
     requirePublicityAdmin: requireRole("super_admin", "publicity_admin"),
     requireAcademicsAdmin: requireRole("super_admin", "publicity_admin"),
+    requirePulseAdmin: requireRole("super_admin", "publicity_admin"),
     requireAwardsAdmin: requireRole("super_admin", "awards_admin"),
     requireFeedbackAdmin: requireRole("super_admin", "student_affairs_admin"),
     requireLostFoundAdmin: requireRole("super_admin", "student_affairs_admin", "publicity_admin"),

@@ -16,6 +16,8 @@ const { createAwardsAdminRouter } = require("./awards-admin");
 const { createUploadStore } = require("./uploads");
 const { createAcademicsRepository } = require("./academics");
 const { createAcademicsRouter } = require("./academics-routes");
+const { createCampusPulseRepository } = require("./campus-pulse");
+const { createCampusPulseRouter } = require("./campus-pulse-routes");
 
 const normalizePhone = phone => String(phone || "").replace(/[^\d+]/g, "");
 const validEmail = email => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && email.length <= 254;
@@ -56,6 +58,7 @@ function createApp(options = {}) {
     uploadDirectory,
     seedPdfPath: path.join(__dirname, "..", "seed", "academics", "ucc-bed-5-semester-programmes-and-structures.pdf")
   });
+  const campusPulse = createCampusPulseRepository(db, { seed: true });
   const publicDirectory = path.join(__dirname, "..", "public");
   const hubTemplate = fs.readFileSync(path.join(publicDirectory, "hub.html"), "utf8");
   const paystackKey = options.paystackKey ?? process.env.PAYSTACK_SECRET_KEY ?? "";
@@ -89,6 +92,7 @@ function createApp(options = {}) {
   const securityEvent=(event,details={})=>console.warn(JSON.stringify({timestamp:new Date().toISOString(),category:"security",event,...details}));
   const auth = createAuth({ db, adminUsers, adminPassword, publicityAdminPassword, studentAffairsAdminPassword, awardsAdminPassword, contentEditorPassword, secureCookies: production || staging, onSecurityEvent:securityEvent });
   const paymentLimit = rateLimit({ windowMs: 60_000, max: 20 });
+  const campusPulseSubmissionLimit = rateLimit({ windowMs: 10 * 60_000, max: 12 });
   const requireSameOrigin=(req,res,next)=>{
     if(["GET","HEAD","OPTIONS"].includes(req.method))return next();
     const origin=req.get("origin");if(!origin)return next();
@@ -138,6 +142,8 @@ function createApp(options = {}) {
   app.use("/api", createPublicityRouter({ repository: publicity, uploadDirectory, requirePublicityAdmin: auth.requirePublicityAdmin, audit: content.audit }));
   app.use("/api/academics/admin", requireSameOrigin);
   app.use("/api/academics", createAcademicsRouter({ repository: academics, uploadDirectory, requireAcademicsAdmin: auth.requireAcademicsAdmin, audit: content.audit }));
+  app.use("/api/campus-pulse/admin", requireSameOrigin);
+  app.use("/api/campus-pulse", createCampusPulseRouter({ repository: campusPulse, requirePulseAdmin: auth.requirePulseAdmin, submissionLimit: campusPulseSubmissionLimit, audit: content.audit }));
   app.use(express.json({ limit: "32kb" }));
 
   function health(req,res){
@@ -266,6 +272,7 @@ function createApp(options = {}) {
     const role = req.admin.role;
     res.json({ role, username: req.admin.username, capabilities: {
       publicity: ["super_admin", "publicity_admin"].includes(role),
+      campusPulse: ["super_admin", "publicity_admin"].includes(role),
       academics: ["super_admin", "publicity_admin"].includes(role),
       feedback: ["super_admin", "student_affairs_admin"].includes(role),
       lostFound: ["super_admin", "student_affairs_admin", "publicity_admin"].includes(role),

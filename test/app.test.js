@@ -9,6 +9,7 @@ const { DatabaseSync } = require("node:sqlite");
 const { createApp } = require("../server/app");
 const { createPublicityRepository } = require("../server/publicity");
 const { createPaystackProvider } = require("../server/payment-providers");
+const { createCampusPulseRepository, normalizeGhanaPhone } = require("../server/campus-pulse");
 
 async function fixture(options = {}) {
   const uploadDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "src-services-test-"));
@@ -153,7 +154,7 @@ test("public frontend retains accessibility and responsive spacing polish", asyn
     assert.match(css, /\.urgent-notice-content b\{white-space:normal/);
     assert.match(css, /\.hub-hero h1\{font-size:clamp\(40px,12vw,49px\)/);
     assert.match(css, /\.publicity-metrics\{grid-template-columns:repeat\(4,1fr\)\}/);
-    assert.match(home, /\/hub\.css\?v=16/);
+    assert.match(home, /\/hub\.css\?v=17/);
     assert.match(awards, /\/hub\.css\?v=14/);
   } finally { await app.close(); }
 });
@@ -1316,4 +1317,185 @@ test("official Academics data and source PDF survive application restarts", () =
     assert.equal(fs.existsSync(path.join(uploadDirectory, document.token)), true);
     second.db.close();
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+});
+
+function pulseQuestion(overrides = {}) {
+  return {
+    question: "Which campus update will happen next?",
+    type: "multiple_choice_explanation",
+    options: ["A new student service", "A campus event"],
+    prize: "GH₵50 airtime or data",
+    opensAt: "2026-08-01T00:00:00.000Z",
+    closesAt: "2099-12-31T23:59:59.000Z",
+    status: "published",
+    totalsVisibility: "immediate",
+    eligibilityRules: "Current UCC WISE students may submit one entry per question.",
+    showCount: true,
+    showCountdown: true,
+    ...overrides
+  };
+}
+
+async function createPulseQuestion(app, cookie, overrides = {}) {
+  const response = await fetch(`${app.base}/api/campus-pulse/admin/questions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: cookie },
+    body: JSON.stringify(pulseQuestion(overrides))
+  });
+  return { response, data: await response.json() };
+}
+
+async function submitPulse(app, optionId, overrides = {}) {
+  const response = await fetch(`${app.base}/api/campus-pulse/entries`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      optionId,
+      firstName: "Ama",
+      studentId: "WISE/1001/26",
+      phone: "0241234567",
+      level: "Level 300",
+      explanation: "My prediction",
+      consent: true,
+      ...overrides
+    })
+  });
+  return { response, data: await response.json() };
+}
+
+test("Campus Pulse starts with one preserved draft and protects all administration", async () => {
+  const app = await fixture({ publicityAdminPassword: "pulse-publicity-password" });
+  try {
+    const publicPulse = await (await fetch(`${app.base}/api/campus-pulse`)).json();
+    assert.equal(publicPulse.pulse.visible, true);
+    assert.equal(publicPulse.pulse.active, false);
+    assert.equal((await fetch(`${app.base}/api/campus-pulse/admin/dashboard`)).status, 401);
+    const cookie = await adminCookie(app, "pulse-publicity-password");
+    const dashboard = await (await fetch(`${app.base}/api/campus-pulse/admin/dashboard`, { headers: { Cookie: cookie } })).json();
+    assert.equal(dashboard.questions.length, 1);
+    assert.equal(dashboard.questions[0].status, "draft");
+    assert.equal(dashboard.questions[0].question, "What do you think the big mystery is?");
+    assert.equal(dashboard.questions[0].options.length, 4);
+    assert.equal((await fetch(`${app.base}/api/campus-pulse/admin/questions/${dashboard.questions[0].id}/export.csv`)).status, 401);
+  } finally { await app.close(); }
+});
+
+test("Campus Pulse validates formats, UTC schedules, one active question, and normalized duplicates", async () => {
+  const app = await fixture();
+  try {
+    const cookie = await adminCookie(app);
+    const missingOffset = await createPulseQuestion(app, cookie, { status: "scheduled", opensAt: "2099-01-01T10:00", closesAt: "2099-01-01T11:00" });
+    assert.equal(missingOffset.response.status, 400);
+    const tooFewOptions = await createPulseQuestion(app, cookie, { options: ["Only one"] });
+    assert.equal(tooFewOptions.response.status, 400);
+    const created = await createPulseQuestion(app, cookie);
+    assert.equal(created.response.status, 201);
+    const question = created.data.question;
+    assert.equal(question.type, "multiple_choice_explanation");
+
+    const conflicting = await createPulseQuestion(app, cookie, { question: "Will this replace the current question?" });
+    assert.equal(conflicting.response.status, 409);
+    const replacement = await createPulseQuestion(app, cookie, { question: "Replacement Campus Pulse question", replaceActive: true });
+    assert.equal(replacement.response.status, 201);
+    assert.equal(app.db.prepare("SELECT status FROM campus_pulse_questions WHERE id=?").get(question.id).status, "closed");
+
+    const active = replacement.data.question;
+    const first = await submitPulse(app, active.options[0].id);
+    assert.equal(first.response.status, 201);
+    const duplicateStudent = await submitPulse(app, active.options[1].id, { phone: "+233501234567", studentId: " wise/1001/26 " });
+    assert.equal(duplicateStudent.response.status, 409);
+    const duplicatePhone = await submitPulse(app, active.options[1].id, { phone: "+233 24 123 4567", studentId: "WISE/1002/26" });
+    assert.equal(duplicatePhone.response.status, 409);
+    assert.equal(normalizeGhanaPhone("024 123 4567"), "+233241234567");
+    assert.equal(normalizeGhanaPhone("233241234567"), "+233241234567");
+
+    const protectedEdit = await fetch(`${app.base}/api/campus-pulse/admin/questions/${active.id}`, {
+      method: "PUT", headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify(pulseQuestion({ question: "Changed after an entry", options: active.options, status: "paused" }))
+    });
+    assert.equal(protectedEdit.status, 409);
+  } finally { await app.close(); }
+});
+
+test("Campus Pulse rejects the exact closing boundary and archives without deleting entries", () => {
+  const db = new DatabaseSync(":memory:");
+  let now = "2026-09-01T10:00:00.000Z";
+  try {
+    const repository = createCampusPulseRepository(db, { seed: false, clock: () => new Date(now) });
+    const admin = { role: "super_admin", username: "test-admin" };
+    const question = repository.createQuestion(pulseQuestion({ opensAt: "2026-09-01T09:00:00.000Z", closesAt: "2026-09-01T10:01:00.000Z" }), admin);
+    repository.submitEntry({ optionId: question.options[0].id, firstName: "Kojo", studentId: "WISE/2001/26", phone: "0551234567", level: "Level 200", consent: true });
+    now = "2026-09-01T10:01:00.000Z";
+    assert.throws(() => repository.submitEntry({ optionId: question.options[0].id, firstName: "Esi", studentId: "WISE/2002/26", phone: "0201234567", level: "Level 100", consent: true }, now), /closed/i);
+    repository.archiveQuestion(question.id, admin);
+    assert.equal(db.prepare("SELECT COUNT(*) count FROM campus_pulse_entries WHERE question_id=?").get(question.id).count, 1);
+    assert.equal(repository.getQuestion(question.id).status, "archived");
+  } finally { db.close(); }
+});
+
+test("Campus Pulse public APIs stay private while CSV, invalidation, draws, and consent are enforced", async () => {
+  const app = await fixture();
+  try {
+    const cookie = await adminCookie(app);
+    const created = await createPulseQuestion(app, cookie);
+    const question = created.data.question;
+    const participants = [
+      { firstName: "=FORMULA", studentId: "WISE/3001/26", phone: "0241111111", explanation: "@formula" },
+      { firstName: "Yaw", studentId: "WISE/3002/26", phone: "0242222222", explanation: "Second answer" },
+      { firstName: "Efua", studentId: "WISE/3003/26", phone: "0243333333", explanation: "Third answer" }
+    ];
+    for (const [index, participant] of participants.entries()) {
+      const submitted = await submitPulse(app, question.options[index % 2].id, participant);
+      assert.equal(submitted.response.status, 201);
+      assert.equal(JSON.stringify(submitted.data).includes(participant.studentId), false);
+    }
+
+    const publicBefore = await (await fetch(`${app.base}/api/campus-pulse`)).json();
+    const publicText = JSON.stringify(publicBefore);
+    for (const secret of ["WISE/3001/26", "+233241111111", "@formula", "=FORMULA"]) assert.equal(publicText.includes(secret), false);
+    for (const privateKey of ["studentId", "phone", "firstName", "explanation", "selectedEntryId"]) assert.equal(publicText.includes(`"${privateKey}"`), false);
+    assert.equal(publicBefore.pulse.question.validEntryCount, 3);
+
+    const entriesResponse = await fetch(`${app.base}/api/campus-pulse/admin/questions/${question.id}/entries`, { headers: { Cookie: cookie } });
+    assert.equal(entriesResponse.status, 200);
+    const entries = (await entriesResponse.json()).entries;
+    const invalid = await fetch(`${app.base}/api/campus-pulse/admin/entries/${entries[0].id}/status`, {
+      method: "PUT", headers: { "Content-Type": "application/json", Cookie: cookie }, body: JSON.stringify({ status: "invalid", reason: "Student record could not be verified" })
+    });
+    assert.equal(invalid.status, 200);
+    const csvResponse = await fetch(`${app.base}/api/campus-pulse/admin/questions/${question.id}/export.csv`, { headers: { Cookie: cookie } });
+    const csv = await csvResponse.text();
+    assert.equal(csvResponse.status, 200);
+    assert.match(csv, /"'=FORMULA"/);
+    assert.match(csv, /"'@formula"/);
+
+    const earlyDraw = await fetch(`${app.base}/api/campus-pulse/admin/questions/${question.id}/draw`, { method: "POST", headers: { "Content-Type": "application/json", Cookie: cookie }, body: "{}" });
+    assert.equal(earlyDraw.status, 409);
+    app.db.prepare("UPDATE campus_pulse_questions SET status='closed' WHERE id=?").run(question.id);
+
+    const drawRequests = await Promise.all([1, 2].map(() => fetch(`${app.base}/api/campus-pulse/admin/questions/${question.id}/draw`, {
+      method: "POST", headers: { "Content-Type": "application/json", Cookie: cookie }, body: "{}"
+    })));
+    assert.deepEqual(drawRequests.map(response => response.status).sort(), [201, 400]);
+    assert.equal(app.db.prepare("SELECT COUNT(*) count FROM campus_pulse_draws WHERE question_id=? AND draw_status='active'").get(question.id).count, 1);
+    const details = await (await fetch(`${app.base}/api/campus-pulse/admin/questions/${question.id}`, { headers: { Cookie: cookie } })).json();
+    const draw = details.draws.find(item => item.drawStatus === "active");
+    const publishWinner = await fetch(`${app.base}/api/campus-pulse/admin/draws/${draw.id}`, {
+      method: "PUT", headers: { "Content-Type": "application/json", Cookie: cookie }, body: JSON.stringify({ prizeStatus: "contacted", winnerVerified: true, publicConsent: true, publicDisplayName: "Campus Winner", publicLevel: "Level 300", publicMessage: "Congratulations!" })
+    });
+    assert.equal(publishWinner.status, 200);
+    const publicAfter = await (await fetch(`${app.base}/api/campus-pulse`)).json();
+    assert.deepEqual(publicAfter.pulse.winner, { displayName: "Campus Winner", level: "Level 300", message: "Congratulations!" });
+    assert.equal(JSON.stringify(publicAfter).includes(draw.phone), false);
+    assert.equal(JSON.stringify(publicAfter).includes(draw.studentId), false);
+
+    const redrawWithoutReason = await fetch(`${app.base}/api/campus-pulse/admin/questions/${question.id}/draw`, { method: "POST", headers: { "Content-Type": "application/json", Cookie: cookie }, body: "{}" });
+    assert.equal(redrawWithoutReason.status, 400);
+    const redraw = await fetch(`${app.base}/api/campus-pulse/admin/questions/${question.id}/draw`, {
+      method: "POST", headers: { "Content-Type": "application/json", Cookie: cookie }, body: JSON.stringify({ redrawReason: "Winner could not complete verification" })
+    });
+    assert.equal(redraw.status, 201);
+    assert.equal(app.db.prepare("SELECT COUNT(*) count FROM campus_pulse_draws WHERE question_id=?").get(question.id).count, 2);
+    assert.equal(app.db.prepare("SELECT COUNT(*) count FROM campus_pulse_draws WHERE question_id=? AND draw_status='active'").get(question.id).count, 1);
+  } finally { await app.close(); }
 });

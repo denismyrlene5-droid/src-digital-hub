@@ -34,6 +34,7 @@
         <div class="hero-trust"><span>Official updates</span><span>Student services</span><span>Campus opportunities</span></div>
       </div>${campusPanel(window.SRC_PUBLIC_BOOTSTRAP?.homeFeed)}</div>
     </section>
+    <section class="campus-pulse-home" id="campusPulseHome" aria-live="polite"><div class="hub-container"><div class="pulse-loading" aria-hidden="true"></div></div></section>
     <section class="hub-section" id="quickAccess"><div class="hub-container"><div class="hub-section-heading"><div><span class="hub-eyebrow">START HERE</span><h2>Quick access</h2></div><p>The campus information and services students need most, gathered in one place.</p></div>
       <div class="quick-grid">${[
         ["01","Announcements","Official notices and updates","/announcements"],["02","Events","What is happening on campus","/events"],["03","SRC Awards","Explore nominees and vote","/awards"],

@@ -26,6 +26,15 @@ test.afterAll(async () => {
   if (runtime) fs.rmSync(runtime, { recursive: true, force: true });
 });
 
+async function loginAsAdmin(page) {
+  await page.goto("/admin");
+  const password = page.getByLabel("Password");
+  if (await password.isVisible().catch(() => false)) {
+    await password.fill("browser-test-password");
+    await page.getByRole("button", { name: "Sign in" }).click();
+  }
+}
+
 const publicRoutes = ["/", "/announcements", "/events", "/academics", "/academics/course-structure", "/awards", "/businesses", "/lost-found", "/feedback", "/media", "/executives", "/contact"];
 
 for (const route of publicRoutes) {
@@ -36,6 +45,76 @@ for (const route of publicRoutes) {
     expect(overflow).toBeLessThanOrEqual(1);
   });
 }
+
+test("Campus Pulse admin editor remains usable at supported phone widths", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop", "The explicit Campus Pulse viewport matrix runs once.");
+  for (const width of [320, 375, 390, 430]) {
+    await page.setViewportSize({ width, height: 620 });
+    await loginAsAdmin(page);
+    await page.getByRole("button", { name: "Campus Pulse", exact: true }).click();
+    await page.getByRole("button", { name: "Create question" }).click();
+    const dialog = page.getByRole("dialog", { name: "Campus Pulse question" });
+    await expect(dialog).toBeVisible();
+    const layout = await dialog.evaluate(element => ({
+      left: element.getBoundingClientRect().left,
+      right: element.getBoundingClientRect().right,
+      viewportWidth: document.documentElement.clientWidth,
+      scrollable: element.scrollHeight > element.clientHeight
+    }));
+    expect(layout.left).toBeGreaterThanOrEqual(-1);
+    expect(layout.right).toBeLessThanOrEqual(layout.viewportWidth + 1);
+    expect(layout.scrollable).toBe(true);
+    const optionControls = dialog.locator(".pulse-option-editor button");
+    const controlSizes = await optionControls.evaluateAll(buttons => buttons.map(button => button.getBoundingClientRect().height));
+    expect(controlSizes.every(height => height >= 40)).toBe(true);
+    const save = dialog.getByRole("button", { name: "Save question" });
+    await save.scrollIntoViewIfNeeded();
+    const savePosition = await save.evaluate(button => ({ bottom: button.getBoundingClientRect().bottom, viewport: document.documentElement.clientHeight }));
+    expect(savePosition.bottom).toBeLessThanOrEqual(savePosition.viewport + 1);
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+  }
+});
+
+test("Campus Pulse publishes and accepts a mobile prediction without exposing private data", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "mobile", "The complete phone flow runs on the mobile project.");
+  await loginAsAdmin(page);
+  await page.getByRole("button", { name: "Campus Pulse", exact: true }).click();
+  await page.getByRole("button", { name: "Create question" }).click();
+  const dialog = page.getByRole("dialog", { name: "Campus Pulse question" });
+  await dialog.getByLabel("Question", { exact: true }).fill("Which mobile campus update will happen next?");
+  await dialog.getByLabel("Option 1", { exact: true }).fill("A new student service");
+  await dialog.getByLabel("Option 2", { exact: true }).fill("A campus event");
+  await dialog.getByLabel("Prize description").fill("GH₵50 airtime or data");
+  await dialog.getByLabel(/Opening date\/time/).fill("2026-08-01T00:00");
+  await dialog.getByLabel(/Closing date\/time/).fill("2099-12-31T23:59");
+  await dialog.getByLabel("Status").selectOption("published");
+  await dialog.getByLabel("Public totals").selectOption("immediate");
+  await dialog.getByLabel("Eligibility rules").fill("Current UCC WISE students may submit one entry per question.");
+  const createdResponse = page.waitForResponse(response => response.url().endsWith("/api/campus-pulse/admin/questions") && response.request().method() === "POST");
+  await dialog.getByRole("button", { name: "Save question" }).click();
+  expect((await createdResponse).status()).toBe(201);
+  await expect(page.locator(".pulse-admin-question").filter({ hasText: "Which mobile campus update" })).toBeVisible();
+
+  await page.goto("/");
+  const pulse = page.locator("#campusPulseHome");
+  await expect(pulse.getByRole("heading", { name: "Which mobile campus update will happen next?" })).toBeVisible();
+  await pulse.getByRole("radio", { name: "A campus event" }).check();
+  await pulse.getByLabel("First name").fill("Ama");
+  await pulse.getByLabel("Student ID").fill("WISE/MOBILE/26");
+  await pulse.getByLabel("Phone number").fill("0247654321");
+  await pulse.getByLabel("Level").selectOption("Level 300");
+  await pulse.getByLabel(/I agree/).check();
+  const submitResponse = page.waitForResponse(response => response.url().endsWith("/api/campus-pulse/entries") && response.request().method() === "POST");
+  await pulse.getByRole("button", { name: "Submit Prediction" }).click();
+  expect((await submitResponse).status()).toBe(201);
+  await expect(pulse.getByText(/Prediction locked/)).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+
+  const publicPayload = await (await page.request.get("/api/campus-pulse")).text();
+  expect(publicPayload).not.toContain("WISE/MOBILE/26");
+  expect(publicPayload).not.toContain("+233247654321");
+});
 
 test("admin dialog traps focus and closes with Escape", async ({ page }) => {
   await page.goto("/admin");

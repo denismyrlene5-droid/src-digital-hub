@@ -35,7 +35,7 @@ async function loginAsAdmin(page) {
   }
 }
 
-const publicRoutes = ["/", "/announcements", "/events", "/academics", "/academics/course-structure", "/awards", "/businesses", "/lost-found", "/feedback", "/media", "/executives", "/contact"];
+const publicRoutes = ["/", "/announcements", "/events", "/academics", "/academics/course-structure", "/awards", "/nominations", "/businesses", "/lost-found", "/feedback", "/media", "/executives", "/contact"];
 
 for (const route of publicRoutes) {
   test(`${route} loads without horizontal overflow`, async ({ page }) => {
@@ -45,6 +45,79 @@ for (const route of publicRoutes) {
     expect(overflow).toBeLessThanOrEqual(1);
   });
 }
+
+test("mobile homepage does not leave excessive space before Campus Pulse", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "mobile", "This spacing regression is specific to the phone layout.");
+  await page.goto("/");
+  await expect(page.locator("#campusPulseHome .pulse-shell")).toBeVisible();
+  const spacing = await page.evaluate(() => {
+    const hero = document.querySelector(".hub-hero").getBoundingClientRect();
+    const panel = document.querySelector(".hero-campus-panel").getBoundingClientRect();
+    const pulse = document.querySelector("#campusPulseHome .pulse-shell").getBoundingClientRect();
+    return { insideHero: hero.bottom - panel.bottom, betweenSections: pulse.top - hero.bottom };
+  });
+  expect(spacing.insideHero).toBeLessThanOrEqual(70);
+  expect(spacing.betweenSections).toBeLessThanOrEqual(50);
+});
+
+test("nomination hero preserves the official photograph and stays usable on phone layouts", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop", "The explicit nomination viewport matrix runs once.");
+  for (const width of [320, 375, 390, 430, 1280]) {
+    await page.setViewportSize({ width, height: width < 500 ? 760 : 800 });
+    await page.goto("/nominations");
+    const image = page.getByAltText("Previous UCC WISE SRC award recipient holding her award.");
+    await expect(image).toBeVisible();
+    const imageState = await image.evaluate(element => ({ naturalWidth: element.naturalWidth, naturalHeight: element.naturalHeight, right: element.getBoundingClientRect().right, viewport: document.documentElement.clientWidth }));
+    expect(imageState.naturalWidth).toBe(1206);
+    expect(imageState.naturalHeight).toBe(667);
+    expect(imageState.right).toBeLessThanOrEqual(imageState.viewport + 1);
+    await expect(page.getByText("Nominations are being prepared.")).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+  }
+});
+
+test("public nomination wizard submits securely on a phone-sized viewport", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop", "The explicit mobile submission flow runs once.");
+  database.prepare("UPDATE nomination_phases SET status='open',opens_at=?,closes_at=?").run(new Date(Date.now()-60_000).toISOString(),new Date(Date.now()+3_600_000).toISOString());
+  await page.setViewportSize({ width: 375, height: 720 });
+  await page.goto("/nominations");
+  await page.getByRole("button", { name: /Level 300 Awards/ }).click();
+  await page.getByRole("button", { name: /Level 300 Student Personality/ }).click();
+  await page.getByLabel("Nominee's full name").fill("Mobile Nominee Test");
+  await page.getByLabel("Nominee's level").fill("Level 300");
+  await page.getByLabel("Programme / class").fill("B.Ed. Management");
+  await page.getByLabel(/Short reason/).fill("Consistent student service and positive campus impact.");
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByLabel("Your full name").fill("Mobile Nominator");
+  await page.getByLabel("Student ID").fill("WISE/2026/MOBILE");
+  await page.getByLabel("Phone number").fill("024 555 0199");
+  await page.getByLabel("Level / programme or class").fill("Level 300 B.Ed. Management");
+  await page.getByLabel(/confirm the nomination rules/i).check();
+  await page.getByRole("button", { name: "Continue" }).click();
+  const response = page.waitForResponse(result => result.url().endsWith("/api/nominations/submit") && result.request().method() === "POST");
+  await page.getByRole("button", { name: "SUBMIT NOMINATION" }).click();
+  expect((await response).status()).toBe(201);
+  await expect(page.getByRole("heading", { name: "SPOTLIGHT PLACED" })).toBeVisible();
+  database.prepare("UPDATE nomination_phases SET status='draft',opens_at=NULL,closes_at=NULL").run();
+});
+
+test("Awards nomination administration remains usable at supported phone widths", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop", "The explicit nomination admin viewport matrix runs once.");
+  for (const width of [320, 375, 390, 430]) {
+    await page.setViewportSize({ width, height: 720 });
+    await loginAsAdmin(page);
+    await page.getByRole("button", { name: "Nominations", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Nomination & shortlisting" })).toBeVisible();
+    await page.getByRole("button", { name: "Phase & homepage" }).click();
+    await expect(page.getByRole("heading", { name: "Official nomination hero image" })).toBeVisible();
+    await expect(page.getByAltText("Previous UCC WISE SRC award recipient holding her award.")).toBeVisible();
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(overflow).toBeLessThanOrEqual(1);
+    await page.getByRole("button", { name: "Duplicates" }).click();
+    await expect(page.getByRole("heading", { name: "Review and merge duplicate nominees" })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+  }
+});
 
 test("Campus Pulse admin editor remains usable at supported phone widths", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop", "The explicit Campus Pulse viewport matrix runs once.");

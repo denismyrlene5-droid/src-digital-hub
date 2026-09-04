@@ -35,6 +35,7 @@
       </div>${campusPanel(window.SRC_PUBLIC_BOOTSTRAP?.homeFeed)}</div>
     </section>
     <section class="campus-pulse-home" id="campusPulseHome" aria-live="polite"><div class="hub-container"><div class="pulse-loading" aria-hidden="true"></div></div></section>
+    <section class="nomination-home is-loading" id="nominationHome" aria-live="polite" aria-busy="true"><div class="hub-container"><div class="nomination-loading" aria-hidden="true"></div></div></section>
     <section class="hub-section" id="quickAccess"><div class="hub-container"><div class="hub-section-heading"><div><span class="hub-eyebrow">START HERE</span><h2>Quick access</h2></div><p>The campus information and services students need most, gathered in one place.</p></div>
       <div class="quick-grid">${[
         ["01","Announcements","Official notices and updates","/announcements"],["02","Events","What is happening on campus","/events"],["03","SRC Awards","Explore nominees and vote","/awards"],
@@ -73,7 +74,7 @@
     main.innerHTML = `<section class="page-hero"><div class="hub-container"><span class="hub-eyebrow">${info.eyebrow}</span><h1>${info.title}</h1><p>${info.description}</p><div class="page-status"><span aria-hidden="true">●</span>${info.status}</div></div></section><section class="hub-section"><div class="hub-container">${preview}</div></section>`;
   }
 
-  const publicityPage = ["announcements", "events", "academics", "academics/course-structure", "admin", "feedback", "feedback/status", "lost-found", "businesses", "media", "executives"].includes(page) || /^(announcements|events|lost-found|businesses|media|executives)\//.test(page);
+  const publicityPage = ["announcements", "events", "academics", "academics/course-structure", "nominations", "admin", "feedback", "feedback/status", "lost-found", "businesses", "media", "executives"].includes(page) || /^(announcements|events|lost-found|businesses|media|executives)\//.test(page);
   if (page === "home") homePage();
   else if (!publicityPage) placeholderPage(page);
 })();

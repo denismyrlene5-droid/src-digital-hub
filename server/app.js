@@ -18,6 +18,8 @@ const { createAcademicsRepository } = require("./academics");
 const { createAcademicsRouter } = require("./academics-routes");
 const { createCampusPulseRepository } = require("./campus-pulse");
 const { createCampusPulseRouter } = require("./campus-pulse-routes");
+const { createNominationRepository } = require("./nominations");
+const { createNominationRouter } = require("./nomination-routes");
 
 const normalizePhone = phone => String(phone || "").replace(/[^\d+]/g, "");
 const validEmail = email => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && email.length <= 254;
@@ -59,6 +61,19 @@ function createApp(options = {}) {
     seedPdfPath: path.join(__dirname, "..", "seed", "academics", "ucc-bed-5-semester-programmes-and-structures.pdf")
   });
   const campusPulse = createCampusPulseRepository(db, { seed: true });
+  const nominationHeroTokens = {
+    original: "11111111111111111111111111111111.jpeg",
+    webp: "22222222222222222222222222222222.webp",
+    avif: "33333333333333333333333333333333.avif"
+  };
+  const nominationSeedDirectory = path.join(__dirname, "..", "seed", "nominations");
+  fs.mkdirSync(uploadDirectory, { recursive: true });
+  for (const [kind, token] of Object.entries(nominationHeroTokens)) {
+    const filename = kind === "original" ? "nomination-hero-original.jpeg" : `nomination-hero.${kind}`;
+    const source = path.join(nominationSeedDirectory, filename), destination = path.join(uploadDirectory, token);
+    if (fs.existsSync(source) && !fs.existsSync(destination)) fs.copyFileSync(source, destination, fs.constants.COPYFILE_EXCL);
+  }
+  const nominations = createNominationRepository(db, { heroTokens: nominationHeroTokens });
   const publicDirectory = path.join(__dirname, "..", "public");
   const hubTemplate = fs.readFileSync(path.join(publicDirectory, "hub.html"), "utf8");
   const paystackKey = options.paystackKey ?? process.env.PAYSTACK_SECRET_KEY ?? "";
@@ -93,6 +108,7 @@ function createApp(options = {}) {
   const auth = createAuth({ db, adminUsers, adminPassword, publicityAdminPassword, studentAffairsAdminPassword, awardsAdminPassword, contentEditorPassword, secureCookies: production || staging, onSecurityEvent:securityEvent });
   const paymentLimit = rateLimit({ windowMs: 60_000, max: 20 });
   const campusPulseSubmissionLimit = rateLimit({ windowMs: 10 * 60_000, max: 12 });
+  const nominationSubmissionLimit = rateLimit({ windowMs: 10 * 60_000, max: 10 });
   const requireSameOrigin=(req,res,next)=>{
     if(["GET","HEAD","OPTIONS"].includes(req.method))return next();
     const origin=req.get("origin");if(!origin)return next();
@@ -144,6 +160,8 @@ function createApp(options = {}) {
   app.use("/api/academics", createAcademicsRouter({ repository: academics, uploadDirectory, requireAcademicsAdmin: auth.requireAcademicsAdmin, audit: content.audit }));
   app.use("/api/campus-pulse/admin", requireSameOrigin);
   app.use("/api/campus-pulse", createCampusPulseRouter({ repository: campusPulse, requirePulseAdmin: auth.requirePulseAdmin, submissionLimit: campusPulseSubmissionLimit, audit: content.audit }));
+  app.use("/api/nominations/admin", requireSameOrigin);
+  app.use("/api/nominations", createNominationRouter({ repository: nominations, uploadDirectory, requireAwardsAdmin: auth.requireAwardsAdmin, submissionLimit: nominationSubmissionLimit, audit: content.audit }));
   app.use(express.json({ limit: "32kb" }));
 
   function health(req,res){
@@ -315,14 +333,15 @@ function createApp(options = {}) {
   function escapeAttribute(value) {
     return String(value || "").replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   }
-  function injectCriticalPublicData(html,{includeHomeFeed=false}={}){
+  function injectCriticalPublicData(html,{includeHomeFeed=false,includeNominations=false}={}){
     const settings=content.settings();
     const bootstrap={settings};
     if(includeHomeFeed)bootstrap.homeFeed=publicity.homeFeed();
+    if(includeNominations)bootstrap.nominations=nominations.publicData();
     const bootstrapJson=JSON.stringify(bootstrap)
       .replace(/&/g,"\\u0026").replace(/</g,"\\u003c").replace(/>/g,"\\u003e")
       .replace(/\u2028/g,"\\u2028").replace(/\u2029/g,"\\u2029");
-    const preload=settings.logoUrl?`<link rel="preload" as="image" href="${escapeAttribute(settings.logoUrl)}" fetchpriority="high">`:"";
+    const preload=[settings.logoUrl&&`<link rel="preload" as="image" href="${escapeAttribute(settings.logoUrl)}" fetchpriority="high">`,includeNominations&&bootstrap.nominations?.settings?.hero?.avif&&`<link rel="preload" as="image" type="image/avif" href="${escapeAttribute(bootstrap.nominations.settings.hero.avif)}">`].filter(Boolean).join("");
     return html
       .replace("<!-- CRITICAL_ASSETS -->",preload)
       .replace("<!-- PUBLIC_BOOTSTRAP -->",`<script type="application/json" id="srcPublicBootstrap">${bootstrapJson}</script>`);
@@ -366,7 +385,7 @@ function createApp(options = {}) {
       `<meta name="twitter:description" content="Official updates, events, awards, student services, and campus community in one trusted place.">`,
       `<meta name="twitter:image" content="${escapeAttribute(origin + "/og.png")}">`
     ].join("");
-    return injectCriticalPublicData(hubTemplate.replace("<!-- SOCIAL_META -->", metadata),{includeHomeFeed:req.path==="/"});
+    return injectCriticalPublicData(hubTemplate.replace("<!-- SOCIAL_META -->", metadata),{includeHomeFeed:req.path==="/",includeNominations:req.path==="/"||req.path==="/nominations"});
   }
   app.get("/announcements/:slug", (req, res) => {
     const record = publicity.getAnnouncementBySlug(req.params.slug);
@@ -402,7 +421,7 @@ function createApp(options = {}) {
     const metadata = { title: `${record.fullName} — ${record.position}`, shortDescription: record.shortBio, slug: record.slug, posterImage: record.photoUrl };
     res.type("html").send(detailHtml(req, metadata, "executive"));
   });
-  const hubRoutes = ["/", "/announcements", "/events", "/academics", "/academics/course-structure", "/businesses", "/lost-found", "/feedback", "/feedback/status", "/media", "/executives", "/contact", "/admin"];
+  const hubRoutes = ["/", "/announcements", "/events", "/academics", "/academics/course-structure", "/businesses", "/lost-found", "/feedback", "/feedback/status", "/media", "/executives", "/contact", "/nominations", "/admin"];
   hubRoutes.forEach(route => app.get(route, (req, res) => res.type("html").send(hubHtml(req))));
   app.get("/awards", (req, res) => res.sendFile(path.join(publicDirectory, "index.html")));
   app.get("/awards/payment/:reference", (req,res)=>res.sendFile(path.join(publicDirectory,"index.html")));
@@ -416,7 +435,7 @@ function createApp(options = {}) {
     if (res.headersSent) return next(error);
     res.status(error.status || 500).json({ ok: false, message: error.status ? error.message : "Internal server error." });
   });
-  return { app, db };
+  return { app, db, nominations };
 }
 
 module.exports = { createApp };

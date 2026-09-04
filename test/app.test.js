@@ -10,18 +10,19 @@ const { createApp } = require("../server/app");
 const { createPublicityRepository } = require("../server/publicity");
 const { createPaystackProvider } = require("../server/payment-providers");
 const { createCampusPulseRepository, normalizeGhanaPhone } = require("../server/campus-pulse");
+const { createNominationRepository, pairKey, csvCell } = require("../server/nominations");
 
 async function fixture(options = {}) {
   const uploadDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "src-services-test-"));
   const initialVotingState=Object.hasOwn(options,"initialVotingState")?options.initialVotingState:"open";
   const appOptions={...options};delete appOptions.initialVotingState;
-  const { app, db } = createApp({ databasePath: ":memory:", uploadDirectory, adminPassword: "test-password", paystackKey: "", nodeEnv: "test", ...appOptions });
+  const { app, db, nominations } = createApp({ databasePath: ":memory:", uploadDirectory, adminPassword: "test-password", paystackKey: "", nodeEnv: "test", ...appOptions });
   if(initialVotingState)db.prepare("UPDATE awards_settings SET voting_state=?,opens_at=NULL,closes_at=NULL WHERE id=1").run(initialVotingState);
   const server = await new Promise(resolve => {
     const instance = app.listen(0, "127.0.0.1", () => resolve(instance));
   });
   const base = `http://127.0.0.1:${server.address().port}`;
-  return { base, db, uploadDirectory, close: () => new Promise(resolve => server.close(() => { db.close(); fs.rmSync(uploadDirectory, { recursive: true, force: true }); resolve(); })) };
+  return { base, db, nominations, uploadDirectory, close: () => new Promise(resolve => server.close(() => { db.close(); fs.rmSync(uploadDirectory, { recursive: true, force: true }); resolve(); })) };
 }
 
 async function adminCookie(app, password = "test-password") {
@@ -154,7 +155,7 @@ test("public frontend retains accessibility and responsive spacing polish", asyn
     assert.match(css, /\.urgent-notice-content b\{white-space:normal/);
     assert.match(css, /\.hub-hero h1\{font-size:clamp\(40px,12vw,49px\)/);
     assert.match(css, /\.publicity-metrics\{grid-template-columns:repeat\(4,1fr\)\}/);
-    assert.match(home, /\/hub\.css\?v=17/);
+    assert.match(home, /\/hub\.css\?v=19/);
     assert.match(awards, /\/hub\.css\?v=14/);
   } finally { await app.close(); }
 });
@@ -1519,4 +1520,159 @@ test("Campus Pulse public APIs stay private while CSV, invalidation, draws, and 
     assert.equal(app.db.prepare("SELECT COUNT(*) count FROM campus_pulse_draws WHERE question_id=?").get(question.id).count, 2);
     assert.equal(app.db.prepare("SELECT COUNT(*) count FROM campus_pulse_draws WHERE question_id=? AND draw_status='active'").get(question.id).count, 1);
   } finally { await app.close(); }
+});
+
+const nominationPayload = (categoryId, suffix = "1") => ({
+  categoryId,
+  nomineeName: "Ama Spotlight",
+  nomineeLevel: "Level 300",
+  nomineeProgramme: "B.Ed. Management",
+  nomineePhone: "024 000 0011",
+  reason: "Consistent service and a positive impact on students.",
+  nominatorName: `Verified Student ${suffix}`,
+  nominatorStudentId: `WISE/2026/00${suffix}`,
+  nominatorPhone: `02410000${String(suffix).padStart(2, "0")}`,
+  nominatorClass: "Level 300 B.Ed. Management",
+  rulesAccepted: true,
+  idempotencyKey: `nomination-test-key-${suffix}-000000`
+});
+
+test("Awards nominations seed 28 stable categories and keep Special Recognition committee-only", async () => {
+  const app = await fixture();
+  try {
+    const response = await fetch(`${app.base}/api/nominations`);
+    const data = (await response.json()).nominations;
+    assert.equal(response.status, 200);
+    assert.equal(data.phase.status, "draft");
+    assert.equal(data.phase.accepting, false);
+    assert.equal(data.groups.flatMap(group => group.categories).length, 27);
+    assert.equal(data.groups.flatMap(group => group.categories).some(item => item.name === "Special Recognition Award"), false);
+    assert.equal(app.db.prepare("SELECT COUNT(*) count FROM nomination_categories").get().count, 28);
+    assert.equal(app.db.prepare("SELECT public_nominations FROM nomination_categories WHERE slug='special-recognition-award'").get().public_nominations, 0);
+    createNominationRepository(app.db);
+    assert.equal(app.db.prepare("SELECT COUNT(*) count FROM nomination_categories").get().count, 28);
+  } finally { await app.close(); }
+});
+
+test("nomination phase is server-controlled and normalized Student ID and phone duplicates are rejected per category", async () => {
+  const app = await fixture();
+  try {
+    const cookie = await adminCookie(app);
+    const categoryIds = app.db.prepare("SELECT id FROM nomination_categories WHERE public_nominations=1 ORDER BY id LIMIT 2").all().map(row => row.id);
+    const opensAt = new Date(Date.now() - 60_000).toISOString(), closesAt = new Date(Date.now() + 3_600_000).toISOString();
+    const opened = await fetch(`${app.base}/api/nominations/admin/phase`, { method: "PUT", headers: { "Content-Type": "application/json", Cookie: cookie }, body: JSON.stringify({ title: "Test nominations", status: "open", opensAt, closesAt }) });
+    assert.equal(opened.status, 200);
+    const first = await fetch(`${app.base}/api/nominations/submit`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(nominationPayload(categoryIds[0])) });
+    assert.equal(first.status, 201);
+    const duplicateId = await fetch(`${app.base}/api/nominations/submit`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...nominationPayload(categoryIds[0], "2"), nominatorStudentId: " wise/2026/001 ", idempotencyKey: "different-safe-key-000002" }) });
+    assert.equal(duplicateId.status, 409);
+    const duplicatePhone = await fetch(`${app.base}/api/nominations/submit`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...nominationPayload(categoryIds[0], "3"), nominatorPhone: "+233241000001", idempotencyKey: "different-safe-key-000003" }) });
+    assert.equal(duplicatePhone.status, 409);
+    const otherCategory = await fetch(`${app.base}/api/nominations/submit`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...nominationPayload(categoryIds[1]), idempotencyKey: "different-safe-key-000004" }) });
+    assert.equal(otherCategory.status, 201);
+    app.db.prepare("UPDATE nomination_phases SET closes_at=? WHERE status='open'").run(new Date().toISOString());
+    const boundary = await fetch(`${app.base}/api/nominations/submit`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(nominationPayload(categoryIds[1], "5")) });
+    assert.equal(boundary.status, 409);
+  } finally { await app.close(); }
+});
+
+test("Best Friends pairs normalize in either order while distinct nominators preserve every nomination", async () => {
+  const app = await fixture();
+  try {
+    app.db.prepare("UPDATE nomination_phases SET status='open',opens_at=?,closes_at=?").run(new Date(Date.now()-60_000).toISOString(), new Date(Date.now()+3_600_000).toISOString());
+    const categoryId = app.db.prepare("SELECT id FROM nomination_categories WHERE slug='best-friends-of-the-year'").get().id;
+    const base = nominationPayload(categoryId, "21"); delete base.nomineeName;
+    const first = { ...base, firstPersonName: "Ama Mensah", firstPersonLevel:"Level 300", firstPersonProgramme:"B.Ed. Arts", secondPersonName: "Akosua Boateng", secondPersonLevel:"Level 350", secondPersonProgramme:"B.Ed. Management", idempotencyKey: "friends-pair-key-00000001" };
+    const second = { ...base, firstPersonName: "Akosua Boateng", firstPersonLevel:"Level 350", firstPersonProgramme:"B.Ed. Management", secondPersonName: "Ama Mensah", secondPersonLevel:"Level 300", secondPersonProgramme:"B.Ed. Arts", nominatorName: "Another Student", nominatorStudentId: "WISE/2026/022", nominatorPhone: "0241000022", idempotencyKey: "friends-pair-key-00000002" };
+    assert.equal((await fetch(`${app.base}/api/nominations/submit`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(first) })).status, 201);
+    assert.equal((await fetch(`${app.base}/api/nominations/submit`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(second) })).status, 201);
+    assert.equal(pairKey("Ama Mensah", "Akosua Boateng"), pairKey("Akosua Boateng", "Ama Mensah"));
+    assert.equal(app.db.prepare("SELECT COUNT(*) count FROM nomination_nominees WHERE category_id=?").get(categoryId).count, 1);
+    assert.equal(app.db.prepare("SELECT COUNT(*) count FROM nomination_submissions WHERE category_id=?").get(categoryId).count, 2);
+  } finally { await app.close(); }
+});
+
+test("nomination identities stay private while authorized review, shortlist, consent checks and CSV safeguards work", async () => {
+  const app = await fixture();
+  try {
+    const categoryId = app.db.prepare("SELECT id FROM nomination_categories WHERE slug='campus-icon-of-the-year'").get().id;
+    app.db.prepare("UPDATE nomination_phases SET status='open',opens_at=?,closes_at=?").run(new Date(Date.now()-60_000).toISOString(), new Date(Date.now()+3_600_000).toISOString());
+    await fetch(`${app.base}/api/nominations/submit`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...nominationPayload(categoryId, "31"), nomineeName: "=Unsafe Candidate" }) });
+    const publicBody = await (await fetch(`${app.base}/api/nominations`)).text();
+    for (const privateValue of ["Unsafe Candidate", "WISE/2026/0031", "0241000031", "Consistent service"]) assert.equal(publicBody.includes(privateValue), false);
+    assert.equal((await fetch(`${app.base}/api/nominations/admin/submissions`)).status, 401);
+    const cookie = await adminCookie(app);
+    const submissions = (await (await fetch(`${app.base}/api/nominations/admin/submissions`, { headers: { Cookie: cookie } })).json()).submissions;
+    assert.equal(submissions.length, 1);
+    assert.equal((await fetch(`${app.base}/api/nominations/admin/submissions/${submissions[0].id}/status`, { method: "PUT", headers: { "Content-Type": "application/json", Cookie: cookie }, body: JSON.stringify({ status: "invalid" }) })).status, 400);
+    assert.equal((await fetch(`${app.base}/api/nominations/admin/submissions/${submissions[0].id}/status`, { method: "PUT", headers: { "Content-Type": "application/json", Cookie: cookie }, body: JSON.stringify({ status: "valid" }) })).status, 200);
+    const nominee = (await (await fetch(`${app.base}/api/nominations/admin/nominees`, { headers: { Cookie: cookie } })).json()).nominees[0];
+    assert.equal((await fetch(`${app.base}/api/nominations/admin/nominees/${nominee.id}`, { method: "PUT", headers: { "Content-Type": "application/json", Cookie: cookie }, body: JSON.stringify({ status: "eligible" }) })).status, 200);
+    assert.equal((await fetch(`${app.base}/api/nominations/admin/shortlists/${categoryId}`, { method: "PUT", headers: { "Content-Type": "application/json", Cookie: cookie }, body: JSON.stringify({ nomineeIds: [nominee.id], finalize: true }) })).status, 200);
+    const readiness = await fetch(`${app.base}/api/nominations/admin/shortlists/${categoryId}/ready`, { method: "POST", headers: { "Content-Type": "application/json", Cookie: cookie }, body: JSON.stringify({ confirm: true }) });
+    assert.equal(readiness.status, 409);
+    const invalidPhoto=new FormData();invalidPhoto.append("image",new Blob([Buffer.from("not an image")],{type:"application/octet-stream"}),"payload.exe");
+    assert.equal((await fetch(`${app.base}/api/nominations/admin/nominees/${nominee.id}/photo`,{method:"POST",headers:{Cookie:cookie},body:invalidPhoto})).status,400);
+    const validPhoto=new FormData();validPhoto.append("image",new Blob([Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=","base64")],{type:"image/png"}),"nominee.png");
+    assert.equal((await fetch(`${app.base}/api/nominations/admin/nominees/${nominee.id}/photo`,{method:"POST",headers:{Cookie:cookie},body:validPhoto})).status,201);
+    const updateProfile=body=>fetch(`${app.base}/api/nominations/admin/nominees/${nominee.id}`,{method:"PUT",headers:{"Content-Type":"application/json",Cookie:cookie},body:JSON.stringify(body)});
+    assert.equal((await updateProfile({status:"consent_pending",consentStatus:"pending",verifiedName:"Ama Spotlight",verifiedLevel:"Level 300",verifiedProgramme:"B.Ed. Management"})).status,200);
+    assert.equal((await updateProfile({status:"verified",consentStatus:"received",consentReceivedAt:new Date().toISOString(),verifiedName:"Ama Spotlight",verifiedLevel:"Level 300",verifiedProgramme:"B.Ed. Management"})).status,200);
+    assert.equal((await fetch(`${app.base}/api/nominations/admin/shortlists/${categoryId}/ready`, { method: "POST", headers: { "Content-Type": "application/json", Cookie: cookie }, body: JSON.stringify({ confirm: true }) })).status,200);
+    assert.equal((await fetch(`${app.base}/api/nominations/admin/publish`,{method:"POST",headers:{"Content-Type":"application/json",Cookie:cookie},body:"{}"})).status,409);
+    const csv = await (await fetch(`${app.base}/api/nominations/admin/export.csv`, { headers: { Cookie: cookie } })).text();
+    assert.match(csv, /"'=Unsafe Candidate"/);
+    assert.equal(csvCell("@formula"), "\"'@formula\"");
+    assert.ok(app.db.prepare("SELECT COUNT(*) count FROM nomination_audit").get().count >= 3);
+  } finally { await app.close(); }
+});
+
+test("official nomination hero variants are served from the persistent upload directory", async () => {
+  const app = await fixture();
+  try {
+    const data = (await (await fetch(`${app.base}/api/nominations`)).json()).nominations;
+    assert.match(data.settings.hero.original, /\.jpeg$/);
+    assert.match(data.settings.hero.webp, /\.webp$/);
+    assert.match(data.settings.hero.avif, /\.avif$/);
+    for (const url of Object.values(data.settings.hero)) {
+      const response = await fetch(`${app.base}${url}`);
+      assert.equal(response.status, 200);
+    }
+  } finally { await app.close(); }
+});
+
+test("Best Class validation, self-nomination policy and nomination throttling are enforced", async () => {
+  const app = await fixture();
+  try {
+    app.db.prepare("UPDATE nomination_phases SET status='open',opens_at=?,closes_at=?").run(new Date(Date.now()-60_000).toISOString(),new Date(Date.now()+3_600_000).toISOString());
+    const individual = app.db.prepare("SELECT id FROM nomination_categories WHERE category_type='individual' AND public_nominations=1 ORDER BY id LIMIT 1").get().id;
+    const self = await fetch(`${app.base}/api/nominations/submit`, { method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({ ...nominationPayload(individual,"41"), nomineeName:"Verified Student 41" }) });
+    assert.equal(self.status,409);
+    const classId = app.db.prepare("SELECT id FROM nomination_categories WHERE slug='best-class-of-the-year'").get().id;
+    const classPayload={...nominationPayload(classId,"42"),nomineeLevel:"Level 350",nomineeProgramme:"B.Ed. Accounting",classRepresentative:"Class Rep"};delete classPayload.nomineeName;
+    assert.equal((await fetch(`${app.base}/api/nominations/submit`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(classPayload)})).status,201);
+    const categoryIds=app.db.prepare("SELECT id FROM nomination_categories WHERE public_nominations=1 AND id<>? ORDER BY id LIMIT 11").all(classId);
+    const statuses=[];
+    for(let index=0;index<categoryIds.length;index++){const suffix=String(50+index);const response=await fetch(`${app.base}/api/nominations/submit`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...nominationPayload(categoryIds[index].id,suffix),idempotencyKey:`throttle-nomination-${index}-000000`})});statuses.push(response.status);}
+    assert.equal(statuses.at(-1),429);
+  } finally { await app.close(); }
+});
+
+test("administrator merge and unmerge preserve original nomination evidence", async () => {
+  const app=await fixture();
+  try{
+    app.db.prepare("UPDATE nomination_phases SET status='open',opens_at=?,closes_at=?").run(new Date(Date.now()-60_000).toISOString(),new Date(Date.now()+3_600_000).toISOString());
+    const categoryId=app.db.prepare("SELECT id FROM nomination_categories WHERE slug='campus-icon-of-the-year'").get().id;
+    app.nominations.submit({...nominationPayload(categoryId,"71"),nomineeName:"Ama A. Mensah"});
+    app.nominations.submit({...nominationPayload(categoryId,"72"),nomineeName:"Ama Mensah",nomineePhone:"0240000011"});
+    const submissions=app.nominations.listSubmissions();for(const item of submissions)app.nominations.updateSubmissionStatus(item.id,{status:"valid"},{role:"super_admin"});
+    const nominees=app.nominations.listNominees({categoryId});assert.equal(nominees.length,2);
+    const merge=app.nominations.merge(nominees[0].id,nominees[1].id,"Verified as the same student",{role:"super_admin",username:"tester"});
+    assert.equal(app.db.prepare("SELECT COUNT(*) count FROM nomination_submissions WHERE nominee_id=?").get(nominees[1].id).count,2);
+    assert.equal(app.nominations.listNominees({categoryId}).length,1);
+    app.nominations.unmerge(merge.id,"The committee confirmed they are different people",{role:"super_admin",username:"tester"});
+    assert.equal(app.nominations.listNominees({categoryId}).length,2);
+    assert.equal(app.db.prepare("SELECT COUNT(*) count FROM nomination_submissions").get().count,2);
+    assert.equal(app.nominations.merges()[0].reversedAt!==null,true);
+  }finally{await app.close();}
 });

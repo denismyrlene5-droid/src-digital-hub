@@ -230,15 +230,16 @@
     const root = document.getElementById("publicityAdmin");
     try {
       const context = await api("/api/admin/context");
-      const [serviceDashboard, serviceConfig, publicityDashboard, publicityConfig, contentDashboard, contentConfig, activity, awardsDashboard, pulseDashboard] = await Promise.all([
+      const [serviceDashboard, serviceConfig, publicityDashboard, publicityConfig, contentDashboard, contentConfig, activity, awardsDashboard, pulseDashboard, nominationsDashboard] = await Promise.all([
         api("/api/services/admin/dashboard"), api("/api/services/admin/config"),
         context.capabilities.publicity ? api("/api/publicity/admin/dashboard") : Promise.resolve(null),
         context.capabilities.publicity ? api("/api/publicity/admin/config") : Promise.resolve(null),
         api("/api/content/admin/dashboard"), api("/api/content/admin/config"), api("/api/content/admin/audit?limit=12"),
         context.capabilities.awards ? api("/api/admin/summary") : Promise.resolve(null),
-        context.capabilities.campusPulse ? api("/api/campus-pulse/admin/dashboard") : Promise.resolve(null)
+        context.capabilities.campusPulse ? api("/api/campus-pulse/admin/dashboard") : Promise.resolve(null),
+        context.capabilities.awards ? api("/api/nominations/admin/dashboard") : Promise.resolve(null)
       ]);
-      renderAdminDashboard(root, { context, serviceDashboard, serviceConfig, publicityDashboard, publicityConfig, contentDashboard, contentConfig, activity: activity.activity, awardsDashboard, pulseDashboard });
+      renderAdminDashboard(root, { context, serviceDashboard, serviceConfig, publicityDashboard, publicityConfig, contentDashboard, contentConfig, activity: activity.activity, awardsDashboard, pulseDashboard, nominationsDashboard });
     } catch (error) {
       if (error.status === 401) renderAdminLogin(root);
       else root.innerHTML = `<div class="publicity-empty"><strong>Access unavailable</strong><span>${esc(error.message)}</span></div>`;
@@ -255,7 +256,7 @@
   }
 
   function renderAdminDashboard(root, bundle) {
-    const { context, serviceDashboard: services, serviceConfig, publicityDashboard: publicity, publicityConfig, contentDashboard: content, contentConfig, activity, awardsDashboard: awards, pulseDashboard: pulse } = bundle;
+    const { context, serviceDashboard: services, serviceConfig, publicityDashboard: publicity, publicityConfig, contentDashboard: content, contentConfig, activity, awardsDashboard: awards, pulseDashboard: pulse, nominationsDashboard: nominations } = bundle;
     const metrics = [
       context.capabilities.feedback && [services.feedback.total, "Total feedback"],
       context.capabilities.feedback && [services.feedback.received, "Unread feedback"],
@@ -275,6 +276,7 @@
       context.capabilities.media && [content.publishedAlbums, "Published albums"],
       context.capabilities.executives && [content.activeExecutives, "Active executives"],
       context.capabilities.campusPulse && [pulse.validEntries, "Campus Pulse valid entries"],
+      context.capabilities.awards && [nominations.metrics.total, "Award nominations"],
       context.capabilities.awards && [awards.categories, "Award categories"],
       context.capabilities.awards && [awards.nominees, "Award nominees"],
       context.capabilities.awards && [awards.totalVotes, "Total votes"],
@@ -286,6 +288,7 @@
       context.capabilities.campusPulse && ["campusPulse", "Campus Pulse", "Content"],
       context.capabilities.academics && ["academics", "Academics", "Content"],
       context.capabilities.awards && ["awards", "Awards & Voting", "Awards"],
+      context.capabilities.awards && ["nominations", "Nominations", "Awards"],
       context.capabilities.media && ["media", "Media", "Content"],
       context.capabilities.feedback && ["feedback", "Student Feedback", "Student services"], context.capabilities.lostFound && ["lostFound", "Lost & Found", "Student services"],
       context.capabilities.businesses && ["businesses", "Student Businesses", "Student services"],
@@ -306,6 +309,7 @@
       else if (type === "academics") window.SRC_ACADEMICS_ADMIN.loadModule().catch(showPageError);
       else if (type === "campusPulse") window.SRC_CAMPUS_PULSE_ADMIN.loadModule().catch(showPageError);
       else if (type === "awards") window.SRC_AWARDS_ADMIN.loadModule().catch(showPageError);
+      else if (type === "nominations") window.SRC_NOMINATIONS_ADMIN.loadModule().catch(showPageError);
       else if (["media", "executives", "settings"].includes(type)) window.SRC_CONTENT_ADMIN.loadModule(type, contentConfig).catch(showPageError);
       else window.SRC_SERVICES_ADMIN.loadModule(type, serviceConfig).catch(showPageError);
     }));

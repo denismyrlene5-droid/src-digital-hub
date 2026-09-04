@@ -37,6 +37,7 @@ window.SRC_HUB_DATA = Object.freeze({
     media: { eyebrow: "Campus stories", title: "Media", description: "Browse published SRC albums and campus moments.", status: "Only published albums and approved photos appear publicly." },
     executives: { eyebrow: "Student leadership", title: "SRC Executives", description: "Meet active student leaders and understand their responsibilities.", status: "Profiles are ordered by the configured SRC term and display order." },
     contact: { eyebrow: "Get in touch", title: "CONTACT THE SRC", description: "UCC Sandwich – WISE Campus Students’ Representative Council official contact channels.", status: "Only verified contact details configured by an administrator are shown." },
+    nominations: { eyebrow: "SRC Awards", title: "Awards Nominations", description: "Place a deserving student in the spotlight through a free, private nomination.", status: "Nominee identities stay sealed while nominations are open." },
     admin: { eyebrow: "Protected workspace", title: "Admin Dashboard", description: "Manage publicity, academics, feedback, moderation, businesses, and Awards according to assigned permissions.", status: "All access is authenticated and enforced by the server." }
   }
 });

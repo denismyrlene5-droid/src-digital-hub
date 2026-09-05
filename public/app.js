@@ -15,6 +15,7 @@ let voting = { open: false, state: "not_started", message: "Voting has not start
 let publicResultsVisible = false;
 let closesAt = null;
 let countdownTarget = "2026-09-15T00:00:00.000Z";
+let nominationsOpen = false;
 
 const byId = id => document.getElementById(id);
 const initials = name => name.replace("&", " ").split(/\s+/).filter(Boolean).slice(0, 2).map(x => x[0]).join("").toUpperCase();
@@ -32,7 +33,11 @@ async function api(url, options = {}) {
 }
 
 async function loadAwards() {
-  const data = await api("/api/awards");
+  const [data, nominationData] = await Promise.all([
+    api("/api/awards"),
+    api("/api/nominations").catch(() => null)
+  ]);
+  nominationsOpen = nominationData?.nominations?.phase?.accepting === true;
   categories = ["All", ...data.categories];
   nominees = data.nominees;
   pricePerVote = data.pricePerVote; awardsCurrency = data.currency; maxVotes = data.maxVotes;
@@ -49,14 +54,17 @@ async function loadAwards() {
 
 function applyVotingPresentation(){
   const prelaunch=voting.state==="not_started";
+  const nominationStage=prelaunch&&nominationsOpen;
   byId("awardsPrelaunch").hidden=!prelaunch;
   document.querySelectorAll(".awards-live-section").forEach(section=>section.hidden=prelaunch);
   byId("awardsLiveActions").hidden=prelaunch;byId("awardsLiveTrust").hidden=prelaunch;
+  byId("awardsNominationCta").hidden=!nominationStage;
   byId("awardsCountdownSection").hidden=!prelaunch&&!closesAt;
   const primary=byId("awardsPrimaryAction");
   primary.textContent=voting.state==="paused"?"Voting Paused":voting.state==="closed"?"Voting Closed":"Start Voting";
   primary.setAttribute("aria-disabled",String(!voting.open));primary.tabIndex=voting.open?0:-1;primary.classList.toggle("is-disabled",!voting.open);
-  if(prelaunch){byId("awardsHeroEyebrow").textContent="SRC AWARDS 2026";byId("awardsHeroTitle").innerHTML="SOMETHING BIG<br><span>IS COMING.</span>";byId("awardsHeroIntro").textContent="The UCC Sandwich – WISE Campus SRC Awards are coming soon.";byId("awardsCountdownKicker").textContent="COUNTDOWN TO SRC AWARDS 2026";byId("awardsCountdownHeading").textContent="The wait is almost over.";}
+  if(nominationStage){byId("awardsHeroEyebrow").textContent="SRC AWARDS 2026";byId("awardsHeroTitle").textContent="NOMINATIONS ARE OPEN.";byId("awardsHeroIntro").textContent="Someone deserves the spotlight. Nominate yourself or someone who deserves recognition in the UCC Sandwich – WISE Campus SRC Awards.";byId("awardsPrelaunchTitle").textContent="Put someone in the spotlight.";byId("awardsPrelaunchIntro").textContent="Nominate yourself or recognise someone whose achievement and impact deserve to be celebrated.";byId("awardsPrelaunchBody").textContent="Submitting a nomination is free and does not count as a vote.";byId("awardsPrelaunchClosing").textContent="NOMINATIONS ARE OPEN.";byId("awardsCountdownKicker").textContent="COUNTDOWN TO SRC AWARDS 2026";byId("awardsCountdownHeading").textContent="Recognition starts with a name.";}
+  else if(prelaunch){byId("awardsHeroEyebrow").textContent="SRC AWARDS 2026";byId("awardsHeroTitle").innerHTML="SOMETHING BIG<br><span>IS COMING.</span>";byId("awardsHeroIntro").textContent="The UCC Sandwich – WISE Campus SRC Awards are coming soon.";byId("awardsPrelaunchTitle").innerHTML="Celebrating Excellence.<br>Recognising Impact.";byId("awardsPrelaunchIntro").textContent="The UCC Sandwich – WISE Campus SRC Awards are coming soon.";byId("awardsPrelaunchBody").textContent="Get ready to celebrate the personalities, achievements and impact that make WISE Campus exceptional.";byId("awardsPrelaunchClosing").textContent="STAY READY.";byId("awardsCountdownKicker").textContent="COUNTDOWN TO SRC AWARDS 2026";byId("awardsCountdownHeading").textContent="The wait is almost over.";}
   else{byId("awardsHeroEyebrow").textContent="THE PEOPLE'S CHOICE • CAMPUS 2026";byId("awardsHeroTitle").innerHTML="Celebrate excellence.<br><span>Vote your favorite.</span>";byId("awardsHeroIntro").textContent="A premium digital voting experience for the SRC Awards. Discover nominees, support your favorites, and follow the race live.";byId("awardsCountdownKicker").textContent="VOTING CLOSES IN";byId("awardsCountdownHeading").textContent="The race is on.";}
 }
 

@@ -7,6 +7,7 @@
   const organization = { ...data.organization, ...settings, message: settings.welcomeText || data.organization.message };
   const esc = value => String(value ?? "").replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]);
   const formatDate = value => value ? new Intl.DateTimeFormat("en-GH", { year: "numeric", month: "long", day: "numeric" }).format(new Date(String(value).length === 10 ? `${value}T00:00:00` : value)) : "";
+  const nominationsOpen = window.SRC_PUBLIC_BOOTSTRAP?.nominations?.phase?.accepting === true;
   document.body.dataset.page = page;
 
   function campusPanel(feed) {
@@ -30,7 +31,7 @@
       <div class="hero-orbit hero-orbit-one" aria-hidden="true"></div><div class="hero-orbit hero-orbit-two" aria-hidden="true"></div>
       <div class="hub-container hub-hero-grid"><div class="hub-hero-copy"><span class="hub-eyebrow">UCC SANDWICH – WISE CAMPUS SRC</span>
         <h1>YOUR CAMPUS.<br>YOUR VOICE.<br><span>YOUR HUB.</span></h1><p class="hero-service-line">Updates • Events • Student Services</p><p class="hero-intro">${esc(organization.message)}</p>
-        <div class="hub-actions"><a class="hub-btn hub-btn-primary" href="/announcements">Latest Updates</a><a class="hub-btn hub-btn-secondary" href="/events">Explore Events</a></div>
+        <div class="hub-actions">${nominationsOpen ? '<a class="hub-btn hub-btn-gold" href="/nominations">Nominate Free</a><a class="hub-btn hub-btn-secondary" href="/announcements">Latest Updates</a>' : '<a class="hub-btn hub-btn-primary" href="/announcements">Latest Updates</a><a class="hub-btn hub-btn-secondary" href="/events">Explore Events</a>'}</div>
         <div class="hero-trust"><span>Official updates</span><span>Student services</span><span>Campus opportunities</span></div>
       </div>${campusPanel(window.SRC_PUBLIC_BOOTSTRAP?.homeFeed)}</div>
     </section>

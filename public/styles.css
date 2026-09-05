@@ -83,6 +83,7 @@ button{cursor:pointer}
 }
 .hero-copy>p{max-width:600px;color:var(--muted);font-size:18px;line-height:1.7}
 .hero-actions{display:flex;gap:12px;margin:32px 0 34px}
+.awards-nomination-cta{margin:32px 0 34px}.awards-nomination-cta .hero-actions{margin:0 0 10px}.awards-nomination-cta>p{margin:0;color:#d6dfda;font-size:13px;font-weight:600}
 .trust-row{display:flex;gap:36px;padding-top:24px;border-top:1px solid var(--line);max-width:560px}
 .trust-row div{display:flex;flex-direction:column;gap:4px}
 .trust-row b{font-size:21px}

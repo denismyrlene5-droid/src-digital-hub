@@ -76,6 +76,42 @@ test("nomination hero preserves the official photograph and stays usable on phon
   }
 });
 
+test("open nominations are promoted only while the authoritative phase accepts submissions", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop", "The explicit desktop and phone viewport matrix runs once.");
+  const openAt = new Date(Date.now() - 60_000).toISOString();
+  const closeAt = new Date(Date.now() + 3_600_000).toISOString();
+  database.prepare("UPDATE nomination_phases SET status='open',opens_at=?,closes_at=?").run(openAt, closeAt);
+
+  try {
+    for (const width of [375, 1280]) {
+      await page.setViewportSize({ width, height: width < 500 ? 760 : 800 });
+      await page.goto("/");
+      const homeHero = page.locator(".hub-hero");
+      await expect(homeHero.getByRole("link", { name: "Nominate Free" })).toHaveAttribute("href", "/nominations");
+      await expect(homeHero.getByRole("link", { name: "Latest Updates" })).toBeVisible();
+      await expect(homeHero.getByRole("link", { name: "Explore Events" })).toHaveCount(0);
+
+      await page.goto("/awards");
+      await expect(page.getByRole("heading", { name: "NOMINATIONS ARE OPEN." }).first()).toBeVisible();
+      await expect(page.getByRole("link", { name: "Nominate Free" })).toHaveAttribute("href", "/nominations");
+      await expect(page.getByText("Free to nominate • Nominations are not votes")).toBeVisible();
+      await expect(page.getByText("STAY READY.")).toHaveCount(0);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+    }
+
+    database.prepare("UPDATE nomination_phases SET status='closed'").run();
+    await page.goto("/");
+    const normalHero = page.locator(".hub-hero");
+    await expect(normalHero.getByRole("link", { name: "Nominate Free" })).toHaveCount(0);
+    await expect(normalHero.getByRole("link", { name: "Explore Events" })).toBeVisible();
+    await page.goto("/awards");
+    await expect(page.getByRole("heading", { name: "SOMETHING BIG IS COMING." })).toBeVisible();
+    await expect(page.locator("#awardsNominationCta")).toBeHidden();
+  } finally {
+    database.prepare("UPDATE nomination_phases SET status='draft',opens_at=NULL,closes_at=NULL").run();
+  }
+});
+
 test("public nomination wizard submits securely on a phone-sized viewport", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop", "The explicit mobile submission flow runs once.");
   database.prepare("UPDATE nomination_phases SET status='open',opens_at=?,closes_at=?").run(new Date(Date.now()-60_000).toISOString(),new Date(Date.now()+3_600_000).toISOString());

@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles.css?v=9" />
+  <link rel="stylesheet" href="/styles.css?v=10" />
   <link rel="stylesheet" href="/hub.css?v=14" />
 </head>
 <body class="awards-page">
@@ -31,6 +31,13 @@
         <div class="hero-actions" id="awardsLiveActions" hidden>
           <a class="btn btn-gold btn-large" id="awardsPrimaryAction" href="#categories">Start Voting</a>
           <a class="btn btn-outline btn-large" href="#leaderboard">View Rankings</a>
+        </div>
+
+        <div class="awards-nomination-cta" id="awardsNominationCta" hidden>
+          <div class="hero-actions">
+            <a class="btn btn-gold btn-large" href="/nominations">Nominate Free</a>
+          </div>
+          <p>Free to nominate • Nominations are not votes</p>
         </div>
 
         <div class="trust-row" id="awardsLiveTrust" hidden>
@@ -70,10 +77,10 @@
     <section class="section awards-prelaunch" id="awardsPrelaunch">
       <img class="award-official-logo" src="/assets/ucc-wise-src-logo.jpg" alt="UCC crest">
       <span class="section-kicker">SRC AWARDS 2026</span>
-      <h2>Celebrating Excellence.<br>Recognising Impact.</h2>
-      <p>The UCC Sandwich – WISE Campus SRC Awards are coming soon.</p>
-      <p>Get ready to celebrate the personalities, achievements and impact that make WISE Campus exceptional.</p>
-      <h3>STAY READY.</h3>
+      <h2 id="awardsPrelaunchTitle">Celebrating Excellence.<br>Recognising Impact.</h2>
+      <p id="awardsPrelaunchIntro">The UCC Sandwich – WISE Campus SRC Awards are coming soon.</p>
+      <p id="awardsPrelaunchBody">Get ready to celebrate the personalities, achievements and impact that make WISE Campus exceptional.</p>
+      <h3 id="awardsPrelaunchClosing">STAY READY.</h3>
     </section>
 
     <section class="section awards-live-section" id="categories" hidden>
@@ -312,6 +319,6 @@
 
   <script src="/hub-data.js?v=10"></script>
   <script src="/hub-shell.js?v=9"></script>
-  <script src="/app.js?v=10"></script>
+  <script src="/app.js?v=11"></script>
 </body>
 </html>

@@ -26,7 +26,7 @@ const GROUPS = [
 const CATEGORY_NAMES = {
   "level-300": ["Level 300 Student Personality of the Year", "Level 300 Most Popular Student of the Year", "Level 300 Most Influential Student of the Year", "Level 300 Best Course Rep of the Year", "Level 300 Most Fashionable Male", "Level 300 Most Fashionable Female", "Level 300 Most Supportive Student of the Year"],
   "level-350": ["Level 350 Student Personality of the Year", "Level 350 Most Popular Student of the Year", "Level 350 Most Influential Student of the Year", "Level 350 Best Course Rep of the Year", "Level 350 Most Fashionable Male", "Level 350 Most Fashionable Female", "Level 350 Most Supportive Student of the Year"],
-  general: ["Campus Icon of the Year", "SRC Personality of the Year", "Student Entrepreneur of the Year", "Best Friends of the Year", "Most Photogenic Student of the Year", "Man of Our Time", "Woman of Our Time", "Digital Content & Social Media Personality of the Year", "Sports Personality of the Year", "Most Disciplined Student of the Year", "Student Humanitarian of the Year", "Best Class of the Year", "Special Recognition Award", "Outstanding Student Leader of the Year"]
+  general: ["Campus Icon of the Year", "SRC Personality of the Year", "Student Entrepreneur of the Year", "Best Friends of the Year", "Most Photogenic Student of the Year", "Man of Our Time", "Woman of Our Time", "Digital Content & Social Media Personality of the Year", "Sports Personality of the Year", "Most Disciplined Student of the Year", "Student Humanitarian of the Year", "Best Class of the Year", "Special Recognition Award", "Outstanding Student Leader of the Year", "Most Handsome Student of the Year", "Most Beautiful Student of the Year"]
 };
 const CATEGORY_DESCRIPTIONS = Object.freeze({
   "Level 300 Student Personality of the Year": "Recognises a well-rounded Level 300 student known for strong character, confidence and positive engagement with others.",
@@ -56,7 +56,9 @@ const CATEGORY_DESCRIPTIONS = Object.freeze({
   "Student Humanitarian of the Year": "Recognises a compassionate student whose voluntary service and practical support have improved the wellbeing of others.",
   "Best Class of the Year": "Celebrates a class distinguished by unity, academic commitment, active participation and positive contribution to campus life.",
   "Special Recognition Award": "Honours an exceptional contribution or achievement that deserves recognition beyond the standard award categories.",
-  "Outstanding Student Leader of the Year": "Recognises a student who demonstrates leadership, responsibility and initiative with a measurable contribution to students or campus life."
+  "Outstanding Student Leader of the Year": "Recognises a student who demonstrates leadership, responsibility and initiative with a measurable contribution to students or campus life.",
+  "Most Handsome Student of the Year": "Recognising a male student admired for his appearance, confidence, personal presentation and positive campus presence.",
+  "Most Beautiful Student of the Year": "Recognising a female student admired for her appearance, confidence, personal presentation and positive campus presence."
 });
 
 function httpError(message, status = 400) { const error = new Error(message); error.status = status; return error; }

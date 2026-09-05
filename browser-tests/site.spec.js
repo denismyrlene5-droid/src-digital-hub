@@ -148,6 +148,30 @@ test("public nomination wizard submits securely on a phone-sized viewport", asyn
   database.prepare("UPDATE nomination_phases SET status='draft',opens_at=NULL,closes_at=NULL").run();
 });
 
+test("new General Awards categories appear publicly and in administration", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop", "The explicit desktop and phone viewport matrix runs once.");
+  database.prepare("UPDATE nomination_phases SET status='open',opens_at=?,closes_at=?").run(new Date(Date.now()-60_000).toISOString(), new Date(Date.now()+3_600_000).toISOString());
+  try {
+    for (const width of [375, 1280]) {
+      await page.setViewportSize({ width, height: width < 500 ? 760 : 800 });
+      await page.goto("/nominations");
+      await page.getByRole("button", { name: /General Awards/ }).click();
+      await expect(page.getByRole("button", { name: /Most Handsome Student of the Year/ })).toBeVisible();
+      await expect(page.getByRole("button", { name: /Most Beautiful Student of the Year/ })).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+
+      await loginAsAdmin(page);
+      await page.getByRole("button", { name: "Nominations", exact: true }).click();
+      await page.getByRole("button", { name: "Categories", exact: true }).click();
+      await expect(page.getByRole("heading", { name: "Most Handsome Student of the Year" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Most Beautiful Student of the Year" })).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+    }
+  } finally {
+    database.prepare("UPDATE nomination_phases SET status='draft',opens_at=NULL,closes_at=NULL").run();
+  }
+});
+
 test("Awards nomination administration remains usable at supported phone widths", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop", "The explicit nomination admin viewport matrix runs once.");
   for (const width of [320, 375, 390, 430]) {

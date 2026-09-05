@@ -1537,7 +1537,7 @@ const nominationPayload = (categoryId, suffix = "1") => ({
   idempotencyKey: `nomination-test-key-${suffix}-000000`
 });
 
-test("Awards nominations seed 28 stable categories and keep Special Recognition committee-only", async () => {
+test("Awards nominations seed 30 stable categories and keep Special Recognition committee-only", async () => {
   const app = await fixture();
   try {
     const response = await fetch(`${app.base}/api/nominations`);
@@ -1545,12 +1545,25 @@ test("Awards nominations seed 28 stable categories and keep Special Recognition 
     assert.equal(response.status, 200);
     assert.equal(data.phase.status, "draft");
     assert.equal(data.phase.accepting, false);
-    assert.equal(data.groups.flatMap(group => group.categories).length, 27);
+    assert.equal(data.groups.flatMap(group => group.categories).length, 29);
     assert.equal(data.groups.flatMap(group => group.categories).some(item => item.name === "Special Recognition Award"), false);
-    assert.equal(app.db.prepare("SELECT COUNT(*) count FROM nomination_categories").get().count, 28);
+    const general = data.groups.find(group => group.slug === "general").categories;
+    const handsomeIndex = general.findIndex(item => item.name === "Most Handsome Student of the Year");
+    const beautifulIndex = general.findIndex(item => item.name === "Most Beautiful Student of the Year");
+    assert.equal(beautifulIndex, handsomeIndex + 1);
+    assert.equal(general[handsomeIndex].description, "Recognising a male student admired for his appearance, confidence, personal presentation and positive campus presence.");
+    assert.equal(general[beautifulIndex].description, "Recognising a female student admired for her appearance, confidence, personal presentation and positive campus presence.");
+    assert.equal(app.db.prepare("SELECT COUNT(*) count FROM nomination_categories").get().count, 30);
     assert.equal(app.db.prepare("SELECT public_nominations FROM nomination_categories WHERE slug='special-recognition-award'").get().public_nominations, 0);
+    app.db.prepare("DELETE FROM nomination_categories WHERE slug IN (?,?)").run("most-handsome-student-of-the-year", "most-beautiful-student-of-the-year");
+    const existingIdentities = app.db.prepare("SELECT id,name,slug,group_id groupId,sort_order sortOrder FROM nomination_categories ORDER BY id").all();
     createNominationRepository(app.db);
-    assert.equal(app.db.prepare("SELECT COUNT(*) count FROM nomination_categories").get().count, 28);
+    assert.equal(app.db.prepare("SELECT COUNT(*) count FROM nomination_categories").get().count, 30);
+    assert.deepEqual(app.db.prepare("SELECT id,name,slug,group_id groupId,sort_order sortOrder FROM nomination_categories WHERE slug NOT IN (?,?) ORDER BY id").all("most-handsome-student-of-the-year", "most-beautiful-student-of-the-year"), existingIdentities);
+    const additions = app.db.prepare("SELECT name,active,public_nominations publicNominations,sort_order sortOrder FROM nomination_categories WHERE slug IN (?,?) ORDER BY sort_order").all("most-handsome-student-of-the-year", "most-beautiful-student-of-the-year");
+    assert.deepEqual(additions.map(item => [item.name, item.active, item.publicNominations, item.sortOrder]), [["Most Handsome Student of the Year", 1, 1, 15], ["Most Beautiful Student of the Year", 1, 1, 16]]);
+    createNominationRepository(app.db);
+    assert.equal(app.db.prepare("SELECT COUNT(*) count FROM nomination_categories").get().count, 30);
   } finally { await app.close(); }
 });
 
@@ -1583,7 +1596,7 @@ test("nomination campaign notice and category descriptions migrate without chang
     assert.deepEqual(app.db.prepare("SELECT c.id,c.name,c.slug,c.group_id groupId,c.sort_order sortOrder,c.eligibility_instructions eligibility FROM nomination_categories c ORDER BY c.id").all(), identitiesBefore);
     assert.deepEqual(app.db.prepare("SELECT id,public_id publicId,category_id categoryId,nominee_id nomineeId FROM nomination_submissions ORDER BY id").all(), submissionsBefore);
     const activePublic = app.db.prepare("SELECT name,description FROM nomination_categories WHERE active=1 AND public_nominations=1 ORDER BY id").all();
-    assert.equal(activePublic.length, 27);
+    assert.equal(activePublic.length, 29);
     assert.equal(activePublic.every(item => item.description.length >= 70 && !item.description.startsWith("Recognising excellence in ")), true);
     assert.match(activePublic.find(item => item.name === "Campus Icon of the Year").description, /visible.*widely recognised.*positive influence/i);
     assert.match(activePublic.find(item => item.name === "SRC Personality of the Year").description, /SRC-associated.*accessibility.*service/i);

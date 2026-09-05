@@ -28,6 +28,36 @@ const CATEGORY_NAMES = {
   "level-350": ["Level 350 Student Personality of the Year", "Level 350 Most Popular Student of the Year", "Level 350 Most Influential Student of the Year", "Level 350 Best Course Rep of the Year", "Level 350 Most Fashionable Male", "Level 350 Most Fashionable Female", "Level 350 Most Supportive Student of the Year"],
   general: ["Campus Icon of the Year", "SRC Personality of the Year", "Student Entrepreneur of the Year", "Best Friends of the Year", "Most Photogenic Student of the Year", "Man of Our Time", "Woman of Our Time", "Digital Content & Social Media Personality of the Year", "Sports Personality of the Year", "Most Disciplined Student of the Year", "Student Humanitarian of the Year", "Best Class of the Year", "Special Recognition Award", "Outstanding Student Leader of the Year"]
 };
+const CATEGORY_DESCRIPTIONS = Object.freeze({
+  "Level 300 Student Personality of the Year": "Recognises a well-rounded Level 300 student known for strong character, confidence and positive engagement with others.",
+  "Level 300 Most Popular Student of the Year": "Celebrates a Level 300 student who is widely known and genuinely appreciated for respectful connections across the student community.",
+  "Level 300 Most Influential Student of the Year": "Honours a Level 300 student whose ideas and actions inspire peers, shape participation or create positive change.",
+  "Level 300 Best Course Rep of the Year": "Recognises a Level 300 course representative who communicates reliably, advocates responsibly and keeps the class organised and informed.",
+  "Level 300 Most Fashionable Male": "Celebrates a Level 300 male student with consistent personal style, creativity and confident, appropriate presentation.",
+  "Level 300 Most Fashionable Female": "Celebrates a Level 300 female student with consistent personal style, creativity and confident, appropriate presentation.",
+  "Level 300 Most Supportive Student of the Year": "Honours a dependable Level 300 student who regularly offers encouragement, practical help and genuine support to peers.",
+  "Level 350 Student Personality of the Year": "Recognises a well-rounded Level 350 student known for strong character, confidence and positive engagement with others.",
+  "Level 350 Most Popular Student of the Year": "Celebrates a Level 350 student who is widely known and genuinely appreciated for respectful connections across the student community.",
+  "Level 350 Most Influential Student of the Year": "Honours a Level 350 student whose ideas and actions inspire peers, shape participation or create positive change.",
+  "Level 350 Best Course Rep of the Year": "Recognises a Level 350 course representative who communicates reliably, advocates responsibly and keeps the class organised and informed.",
+  "Level 350 Most Fashionable Male": "Celebrates a Level 350 male student with consistent personal style, creativity and confident, appropriate presentation.",
+  "Level 350 Most Fashionable Female": "Celebrates a Level 350 female student with consistent personal style, creativity and confident, appropriate presentation.",
+  "Level 350 Most Supportive Student of the Year": "Honours a dependable Level 350 student who regularly offers encouragement, practical help and genuine support to peers.",
+  "Campus Icon of the Year": "Celebrates a highly visible and widely recognised student whose positive influence has made them a defining presence across campus.",
+  "SRC Personality of the Year": "Recognises an SRC-associated person known for accessibility, service, good conduct and positive engagement with students.",
+  "Student Entrepreneur of the Year": "Honours a student who demonstrates initiative, innovation and reliable business impact while serving the campus community.",
+  "Best Friends of the Year": "Celebrates two students whose trust, mutual support and positive friendship set a strong example for the campus community.",
+  "Most Photogenic Student of the Year": "Recognises a student whose confidence, natural camera presence and expressive style consistently stand out in photographs.",
+  "Man of Our Time": "Honours a male student whose character, achievement and positive influence reflect an outstanding example to others.",
+  "Woman of Our Time": "Honours a female student whose character, achievement and positive influence reflect an outstanding example to others.",
+  "Digital Content & Social Media Personality of the Year": "Celebrates a student who creates responsible, original and engaging digital content that connects with the campus community.",
+  "Sports Personality of the Year": "Recognises a student who demonstrates sporting excellence, commitment, teamwork and good sportsmanship.",
+  "Most Disciplined Student of the Year": "Honours a student who consistently demonstrates integrity, respect, responsibility and exemplary conduct.",
+  "Student Humanitarian of the Year": "Recognises a compassionate student whose voluntary service and practical support have improved the wellbeing of others.",
+  "Best Class of the Year": "Celebrates a class distinguished by unity, academic commitment, active participation and positive contribution to campus life.",
+  "Special Recognition Award": "Honours an exceptional contribution or achievement that deserves recognition beyond the standard award categories.",
+  "Outstanding Student Leader of the Year": "Recognises a student who demonstrates leadership, responsibility and initiative with a measurable contribution to students or campus life."
+});
 
 function httpError(message, status = 400) { const error = new Error(message); error.status = status; return error; }
 function clean(value, label, { required = false, min = 0, max = 1000 } = {}) {
@@ -107,8 +137,13 @@ function createNominationRepository(db, options = {}) {
   for (const group of GROUPS) CATEGORY_NAMES[group.slug].forEach((name, index) => {
     const type = name === "Best Friends of the Year" ? "pair" : name === "Best Class of the Year" ? "class" : "individual";
     const isSpecial = name === "Special Recognition Award";
-    insertCategory.run(groupRows[group.slug], slugify(name), name, `Recognising excellence in ${name.replace(/ of the Year$/i, "").toLowerCase()}.`, group.slug.startsWith("level-") ? `Nominee must be a current ${group.name.replace(" Awards", "")} student.` : "Nominees must meet the published SRC Awards eligibility rules.", type, 1, isSpecial ? 0 : 1, 5, index + 1);
+    insertCategory.run(groupRows[group.slug], slugify(name), name, CATEGORY_DESCRIPTIONS[name], group.slug.startsWith("level-") ? `Nominee must be a current ${group.name.replace(" Awards", "")} student.` : "Nominees must meet the published SRC Awards eligibility rules.", type, 1, isSpecial ? 0 : 1, 5, index + 1);
   });
+  const updateLegacyDescription = db.prepare("UPDATE nomination_categories SET description=?,updated_at=CURRENT_TIMESTAMP WHERE slug=? AND (trim(description)='' OR description=?)");
+  for (const name of Object.values(CATEGORY_NAMES).flat()) {
+    const legacyDescription = `Recognising excellence in ${name.replace(/ of the Year$/i, "").toLowerCase()}.`;
+    updateLegacyDescription.run(CATEGORY_DESCRIPTIONS[name], slugify(name), legacyDescription);
+  }
   db.prepare(`INSERT OR IGNORE INTO nomination_settings(id,headline,supporting_text,rules_text,hero_original_token,hero_webp_token,hero_avif_token) VALUES(1,?,?,?,?,?,?)`).run("SOMEONE DESERVES THE SPOTLIGHT.", "You have seen the work. You know the impact. Now mention the name.", DEFAULT_RULES, options.heroTokens?.original || null, options.heroTokens?.webp || null, options.heroTokens?.avif || null);
   if (!db.prepare("SELECT 1 FROM nomination_phases LIMIT 1").get()) db.prepare("INSERT INTO nomination_phases(title,status,rules_snapshot) VALUES(?,?,?)").run("SRC Awards 2026 Nominations", "draft", DEFAULT_RULES);
 

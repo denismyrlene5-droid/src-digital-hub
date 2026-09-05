@@ -6,6 +6,7 @@
   const formatAccra = value => value ? new Intl.DateTimeFormat("en-GH", { dateStyle: "medium", timeStyle: "short", timeZone: "Africa/Accra" }).format(new Date(value)) : "Not set";
   const shareText = "I have placed someone in the spotlight for the UCC Sandwich–WISE Campus SRC Awards 👀 Who deserves recognition? Submit your free nomination at https://uccwisesrc.com";
   const shareUrl = () => `https://wa.me/?text=${encodeURIComponent(shareText)}`;
+  const homepageShareUrl = () => `https://wa.me/?text=${encodeURIComponent(`${shareText}/nominations`)}`;
   let countdownTimer;
 
   function heroPicture(hero) {
@@ -31,7 +32,7 @@
   }
   function homeCard(data) {
     const { settings, phase } = data;
-    return `<div class="hub-container"><article class="nomination-feature"><div class="nomination-feature-media">${heroPicture(settings.hero)}<div class="nomination-media-shade"></div></div><div class="nomination-feature-copy"><span class="hub-eyebrow">SRC AWARDS NOMINATIONS</span><h2>${esc(settings.headline)}</h2><p>${esc(settings.supportingText)}</p><div class="nomination-facts"><span>FREE TO NOMINATE</span><span>NOMINATIONS ARE NOT VOTES</span></div><p class="nomination-phase-state"><b>${esc(phaseCopy(phase))}</b>${phase.validTotal === null ? "" : ` <span>${Number(phase.validTotal).toLocaleString()} valid nomination${phase.validTotal === 1 ? "" : "s"} received</span>`}</p>${countdownMarkup(phase, settings.showCountdown)}<div class="hub-actions">${phase.accepting ? '<a class="hub-btn hub-btn-gold" href="/nominations">PUT SOMEONE IN THE SPOTLIGHT</a>' : '<a class="hub-btn hub-btn-gold" href="/nominations">VIEW NOMINATION DETAILS</a>'}<button class="hub-text-button" type="button" data-rules>Nomination rules</button><a class="hub-text-button" href="${shareUrl()}" target="_blank" rel="noopener noreferrer">Share on WhatsApp</a></div></div></article>${rulesDialog(settings)}</div>`;
+    return `<div class="hub-container"><article class="nomination-feature"><div class="nomination-feature-media">${heroPicture(settings.hero)}<div class="nomination-media-shade"></div></div><div class="nomination-feature-copy"><span class="hub-eyebrow">SRC AWARDS NOMINATIONS</span><h2>${esc(settings.headline)}</h2><p>${esc(settings.supportingText)}</p><div class="nomination-facts"><span>FREE TO NOMINATE</span><span>NOMINATIONS ARE NOT VOTES</span></div><p class="nomination-phase-state"><b>${esc(phaseCopy(phase))}</b>${phase.validTotal === null ? "" : ` <span>${Number(phase.validTotal).toLocaleString()} valid nomination${phase.validTotal === 1 ? "" : "s"} received</span>`}</p>${countdownMarkup(phase, settings.showCountdown)}<div class="hub-actions">${phase.accepting ? '<a class="hub-btn hub-btn-gold" href="/nominations">PUT SOMEONE IN THE SPOTLIGHT</a>' : '<a class="hub-btn hub-btn-gold" href="/nominations">VIEW NOMINATION DETAILS</a>'}<button class="hub-text-button" type="button" data-rules>Nomination rules</button><a class="hub-text-button" href="${homepageShareUrl()}" target="_blank" rel="noopener noreferrer">Share on WhatsApp</a></div></div></article>${rulesDialog(settings)}</div>`;
   }
   function placeHomeSection(section, position) {
     const pulse = document.getElementById("campusPulseHome"), quick = document.getElementById("quickAccess"), hero = document.querySelector(".hub-hero");

@@ -155,8 +155,8 @@ test("public frontend retains accessibility and responsive spacing polish", asyn
     assert.match(css, /\.urgent-notice-content b\{white-space:normal/);
     assert.match(css, /\.hub-hero h1\{font-size:clamp\(40px,12vw,49px\)/);
     assert.match(css, /\.publicity-metrics\{grid-template-columns:repeat\(4,1fr\)\}/);
-    assert.match(home, /\/hub\.css\?v=19/);
-    assert.match(awards, /\/hub\.css\?v=14/);
+    assert.match(home, /\/hub\.css\?v=20/);
+    assert.match(awards, /\/hub\.css\?v=15/);
   } finally { await app.close(); }
 });
 
@@ -1551,6 +1551,43 @@ test("Awards nominations seed 28 stable categories and keep Special Recognition 
     assert.equal(app.db.prepare("SELECT public_nominations FROM nomination_categories WHERE slug='special-recognition-award'").get().public_nominations, 0);
     createNominationRepository(app.db);
     assert.equal(app.db.prepare("SELECT COUNT(*) count FROM nomination_categories").get().count, 28);
+  } finally { await app.close(); }
+});
+
+test("nomination campaign notice and category descriptions migrate without changing identities or submissions", async () => {
+  const app = await fixture();
+  try {
+    const urgent = (await (await fetch(`${app.base}/api/publicity/urgent`)).json()).announcement;
+    assert.equal(urgent.title, "SRC Awards nominations are now open");
+    assert.equal(urgent.summary, "Nominate yourself or someone deserving of recognition. Nominations are free and close on 12 September 2026 at 1:00 a.m.");
+    assert.equal(urgent.externalUrl, "/nominations");
+    const urgentId = urgent.id;
+    app.db.prepare("UPDATE announcements SET title=?,summary=?,body=?,full_content='',external_url=NULL WHERE id=?").run("Official: SRC Awards 2026 countdown begins", "The countdown to SRC Awards 2026 has begun at UCC Sandwich – WISE Campus.", "Legacy Awards countdown copy.", urgentId);
+    createPublicityRepository(app.db, { seed: false });
+    const migratedUrgent = app.db.prepare("SELECT id,title,summary,external_url externalUrl FROM announcements WHERE id=?").get(urgentId);
+    assert.equal(migratedUrgent.id, urgentId);
+    assert.equal(migratedUrgent.title, "SRC Awards nominations are now open");
+    assert.equal(migratedUrgent.summary, "Nominate yourself or someone deserving of recognition. Nominations are free and close on 12 September 2026 at 1:00 a.m.");
+    assert.equal(migratedUrgent.externalUrl, "/nominations");
+
+    const categoryId = app.db.prepare("SELECT id FROM nomination_categories WHERE public_nominations=1 ORDER BY id LIMIT 1").get().id;
+    app.db.prepare("UPDATE nomination_phases SET status='open',opens_at=?,closes_at=?").run(new Date(Date.now()-60_000).toISOString(), new Date(Date.now()+3_600_000).toISOString());
+    app.nominations.submit(nominationPayload(categoryId, "91"));
+    const identitiesBefore = app.db.prepare("SELECT c.id,c.name,c.slug,c.group_id groupId,c.sort_order sortOrder,c.eligibility_instructions eligibility FROM nomination_categories c ORDER BY c.id").all();
+    const submissionsBefore = app.db.prepare("SELECT id,public_id publicId,category_id categoryId,nominee_id nomineeId FROM nomination_submissions ORDER BY id").all();
+    const legacyName = app.db.prepare("SELECT name FROM nomination_categories WHERE id=?").get(categoryId).name;
+    app.db.prepare("UPDATE nomination_categories SET description=? WHERE id=?").run(`Recognising excellence in ${legacyName.replace(/ of the Year$/i, "").toLowerCase()}.`, categoryId);
+
+    createNominationRepository(app.db);
+
+    assert.deepEqual(app.db.prepare("SELECT c.id,c.name,c.slug,c.group_id groupId,c.sort_order sortOrder,c.eligibility_instructions eligibility FROM nomination_categories c ORDER BY c.id").all(), identitiesBefore);
+    assert.deepEqual(app.db.prepare("SELECT id,public_id publicId,category_id categoryId,nominee_id nomineeId FROM nomination_submissions ORDER BY id").all(), submissionsBefore);
+    const activePublic = app.db.prepare("SELECT name,description FROM nomination_categories WHERE active=1 AND public_nominations=1 ORDER BY id").all();
+    assert.equal(activePublic.length, 27);
+    assert.equal(activePublic.every(item => item.description.length >= 70 && !item.description.startsWith("Recognising excellence in ")), true);
+    assert.match(activePublic.find(item => item.name === "Campus Icon of the Year").description, /visible.*widely recognised.*positive influence/i);
+    assert.match(activePublic.find(item => item.name === "SRC Personality of the Year").description, /SRC-associated.*accessibility.*service/i);
+    assert.match(activePublic.find(item => item.name === "Outstanding Student Leader of the Year").description, /leadership.*responsibility.*measurable contribution/i);
   } finally { await app.close(); }
 });
 

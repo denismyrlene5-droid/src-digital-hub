@@ -90,6 +90,17 @@ test("open nominations are promoted only while the authoritative phase accepts s
       await expect(homeHero.getByRole("link", { name: "Nominate Free" })).toHaveAttribute("href", "/nominations");
       await expect(homeHero.getByRole("link", { name: "Latest Updates" })).toBeVisible();
       await expect(homeHero.getByRole("link", { name: "Explore Events" })).toHaveCount(0);
+      const urgent = page.locator(".urgent-notice");
+      await expect(urgent.getByText("SRC Awards nominations are now open")).toBeVisible();
+      await expect(urgent.getByText("Nominate yourself or someone deserving of recognition. Nominations are free and close on 12 September 2026 at 1:00 a.m.")).toBeVisible();
+      await expect(urgent.getByRole("link", { name: "Nominate now" })).toHaveAttribute("href", "/nominations");
+      const awardsQuickAccess = page.locator(".quick-card").filter({ has: page.getByRole("heading", { name: "SRC Awards" }) });
+      await expect(awardsQuickAccess.getByText("Submit a free nomination")).toBeVisible();
+      await expect(awardsQuickAccess).toHaveAttribute("href", "/nominations");
+      await expect(page.getByText("Explore nominees and vote")).toHaveCount(0);
+      const nominationShare = page.locator("#nominationHome").getByRole("link", { name: "Share on WhatsApp" });
+      const nominationShareUrl = new URL(await nominationShare.getAttribute("href"));
+      expect(nominationShareUrl.searchParams.get("text")).toContain("https://uccwisesrc.com/nominations");
 
       await page.goto("/awards");
       await expect(page.getByRole("heading", { name: "NOMINATIONS ARE OPEN." }).first()).toBeVisible();

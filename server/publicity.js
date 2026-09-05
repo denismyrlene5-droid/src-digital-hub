@@ -9,6 +9,13 @@ const INLINE_IMAGE_ID = /^img_[a-f0-9]{12,32}$/;
 const INLINE_IMAGE_MARKER = /\[\[image:(img_[a-f0-9]{12,32})\]\]/g;
 const RICH_CONTENT_MAX_LENGTH = 500000;
 const RICH_CONTENT_TAGS = new Set(["p", "h2", "h3", "strong", "em", "ul", "ol", "li", "a", "br"]);
+const AWARDS_NOMINATION_NOTICE = Object.freeze({
+  slug: "important-verify-official-src-information",
+  title: "SRC Awards nominations are now open",
+  summary: "Nominate yourself or someone deserving of recognition. Nominations are free and close on 12 September 2026 at 1:00 a.m.",
+  body: "Nominate yourself or someone deserving of recognition in the UCC Sandwich – WISE Campus SRC Awards. Nominations are free and close on 12 September 2026 at 1:00 a.m.",
+  actionUrl: "/nominations"
+});
 
 function httpError(message, status = 400) {
   const error = new Error(message);
@@ -223,10 +230,24 @@ function validateAnnouncement(input) {
     featured: boolean(input.featured),
     featuredImage: safeUrl(input.featuredImage, "Featured image"),
     inlineImages: validateInlineImages(input.inlineImages, fullContent),
-    externalUrl: safeUrl(input.externalUrl, "External link", { externalOnly: true }),
+    externalUrl: safeUrl(input.externalUrl, "Announcement link"),
     attachmentUrl: safeUrl(input.attachmentUrl, "Attachment", { documentsOnly: true }),
     publishedAt: status === "published" ? (validTimestamp(input.publishedAt, "Publication date") || new Date().toISOString()) : validTimestamp(input.publishedAt, "Publication date")
   };
+}
+
+function migrateAwardsNominationNotice(db) {
+  db.prepare(`UPDATE announcements SET title=?,summary=?,body=?,full_content=?,external_url=?,updated_at=CURRENT_TIMESTAMP
+    WHERE slug=? AND author_role='system_seed' AND (title=? OR summary=?)`).run(
+      AWARDS_NOMINATION_NOTICE.title,
+      AWARDS_NOMINATION_NOTICE.summary,
+      AWARDS_NOMINATION_NOTICE.body,
+      `<p>${AWARDS_NOMINATION_NOTICE.body}</p>`,
+      AWARDS_NOMINATION_NOTICE.actionUrl,
+      AWARDS_NOMINATION_NOTICE.slug,
+      "Official: SRC Awards 2026 countdown begins",
+      "The countdown to SRC Awards 2026 has begun at UCC Sandwich – WISE Campus."
+    );
 }
 
 function validateEvent(input) {
@@ -300,6 +321,7 @@ function createPublicityRepository(db, options = {}) {
   if (!announcementColumns.has("full_content")) db.exec("ALTER TABLE announcements ADD COLUMN full_content TEXT NOT NULL DEFAULT ''");
   if (!announcementColumns.has("inline_images_json")) db.exec("ALTER TABLE announcements ADD COLUMN inline_images_json TEXT NOT NULL DEFAULT '[]'");
   if(options.seed!==false) seedPublicity(db);
+  migrateAwardsNominationNotice(db);
   db.exec("PRAGMA optimize");
 
   function uniqueSlug(table, title, ignoreId = null) {
@@ -489,10 +511,10 @@ function createPublicityRepository(db, options = {}) {
 
 function seedPublicity(db) {
   if (!db.prepare("SELECT COUNT(*) AS count FROM announcements").get().count) {
-    const insert = db.prepare(`INSERT INTO announcements(title,slug,summary,body,category,published_at,status,urgent,featured,author_role)
-      VALUES(?,?,?,?,?,?,'published',?,?, 'system_seed')`);
-    insert.run("Welcome to the SRC Digital Hub", "welcome-to-the-src-digital-hub", "The SRC Digital Hub is now the central place for verified updates, events, Awards, and student services.", "Welcome to the first phase of the SRC Digital Hub. This platform brings official publicity, upcoming activities, SRC Awards, and student-facing services into one accessible experience. Additional service modules will be introduced carefully in future phases.", "SRC", "2026-08-19T12:00:00.000Z", 0, 1);
-    insert.run("Official: SRC Awards 2026 countdown begins", "important-verify-official-src-information", "The countdown to SRC Awards 2026 has begun at UCC Sandwich – WISE Campus.", "Recognition. Excellence. Impact. The official SRC Digital Hub will share verified Awards updates as the campus counts down to 15 September 2026.", "SRC", "2026-08-19T13:00:00.000Z", 1, 1);
+    const insert = db.prepare(`INSERT INTO announcements(title,slug,summary,body,category,published_at,status,urgent,featured,external_url,author_role)
+      VALUES(?,?,?,?,?,?,'published',?,?,?, 'system_seed')`);
+    insert.run("Welcome to the SRC Digital Hub", "welcome-to-the-src-digital-hub", "The SRC Digital Hub is now the central place for verified updates, events, Awards, and student services.", "Welcome to the first phase of the SRC Digital Hub. This platform brings official publicity, upcoming activities, SRC Awards, and student-facing services into one accessible experience. Additional service modules will be introduced carefully in future phases.", "SRC", "2026-08-19T12:00:00.000Z", 0, 1, null);
+    insert.run(AWARDS_NOMINATION_NOTICE.title, AWARDS_NOMINATION_NOTICE.slug, AWARDS_NOMINATION_NOTICE.summary, AWARDS_NOMINATION_NOTICE.body, "SRC", "2026-08-19T13:00:00.000Z", 1, 1, AWARDS_NOMINATION_NOTICE.actionUrl);
     db.prepare(`INSERT INTO announcements(title,slug,summary,body,category,status,urgent,featured,author_role)
       VALUES(?,?,?,?,?,'draft',0,0,'system_seed')`).run("Draft publicity workflow example", "draft-publicity-workflow-example", "This draft exists to demonstrate that unpublished announcements remain private.", "This record is intentionally stored as a draft so administrators can test the publicity workflow without exposing unfinished content on public pages.", "General");
   }

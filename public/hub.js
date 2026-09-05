@@ -39,7 +39,7 @@
     <section class="nomination-home is-loading" id="nominationHome" aria-live="polite" aria-busy="true"><div class="hub-container"><div class="nomination-loading" aria-hidden="true"></div></div></section>
     <section class="hub-section" id="quickAccess"><div class="hub-container"><div class="hub-section-heading"><div><span class="hub-eyebrow">START HERE</span><h2>Quick access</h2></div><p>The campus information and services students need most, gathered in one place.</p></div>
       <div class="quick-grid">${[
-        ["01","Announcements","Official notices and updates","/announcements"],["02","Events","What is happening on campus","/events"],["03","SRC Awards","Explore nominees and vote","/awards"],
+        ["01","Announcements","Official notices and updates","/announcements"],["02","Events","What is happening on campus","/events"],["03","SRC Awards",nominationsOpen ? "Submit a free nomination" : "Explore the SRC Awards",nominationsOpen ? "/nominations" : "/awards"],
         ["04","Student Voice","Suggestions, concerns and ideas","/feedback"],["05","Businesses","Support student enterprises","/businesses"],["06","Lost & Found","Report or recover an item","/lost-found"],
         ["07","Course Structure","Find your programme, semester and courses","/academics/course-structure"]
       ].map(item => `<a class="quick-card" href="${item[3]}"><span>${item[0]}</span><h3>${item[1]}</h3><p>${item[2]}</p><b aria-hidden="true">↗</b></a>`).join("")}</div></div></section>

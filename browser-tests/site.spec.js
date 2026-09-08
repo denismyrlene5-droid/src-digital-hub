@@ -46,6 +46,44 @@ for (const route of publicRoutes) {
   });
 }
 
+test("Women Empowerment Seminar is responsive across homepage, publicity, details, and Admin", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop", "The explicit desktop and phone viewport matrix runs once.");
+  const title = "Online Women Empowerment Seminar";
+  for (const width of [375, 1280]) {
+    await page.setViewportSize({ width, height: width < 500 ? 760 : 800 });
+    await page.goto("/");
+    await expect(page.locator("#homeEvents .event-publicity-card").filter({ hasText: title })).toBeVisible();
+
+    await page.goto("/events");
+    const card = page.locator("#upcomingEvents .event-publicity-card").filter({ hasText: title });
+    await expect(card).toBeVisible();
+    await expect(card.getByText("The Leader Within: Building the Skills, Mindset and Character for Leadership")).toBeVisible();
+    await expect(card.getByText("Madam Mavis Muriel Dangah")).toBeVisible();
+    await expect(card.getByText("Time: To Be Announced")).toBeVisible();
+    await card.getByRole("link", { name: "View details" }).click();
+    await expect(page.getByRole("heading", { name: title })).toBeVisible();
+    await expect(page.getByText("Online — Participation link will be communicated")).toBeVisible();
+    await expect(page.getByRole("link", { name: "Read related announcement" })).toHaveAttribute("href", "/announcements/online-women-empowerment-seminar");
+
+    await page.goto("/announcements");
+    const announcement = page.locator("#announcementList .publicity-card").filter({ hasText: title });
+    await announcement.getByRole("link", { name: "Read more" }).click();
+    await expect(page.getByRole("link", { name: "View Event Details" })).toHaveAttribute("href", "/events/online-women-empowerment-seminar");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+
+    await loginAsAdmin(page);
+    await page.getByRole("button", { name: "Events", exact: true }).click();
+    const adminRow = page.locator(".admin-table tbody tr").filter({ hasText: title });
+    await adminRow.getByRole("button", { name: "Edit" }).click();
+    const dialog = page.getByRole("dialog", { name: "Event" });
+    await expect(dialog.getByLabel("Theme")).toHaveValue("The Leader Within: Building the Skills, Mindset and Character for Leadership");
+    await expect(dialog.getByLabel("Speaker")).toHaveValue("Madam Mavis Muriel Dangah");
+    await expect(dialog.getByLabel("Event type")).toHaveValue("Seminar / Women Empowerment");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+    await page.keyboard.press("Escape");
+  }
+});
+
 test("mobile homepage does not leave excessive space before Campus Pulse", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "mobile", "This spacing regression is specific to the phone layout.");
   await page.goto("/");

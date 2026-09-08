@@ -16,6 +16,33 @@ const AWARDS_NOMINATION_NOTICE = Object.freeze({
   body: "Nominate yourself or someone deserving of recognition in the UCC Sandwich – WISE Campus SRC Awards. Nominations are free and close on 12 September 2026 at 1:00 a.m.",
   actionUrl: "/nominations"
 });
+const WOMEN_EMPOWERMENT_SEMINAR = Object.freeze({
+  migrationId: "2026-09-online-women-empowerment-seminar",
+  slug: "online-women-empowerment-seminar",
+  title: "Online Women Empowerment Seminar",
+  theme: "The Leader Within: Building the Skills, Mindset and Character for Leadership",
+  topic: "Leadership and Personal Development",
+  speaker: "Madam Mavis Muriel Dangah",
+  eventType: "Seminar / Women Empowerment",
+  eventDate: "2026-09-10",
+  venue: "Online — Participation link will be communicated",
+  shortDescription: "An inspiring online seminar designed to help women discover their leadership potential and build the skills, mindset and character required for purposeful leadership.",
+  description: `The UCC Sandwich–Wise Campus community presents an Online Women Empowerment Seminar focused on leadership and personal development.
+
+The seminar will help participants recognise their leadership potential, strengthen their confidence and develop the mindset, character and practical skills needed to lead with competence, integrity and purpose.
+
+The session will be led by Madam Mavis Muriel Dangah, an accomplished educationist, leadership advocate and champion of gender equity.
+
+She currently serves as a School Improvement Advisor for Senior High Schools, a Council Member of Atebubu College of Education, and the Head of the Gender Unit and Safe Space Focal Person at Offinso College of Education.
+
+Madam Dangah holds a Bachelor of Education in Social Sciences, specialising in Geography, from the University of Cape Coast, and an MPhil in Geography and Rural Development from KNUST. She is currently pursuing a PhD in Geography and Rural Development at KNUST.
+
+She has facilitated workshops across the Ashanti, Bono, Bono East and Ahafo regions. She also coordinates Professional Learning Communities, trains Senior High School management teams and Safe Space Focal Persons, and advocates for safety, equity and the prevention of sexual harassment within educational institutions.
+
+Everyone interested in leadership, confidence and personal development is encouraged to participate.
+
+Further information about the time and online participation link will be communicated.`
+});
 
 function httpError(message, status = 400) {
   const error = new Error(message);
@@ -207,7 +234,8 @@ function mapEvent(row) {
   if (!row) return null;
   return {
     id: row.id, title: row.title, slug: row.slug, shortDescription: row.short_description,
-    description: row.description, eventDate: row.event_date, startTime: row.start_time,
+    description: row.description, theme: row.theme, topic: row.topic, speaker: row.speaker,
+    eventType: row.event_type, eventDate: row.event_date, startTime: row.start_time,
     endTime: row.end_time, venue: row.venue, organizer: row.organizer, category: row.category,
     posterImage: row.poster_image, registrationUrl: row.registration_url, featured: Boolean(row.featured),
     status: row.status, createdAt: row.created_at, updatedAt: row.updated_at, authorRole: row.author_role
@@ -258,6 +286,10 @@ function validateEvent(input) {
     title: text(input.title, "Title", { min: 3, max: 160, required: true }),
     shortDescription: text(input.shortDescription, "Short description", { min: 10, max: 360, required: true }),
     description: text(input.description, "Description", { min: 20, max: 20000, required: true }),
+    theme: text(input.theme, "Theme", { max: 240 }),
+    topic: text(input.topic, "Topic", { max: 160 }),
+    speaker: text(input.speaker, "Speaker", { max: 160 }),
+    eventType: text(input.eventType, "Event type", { max: 120 }),
     eventDate: validDate(input.eventDate, "Event date"),
     startTime, endTime,
     venue: text(input.venue, "Venue", { min: 2, max: 200, required: true }),
@@ -298,6 +330,10 @@ function createPublicityRepository(db, options = {}) {
       slug TEXT NOT NULL UNIQUE,
       short_description TEXT NOT NULL,
       description TEXT NOT NULL,
+      theme TEXT,
+      topic TEXT,
+      speaker TEXT,
+      event_type TEXT,
       event_date TEXT NOT NULL,
       start_time TEXT,
       end_time TEXT,
@@ -316,11 +352,21 @@ function createPublicityRepository(db, options = {}) {
     CREATE INDEX IF NOT EXISTS idx_announcements_priority ON announcements(status, urgent DESC, featured DESC, published_at DESC);
     CREATE INDEX IF NOT EXISTS idx_events_public ON events(status, event_date, start_time);
     CREATE INDEX IF NOT EXISTS idx_events_category ON events(category, status);
+    CREATE TABLE IF NOT EXISTS publicity_migrations (
+      id TEXT PRIMARY KEY,
+      applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
   `);
   const announcementColumns = new Set(db.prepare("PRAGMA table_info(announcements)").all().map(column => column.name));
   if (!announcementColumns.has("full_content")) db.exec("ALTER TABLE announcements ADD COLUMN full_content TEXT NOT NULL DEFAULT ''");
   if (!announcementColumns.has("inline_images_json")) db.exec("ALTER TABLE announcements ADD COLUMN inline_images_json TEXT NOT NULL DEFAULT '[]'");
+  const eventColumns = new Set(db.prepare("PRAGMA table_info(events)").all().map(column => column.name));
+  if (!eventColumns.has("theme")) db.exec("ALTER TABLE events ADD COLUMN theme TEXT");
+  if (!eventColumns.has("topic")) db.exec("ALTER TABLE events ADD COLUMN topic TEXT");
+  if (!eventColumns.has("speaker")) db.exec("ALTER TABLE events ADD COLUMN speaker TEXT");
+  if (!eventColumns.has("event_type")) db.exec("ALTER TABLE events ADD COLUMN event_type TEXT");
   if(options.seed!==false) seedPublicity(db);
+  migrateWomenEmpowermentSeminar(db);
   migrateAwardsNominationNotice(db);
   db.exec("PRAGMA optimize");
 
@@ -381,7 +427,11 @@ function createPublicityRepository(db, options = {}) {
   }
 
   function getEventBySlug(slug) {
-    return mapEvent(db.prepare("SELECT * FROM events WHERE slug=? AND status IN ('published','cancelled','completed')").get(String(slug)));
+    const event = mapEvent(db.prepare("SELECT * FROM events WHERE slug=? AND status IN ('published','cancelled','completed')").get(String(slug)));
+    if (!event) return null;
+    const related = db.prepare(`SELECT title,slug FROM announcements WHERE external_url=? AND status='published'
+      AND published_at IS NOT NULL AND datetime(published_at)<=datetime('now') ORDER BY datetime(published_at) DESC LIMIT 1`).get(`/events/${event.slug}`);
+    return { ...event, relatedAnnouncement: related || null };
   }
 
   function listAnnouncementsAdmin({ q = "", status = "", category = "", page, pageSize } = {}) {
@@ -459,8 +509,8 @@ function createPublicityRepository(db, options = {}) {
   function createEvent(input, role) {
     const item = validateEvent(input);
     const slug = uniqueSlug("events", item.title);
-    const result = db.prepare(`INSERT INTO events(title,slug,short_description,description,event_date,start_time,end_time,venue,organizer,category,poster_image,registration_url,featured,status,author_role)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(item.title, slug, item.shortDescription, item.description, item.eventDate, item.startTime, item.endTime, item.venue, item.organizer, item.category, item.posterImage, item.registrationUrl, Number(item.featured), item.status, role);
+    const result = db.prepare(`INSERT INTO events(title,slug,short_description,description,theme,topic,speaker,event_type,event_date,start_time,end_time,venue,organizer,category,poster_image,registration_url,featured,status,author_role)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(item.title, slug, item.shortDescription, item.description, item.theme, item.topic, item.speaker, item.eventType, item.eventDate, item.startTime, item.endTime, item.venue, item.organizer, item.category, item.posterImage, item.registrationUrl, Number(item.featured), item.status, role);
     audit("create_event", result.lastInsertRowid, role);
     return getEventAdmin(result.lastInsertRowid);
   }
@@ -469,8 +519,8 @@ function createPublicityRepository(db, options = {}) {
     const id = validId(idValue);
     if (!getEventAdmin(id)) throw httpError("Event not found.", 404);
     const item = validateEvent(input);
-    db.prepare(`UPDATE events SET title=?,short_description=?,description=?,event_date=?,start_time=?,end_time=?,venue=?,organizer=?,category=?,poster_image=?,registration_url=?,featured=?,status=?,author_role=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`)
-      .run(item.title, item.shortDescription, item.description, item.eventDate, item.startTime, item.endTime, item.venue, item.organizer, item.category, item.posterImage, item.registrationUrl, Number(item.featured), item.status, role, id);
+    db.prepare(`UPDATE events SET title=?,short_description=?,description=?,theme=?,topic=?,speaker=?,event_type=?,event_date=?,start_time=?,end_time=?,venue=?,organizer=?,category=?,poster_image=?,registration_url=?,featured=?,status=?,author_role=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`)
+      .run(item.title, item.shortDescription, item.description, item.theme, item.topic, item.speaker, item.eventType, item.eventDate, item.startTime, item.endTime, item.venue, item.organizer, item.category, item.posterImage, item.registrationUrl, Number(item.featured), item.status, role, id);
     audit("update_event", id, role);
     return getEventAdmin(id);
   }
@@ -507,6 +557,39 @@ function createPublicityRepository(db, options = {}) {
     createAnnouncement, updateAnnouncement, deleteAnnouncement, publicAnnouncementFile, adminAnnouncementFile,
     createEvent, updateEvent, deleteEvent, dashboard
   };
+}
+
+function migrateWomenEmpowermentSeminar(db) {
+  if (db.prepare("SELECT 1 FROM publicity_migrations WHERE id=?").get(WOMEN_EMPOWERMENT_SEMINAR.migrationId)) return;
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    let event = db.prepare("SELECT id,slug FROM events WHERE slug=? OR title=? ORDER BY id LIMIT 1").get(WOMEN_EMPOWERMENT_SEMINAR.slug, WOMEN_EMPOWERMENT_SEMINAR.title);
+    if (!event) {
+      const inserted = db.prepare(`INSERT INTO events(title,slug,short_description,description,theme,topic,speaker,event_type,event_date,start_time,end_time,venue,organizer,category,poster_image,registration_url,featured,status,author_role)
+        VALUES(?,?,?,?,?,?,?,?,?,NULL,NULL,?,?,?,NULL,NULL,1,'published','system_seed')`).run(
+          WOMEN_EMPOWERMENT_SEMINAR.title, WOMEN_EMPOWERMENT_SEMINAR.slug, WOMEN_EMPOWERMENT_SEMINAR.shortDescription,
+          WOMEN_EMPOWERMENT_SEMINAR.description, WOMEN_EMPOWERMENT_SEMINAR.theme, WOMEN_EMPOWERMENT_SEMINAR.topic,
+          WOMEN_EMPOWERMENT_SEMINAR.speaker, WOMEN_EMPOWERMENT_SEMINAR.eventType, WOMEN_EMPOWERMENT_SEMINAR.eventDate,
+          WOMEN_EMPOWERMENT_SEMINAR.venue, "UCC Sandwich–WISE Campus community", "Leadership"
+        );
+      event = { id: inserted.lastInsertRowid, slug: WOMEN_EMPOWERMENT_SEMINAR.slug };
+    }
+    const announcementTitle = WOMEN_EMPOWERMENT_SEMINAR.title;
+    if (!db.prepare("SELECT 1 FROM announcements WHERE slug=? OR title=?").get(WOMEN_EMPOWERMENT_SEMINAR.slug, announcementTitle)) {
+      const body = `${WOMEN_EMPOWERMENT_SEMINAR.shortDescription}\n\nThe seminar will be led by ${WOMEN_EMPOWERMENT_SEMINAR.speaker}. View the linked event page for the complete programme information.`;
+      db.prepare(`INSERT INTO announcements(title,slug,summary,body,full_content,category,published_at,status,urgent,featured,external_url,author_role)
+        VALUES(?,?,?,?,?,'Events',CURRENT_TIMESTAMP,'published',0,1,?,'system_seed')`).run(
+          announcementTitle, WOMEN_EMPOWERMENT_SEMINAR.slug, WOMEN_EMPOWERMENT_SEMINAR.shortDescription, body,
+          `<p>${escapeHtml(WOMEN_EMPOWERMENT_SEMINAR.shortDescription)}</p><p>The seminar will be led by ${escapeHtml(WOMEN_EMPOWERMENT_SEMINAR.speaker)}. View the linked event page for the complete programme information.</p>`,
+          `/events/${event.slug}`
+        );
+    }
+    db.prepare("INSERT INTO publicity_migrations(id) VALUES(?)").run(WOMEN_EMPOWERMENT_SEMINAR.migrationId);
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
 }
 
 function seedPublicity(db) {

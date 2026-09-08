@@ -155,7 +155,7 @@ test("public frontend retains accessibility and responsive spacing polish", asyn
     assert.match(css, /\.urgent-notice-content b\{white-space:normal/);
     assert.match(css, /\.hub-hero h1\{font-size:clamp\(40px,12vw,49px\)/);
     assert.match(css, /\.publicity-metrics\{grid-template-columns:repeat\(4,1fr\)\}/);
-    assert.match(home, /\/hub\.css\?v=20/);
+    assert.match(home, /\/hub\.css\?v=21/);
     assert.match(awards, /\/hub\.css\?v=15/);
   } finally { await app.close(); }
 });
@@ -335,7 +335,8 @@ test("staging does not seed demonstration content unless explicitly requested",a
   const staging=await fixture({environment:"staging",paymentProvider:"disabled",simulationEnabled:false,initialVotingState:null});
   try {
     assert.equal(staging.db.prepare("SELECT COUNT(*) count FROM nominees").get().count,0);
-    assert.equal(staging.db.prepare("SELECT COUNT(*) count FROM announcements").get().count,0);
+    assert.equal(staging.db.prepare("SELECT COUNT(*) count FROM announcements WHERE author_role='system_seed' AND slug<>'online-women-empowerment-seminar'").get().count,0);
+    assert.equal(staging.db.prepare("SELECT COUNT(*) count FROM announcements WHERE slug='online-women-empowerment-seminar'").get().count,1);
   } finally { await staging.close(); }
 });
 
@@ -472,7 +473,8 @@ test("legacy announcement rows survive the full-content migration", () => {
     const repository = createPublicityRepository(db, { seed: false });
     const columns = db.prepare("PRAGMA table_info(announcements)").all().map(column => column.name);
     assert.equal(columns.includes("full_content"), true);
-    const legacy = repository.getAnnouncementAdmin(1);
+    const legacyId = db.prepare("SELECT id FROM announcements WHERE slug='legacy-announcement'").get().id;
+    const legacy = repository.getAnnouncementAdmin(legacyId);
     assert.equal(legacy.body, "A preserved legacy article body with enough content for readers.");
     assert.equal(legacy.fullContent, "<p>A preserved legacy article body with enough content for readers.</p>");
   } finally { db.close(); }
@@ -600,6 +602,52 @@ test("events classify upcoming, past, and cancelled records correctly", async ()
     assert.equal(created.status, 201);
     const event = (await created.json()).event;
     assert.equal((await fetch(`${app.base}/api/events/${event.slug}`)).status, 200);
+  } finally { await app.close(); }
+});
+
+test("Women Empowerment Seminar migrates once, cross-links publicity, remains editable, and can be removed", async () => {
+  const app = await fixture({ environment: "staging" });
+  try {
+    const slug = "online-women-empowerment-seminar";
+    const events = await (await fetch(`${app.base}/api/events`)).json();
+    const seminar = events.upcoming.find(item => item.slug === slug);
+    assert.ok(seminar);
+    assert.equal(seminar.title, "Online Women Empowerment Seminar");
+    assert.equal(seminar.theme, "The Leader Within: Building the Skills, Mindset and Character for Leadership");
+    assert.equal(seminar.topic, "Leadership and Personal Development");
+    assert.equal(seminar.speaker, "Madam Mavis Muriel Dangah");
+    assert.equal(seminar.eventType, "Seminar / Women Empowerment");
+    assert.equal(seminar.eventDate, "2026-09-10");
+    assert.equal(seminar.startTime, null);
+    assert.equal(seminar.venue, "Online — Participation link will be communicated");
+    assert.equal(seminar.posterImage, null);
+
+    const home = await (await fetch(`${app.base}/api/publicity/home`)).json();
+    assert.equal(home.events.some(item => item.slug === slug), true);
+    assert.equal(home.announcements.some(item => item.slug === slug), true);
+    const detail = (await (await fetch(`${app.base}/api/events/${slug}`)).json()).event;
+    assert.match(detail.description, /School Improvement Advisor/);
+    assert.match(detail.description, /Further information about the time and online participation link will be communicated/);
+    assert.deepEqual(detail.relatedAnnouncement, { title: "Online Women Empowerment Seminar", slug });
+    const announcement = (await (await fetch(`${app.base}/api/announcements/${slug}`)).json()).announcement;
+    assert.equal(announcement.externalUrl, `/events/${slug}`);
+    assert.doesNotMatch(announcement.body, /School Improvement Advisor/);
+
+    const cookie = await adminCookie(app);
+    const adminEvent = app.db.prepare("SELECT id FROM events WHERE slug=?").get(slug);
+    const updated = await fetch(`${app.base}/api/publicity/admin/events/${adminEvent.id}`, {
+      method: "PUT", headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ ...seminar, organizer: "UCC Sandwich–WISE Campus SRC", status: "published" })
+    });
+    assert.equal(updated.status, 200);
+    assert.equal((await updated.json()).event.organizer, "UCC Sandwich–WISE Campus SRC");
+
+    const announcementId = app.db.prepare("SELECT id FROM announcements WHERE slug=?").get(slug).id;
+    assert.equal((await fetch(`${app.base}/api/publicity/admin/events/${adminEvent.id}`, { method: "DELETE", headers: { Cookie: cookie } })).status, 200);
+    assert.equal((await fetch(`${app.base}/api/publicity/admin/announcements/${announcementId}`, { method: "DELETE", headers: { Cookie: cookie } })).status, 200);
+    createPublicityRepository(app.db, { seed: false });
+    assert.equal(app.db.prepare("SELECT COUNT(*) count FROM events WHERE slug=?").get(slug).count, 0);
+    assert.equal(app.db.prepare("SELECT COUNT(*) count FROM announcements WHERE slug=?").get(slug).count, 0);
   } finally { await app.close(); }
 });
 

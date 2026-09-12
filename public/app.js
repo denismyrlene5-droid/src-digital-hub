@@ -13,9 +13,9 @@ let awardsCurrency = "GHS";
 let maxVotes = 10000;
 let voting = { open: false, state: "not_started", message: "Voting has not started." };
 let publicResultsVisible = false;
-let closesAt = null;
 let countdownTarget = "2026-09-15T00:00:00.000Z";
 let nominationsOpen = false;
+const awardGroup = category => category.startsWith("Level 300 ") ? "Level 300" : category.startsWith("Level 350 ") ? "Level 350" : "General";
 
 const byId = id => document.getElementById(id);
 const initials = name => name.replace("&", " ").split(/\s+/).filter(Boolean).slice(0, 2).map(x => x[0]).join("").toUpperCase();
@@ -38,10 +38,12 @@ async function loadAwards() {
     api("/api/nominations").catch(() => null)
   ]);
   nominationsOpen = nominationData?.nominations?.phase?.accepting === true;
-  categories = ["All", ...data.categories];
+  categories = ["All", "Level 300", "Level 350", "General", ...data.categories];
   nominees = data.nominees;
+  const profileSlug=location.pathname.match(/^\/awards\/nominees\/([a-z0-9-]+)$/)?.[1];
+  if(profileSlug){const profile=nominees.find(item=>item.profileSlug===profileSlug);nominees=profile?[profile]:[];document.title=profile?`${profile.name} | SRC Awards`:`Nominee unavailable | SRC Awards`;}
   pricePerVote = data.pricePerVote; awardsCurrency = data.currency; maxVotes = data.maxVotes;
-  voting = data.voting; publicResultsVisible = data.publicResultsVisible; closesAt = data.closesAt; countdownTarget = data.countdownTarget || data.opensAt || countdownTarget;
+  voting = data.voting; publicResultsVisible = data.publicResultsVisible; countdownTarget = data.countdownTarget || data.opensAt || countdownTarget;
   byId("pricePerVote").textContent = formatMoney(pricePerVote);
   byId("votingStateBadge").textContent = voting.state.replace("_", " ").toUpperCase();
   byId("votingStateBadge").className = voting.open ? "status-open" : "status-closed";
@@ -59,13 +61,13 @@ function applyVotingPresentation(){
   document.querySelectorAll(".awards-live-section").forEach(section=>section.hidden=prelaunch);
   byId("awardsLiveActions").hidden=prelaunch;byId("awardsLiveTrust").hidden=prelaunch;
   byId("awardsNominationCta").hidden=!nominationStage;
-  byId("awardsCountdownSection").hidden=!prelaunch&&!closesAt;
+  if(byId("awardsCountdownSection"))byId("awardsCountdownSection").hidden=true;
   const primary=byId("awardsPrimaryAction");
   primary.textContent=voting.state==="paused"?"Voting Paused":voting.state==="closed"?"Voting Closed":"Start Voting";
   primary.setAttribute("aria-disabled",String(!voting.open));primary.tabIndex=voting.open?0:-1;primary.classList.toggle("is-disabled",!voting.open);
-  if(nominationStage){byId("awardsHeroEyebrow").textContent="SRC AWARDS 2026";byId("awardsHeroTitle").textContent="NOMINATIONS ARE OPEN.";byId("awardsHeroIntro").textContent="Someone deserves the spotlight. Nominate yourself or someone who deserves recognition in the UCC Sandwich – WISE Campus SRC Awards.";byId("awardsPrelaunchTitle").textContent="Put someone in the spotlight.";byId("awardsPrelaunchIntro").textContent="Nominate yourself or recognise someone whose achievement and impact deserve to be celebrated.";byId("awardsPrelaunchBody").textContent="Submitting a nomination is free and does not count as a vote.";byId("awardsPrelaunchClosing").textContent="NOMINATIONS ARE OPEN.";byId("awardsCountdownKicker").textContent="COUNTDOWN TO SRC AWARDS 2026";byId("awardsCountdownHeading").textContent="Recognition starts with a name.";}
-  else if(prelaunch){byId("awardsHeroEyebrow").textContent="SRC AWARDS 2026";byId("awardsHeroTitle").innerHTML="SOMETHING BIG<br><span>IS COMING.</span>";byId("awardsHeroIntro").textContent="The UCC Sandwich – WISE Campus SRC Awards are coming soon.";byId("awardsPrelaunchTitle").innerHTML="Celebrating Excellence.<br>Recognising Impact.";byId("awardsPrelaunchIntro").textContent="The UCC Sandwich – WISE Campus SRC Awards are coming soon.";byId("awardsPrelaunchBody").textContent="Get ready to celebrate the personalities, achievements and impact that make WISE Campus exceptional.";byId("awardsPrelaunchClosing").textContent="STAY READY.";byId("awardsCountdownKicker").textContent="COUNTDOWN TO SRC AWARDS 2026";byId("awardsCountdownHeading").textContent="The wait is almost over.";}
-  else{byId("awardsHeroEyebrow").textContent="THE PEOPLE'S CHOICE • CAMPUS 2026";byId("awardsHeroTitle").innerHTML="Celebrate excellence.<br><span>Vote your favorite.</span>";byId("awardsHeroIntro").textContent="A premium digital voting experience for the SRC Awards. Discover nominees, support your favorites, and follow the race live.";byId("awardsCountdownKicker").textContent="VOTING CLOSES IN";byId("awardsCountdownHeading").textContent="The race is on.";}
+  if(nominationStage){byId("awardsHeroEyebrow").textContent="SRC AWARDS 2026";byId("awardsHeroTitle").textContent="NOMINATIONS ARE OPEN.";byId("awardsHeroIntro").textContent="Someone deserves the spotlight. Nominate yourself or someone who deserves recognition in the UCC Sandwich – WISE Campus SRC Awards.";byId("awardsPrelaunchTitle").textContent="Put someone in the spotlight.";byId("awardsPrelaunchIntro").textContent="Nominate yourself or recognise someone whose achievement and impact deserve to be celebrated.";byId("awardsPrelaunchBody").textContent="Submitting a nomination is free and does not count as a vote.";byId("awardsPrelaunchClosing").textContent="NOMINATIONS ARE OPEN.";}
+  else if(prelaunch){byId("awardsHeroEyebrow").textContent="SRC AWARDS 2026";byId("awardsHeroTitle").innerHTML="MEET YOUR<br><span>NOMINEES.</span>";byId("awardsHeroIntro").textContent="Discover the approved students and classes representing the UCC Sandwich – WISE Campus SRC Awards.";byId("awardsPrelaunchTitle").innerHTML="Celebrating Excellence.<br>Recognising Impact.";byId("awardsPrelaunchIntro").textContent="Official nominees will appear below as the Awards team publishes them.";byId("awardsPrelaunchBody").textContent="Voting remains unavailable until the server-controlled voting state is opened.";byId("awardsPrelaunchClosing").textContent="VOTING OPENS SOON.";}
+  else{byId("awardsHeroEyebrow").textContent="THE PEOPLE'S CHOICE • CAMPUS 2026";byId("awardsHeroTitle").innerHTML="Celebrate excellence.<br><span>Vote your favorite.</span>";byId("awardsHeroIntro").textContent="Discover nominees, support your favorites, and follow the race.";}
 }
 
 function renderTabs() {
@@ -79,22 +81,23 @@ function renderTabs() {
 
 function filteredNominees() {
   const query = searchTerm.trim().toLowerCase();
-  return nominees.filter(n => (activeCategory === "All" || n.category === activeCategory) &&
+  return nominees.filter(n => (activeCategory === "All" || n.category === activeCategory || awardGroup(n.category)===activeCategory) &&
     (!query || [n.name, n.category, n.program, n.code].some(value => value.toLowerCase().includes(query))));
 }
 
 function renderNominees() {
   const grid = byId("nomineeGrid");
   const list = filteredNominees().sort((a, b) => a.category.localeCompare(b.category) || (a.rank||a.id) - (b.rank||b.id));
-  if (!list.length) { grid.innerHTML = `<div class="empty-state">No nominees match your search.</div>`; return; }
+  if (!list.length) { grid.innerHTML = `<div class="empty-state">No published nominees match this selection yet.</div>`; return; }
   grid.innerHTML = list.map(n => `<article class="nominee-card">
-    <div class="card-top"><div class="avatar">${n.imageUrl?`<img src="${escapeHtml(n.imageUrl)}" alt="${escapeHtml(n.name)}" loading="lazy">`:initials(n.name)}</div><span class="rank-badge">${n.code}</span></div>
-    <h3>${n.name}</h3><div class="nominee-category">${n.category}</div>
-    <div class="nominee-meta"><span>${n.program}</span>${publicResultsVisible?`<span class="percent-pill">${n.percentage.toFixed(1)}%</span>`:""}</div>
+    <div class="card-top"><div class="avatar">${n.imageUrl?`<img src="${escapeHtml(n.imageUrl)}" alt="Portrait of ${escapeHtml(n.name)}" loading="lazy">`:initials(n.name)}</div><span class="rank-badge">${escapeHtml(awardGroup(n.category))}</span></div>
+    <h3><a href="${escapeHtml(n.profileUrl)}">${escapeHtml(n.name)}</a></h3><div class="nominee-category">${escapeHtml(n.category)}</div>
+    <div class="nominee-meta"><span>${escapeHtml([n.program,n.level].filter(Boolean).join(" · "))}</span>${publicResultsVisible?`<span class="percent-pill">${n.percentage.toFixed(1)}%</span>`:""}</div>${n.shortMessage?`<p class="nominee-message">“${escapeHtml(n.shortMessage)}”</p>`:""}
     <div class="public-hidden" style="margin:-5px 0 13px">${publicResultsVisible?`Public standing: #${n.rank} • exact votes hidden`:"Public results are currently hidden"}</div>
-    <button class="vote-btn" data-id="${n.id}" ${voting.open?"":"disabled"}>${voting.open?`Vote for ${n.name.includes("&") ? "this couple" : n.name.split(" ")[0]}`:voting.message}</button>
+    <button class="vote-btn" data-id="${n.id}" ${voting.open?"":"disabled"}>${voting.open?"Vote":voting.state==="closed"?"Voting closed":"Voting opens soon"}</button><div class="nominee-share-actions"><a href="https://wa.me/?text=${encodeURIComponent(`Meet ${n.name}, nominated for ${n.category}: ${location.origin}${n.profileUrl}`)}" target="_blank" rel="noopener noreferrer">Share on WhatsApp</a><button type="button" data-copy="${escapeHtml(location.origin+n.profileUrl)}">Copy link</button></div>
   </article>`).join("");
   grid.querySelectorAll(".vote-btn").forEach(button => button.addEventListener("click", () => openVoteModal(Number(button.dataset.id))));
+  grid.querySelectorAll("[data-copy]").forEach(button=>button.addEventListener("click",async()=>{await navigator.clipboard.writeText(button.dataset.copy);showToast("Link copied","The nominee profile link is ready to share.");}));
 }
 
 function populateLeaderboardFilter() {
@@ -227,19 +230,6 @@ function setupVoting() {
   byId("confirmDemoVote").addEventListener("click", startMomoPayment);
 }
 
-function setupCountdown() {
-  const tick = () => {
-    const target=voting.state==="not_started"?countdownTarget:closesAt;
-    if(!target)return;
-    const end = new Date(target).getTime();
-    let diff = Math.max(0, end - Date.now());
-    const values = [Math.floor(diff / 86400000), Math.floor(diff % 86400000 / 3600000), Math.floor(diff % 3600000 / 60000), Math.floor(diff % 60000 / 1000)];
-    ["days", "hours", "minutes", "seconds"].forEach((id, index) => byId(id).textContent = String(values[index]).padStart(2, "0"));
-    if(voting.state==="not_started"&&diff===0){byId("awardsCountdownHeading").textContent="THE WAIT IS OVER.";}
-  };
-  tick(); setInterval(tick, 1000);
-}
-
 byId("searchInput").addEventListener("input", event => { searchTerm = event.target.value; renderNominees(); });
 setupVoting();
-Promise.all([loadAwards(), detectPaymentMode()]).then(()=>{setupCountdown();return loadReceiptPage();}).catch(error => showToast("Unable to load awards", error.message));
+Promise.all([loadAwards(), detectPaymentMode()]).then(loadReceiptPage).catch(error => showToast("Unable to load awards", error.message));

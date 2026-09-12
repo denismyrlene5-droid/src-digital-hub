@@ -12,6 +12,8 @@ function text(value, name, { required = false, min = 0, max = 200 } = {}) {
 }
 function bool(value, fallback = false) { return value === undefined ? fallback : value === true || value === 1 || value === "1" || value === "true"; }
 function order(value, fallback = 0) { const parsed = Number(value ?? fallback); if (!Number.isInteger(parsed) || parsed < 0 || parsed > 10000) throw httpError("Display order is invalid."); return parsed; }
+function publication(value,fallback="draft"){const result=String(value??fallback);if(!["draft","published","withdrawn"].includes(result))throw httpError("Invalid publication status.");return result;}
+const personKey=value=>String(value||"").normalize("NFKD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim().split(/\s+/).sort().join(" ");
 
 function createAwardsAdminRouter({ db, uploadDirectory, requireAwardsAdmin, audit = () => {} }) {
   const router = express.Router();
@@ -21,8 +23,10 @@ function createAwardsAdminRouter({ db, uploadDirectory, requireAwardsAdmin, audi
   router.use(express.json({ limit: "4mb" }));
 
   const category = categoryId => db.prepare("SELECT id,name,sort_order AS sortOrder,active FROM categories WHERE id=?").get(id(categoryId));
-  const nominee = nomineeId => db.prepare(`SELECT n.id,n.name,n.program,n.code,n.category_id AS categoryId,n.active,n.photo_token AS photoToken,c.name AS category
+  const nominee = nomineeId => db.prepare(`SELECT n.id,n.name,n.program,n.level,n.short_message AS shortMessage,n.publication_status AS publicationStatus,n.profile_slug AS profileSlug,n.person_id AS personId,n.code,n.category_id AS categoryId,n.active,n.photo_token AS photoToken,c.name AS category
     FROM nominees n JOIN categories c ON c.id=n.category_id WHERE n.id=?`).get(id(nomineeId));
+  router.post("/nominees/bulk-publish",handle((req,res)=>{const ids=[...new Set((req.body?.nomineeIds||[]).map(id))];if(!ids.length)throw httpError("Select at least one nominee.");if(ids.length>200)throw httpError("Too many nominees selected.");db.exec("BEGIN IMMEDIATE");try{const update=db.prepare("UPDATE nominees SET publication_status='published',active=1 WHERE id=? AND publication_status='draft'");let changed=0;ids.forEach(value=>{changed+=Number(update.run(value).changes)});db.exec("COMMIT");audit(req.admin,"awards.nominees_bulk_published","nominee",ids.join(","),`${changed} nominee entries published`);res.json({ok:true,published:changed});}catch(error){db.exec("ROLLBACK");throw error;}}));
+  router.get("/nominees/:id/photo",handle((req,res)=>{const item=nominee(req.params.id);if(!item?.photoToken)return res.sendStatus(404);const file=uploads.absolute(item.photoToken);if(!file)return res.sendStatus(404);res.setHeader("Cache-Control","private, no-store");res.sendFile(file);}));
 
   router.post("/categories", handle((req, res) => {
     const name = text(req.body?.name, "Category name", { required: true, min: 2, max: 120 });
@@ -53,8 +57,12 @@ function createAwardsAdminRouter({ db, uploadDirectory, requireAwardsAdmin, audi
       const code = text(req.body?.code, "Nominee code", { required: true, min: 2, max: 40 }).toUpperCase();
       if (!/^[A-Z0-9_-]+$/.test(code)) throw httpError("Nominee code may contain only letters, numbers, hyphens, and underscores.");
       const categoryId = id(req.body?.categoryId); if (!category(categoryId)) throw httpError("Category not found.", 404);
+      const level=text(req.body?.level,"Level",{max:60}),shortMessage=text(req.body?.shortMessage,"Short message",{max:120}),status=publication(req.body?.publicationStatus);
       photo = uploads.save(req.body?.photo, "image");
-      let result; try { result = db.prepare("INSERT INTO nominees(name,category_id,program,code,active,photo_token) VALUES(?,?,?,?,?,?)").run(name, categoryId, program, code, bool(req.body?.active, true) ? 1 : 0, photo?.token || null); }
+      const normalized=personKey(name);
+      let personId=req.body?.personId? id(req.body.personId):null;if(personId&&!db.prepare("SELECT 1 FROM award_people WHERE id=?").get(personId))throw httpError("Person record not found.",404);
+      if(!personId){db.prepare("INSERT OR IGNORE INTO award_people(display_name,normalized_name,programme,level,photo_token) VALUES(?,?,?,?,?)").run(name,normalized,program,level,photo?.token||null);personId=db.prepare("SELECT id FROM award_people WHERE normalized_name=?").get(normalized).id;}
+      let result; try { result = db.prepare("INSERT INTO nominees(name,category_id,program,code,active,photo_token,person_id,level,short_message,publication_status,profile_slug,source) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)").run(name, categoryId, program, code, status==="published"&&bool(req.body?.active,true)?1:0, photo?.token || null,personId,level,shortMessage,status,`${normalized.replace(/ /g,"-")}-${categoryId}`,"manual"); }
       catch (error) { if (String(error.message).includes("UNIQUE")) throw httpError("That nominee code is already in use.", 409); throw error; }
       const record = nominee(Number(result.lastInsertRowid)); audit(req.admin, "awards.nominee_created", "nominee", record.id, `Nominee created: ${record.name}`); res.status(201).json({ nominee: record });
     } catch (error) { uploads.remove(photo); throw error; }
@@ -67,8 +75,9 @@ function createAwardsAdminRouter({ db, uploadDirectory, requireAwardsAdmin, audi
       const code = text(req.body?.code ?? current.code, "Nominee code", { required: true, min: 2, max: 40 }).toUpperCase();
       if (!/^[A-Z0-9_-]+$/.test(code)) throw httpError("Nominee code may contain only letters, numbers, hyphens, and underscores.");
       const categoryId = id(req.body?.categoryId ?? current.categoryId); if (!category(categoryId)) throw httpError("Category not found.", 404);
+      const level=text(req.body?.level??current.level,"Level",{max:60}),shortMessage=text(req.body?.shortMessage??current.shortMessage,"Short message",{max:120}),status=publication(req.body?.publicationStatus,current.publicationStatus);
       photo = uploads.save(req.body?.photo, "image");
-      try { db.prepare("UPDATE nominees SET name=?,category_id=?,program=?,code=?,active=?,photo_token=COALESCE(?,photo_token) WHERE id=?").run(name, categoryId, program, code, bool(req.body?.active, Boolean(current.active)) ? 1 : 0, photo?.token || null, current.id); }
+      try { db.prepare("UPDATE nominees SET name=?,category_id=?,program=?,code=?,active=?,photo_token=COALESCE(?,photo_token),level=?,short_message=?,publication_status=? WHERE id=?").run(name, categoryId, program, code, status==="published"&&bool(req.body?.active, Boolean(current.active)) ? 1 : 0, photo?.token || null,level,shortMessage,status,current.id); }
       catch (error) { if (String(error.message).includes("UNIQUE")) throw httpError("That nominee code is already in use.", 409); throw error; }
       const record = nominee(current.id); if(photo&&current.photoToken)uploads.remove(current.photoToken); audit(req.admin, "awards.nominee_updated", "nominee", record.id, `Nominee updated: ${record.name}`); res.json({ nominee: record });
     } catch (error) { uploads.remove(photo); throw error; }

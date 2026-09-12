@@ -71,7 +71,7 @@ test("public awards hide exact vote totals", async () => {
   } finally { await app.close(); }
 });
 
-test("Awards default to a fail-closed pre-launch state with a real countdown target", async () => {
+test("Awards default to a fail-closed pre-launch state without exposing a countdown", async () => {
   const app = await fixture({initialVotingState:null});
   try {
     const data=await (await fetch(`${app.base}/api/awards`)).json();
@@ -79,7 +79,7 @@ test("Awards default to a fail-closed pre-launch state with a real countdown tar
     assert.equal(data.opensAt,"2026-09-15T00:00:00.000Z");assert.equal(data.countdownTarget,data.opensAt);
     assert.equal(data.publicResultsVisible,false);assert.equal("percentage" in data.nominees[0],false);assert.equal("rank" in data.nominees[0],false);
     const html=await (await fetch(`${app.base}/awards`)).text();
-    assert.match(html,/id="awardsLiveActions" hidden/);assert.match(html,/id="categories" hidden/);assert.doesNotMatch(html,/id="awardsPrelaunch" hidden/);
+    assert.match(html,/id="awardsLiveActions" hidden/);assert.match(html,/class="section meet-nominees-section" id="categories"/);assert.doesNotMatch(html,/id="awardsPrelaunch" hidden/);assert.doesNotMatch(html,/id="countdown"/);
   } finally {await app.close();}
 });
 
@@ -126,7 +126,7 @@ test("homepage hero uses the CMS activity panel without duplicating Awards", asy
     assert.doesNotMatch(hub, /Loading latest announcement/);
     assert.doesNotMatch(hub, /Loading next event/);
     assert.doesNotMatch(hub, /hero-official-logo/);
-    assert.equal((hub.match(/id="homeAwardsCountdown"/g) || []).length, 1);
+    assert.equal((hub.match(/id="homeAwardsCountdown"/g) || []).length, 0);
     assert.match(publicity, /api\/publicity\/home/);
     assert.match(html, /<script type="application\/json" id="srcPublicBootstrap">/);
     assert.match(html, /"homeFeed":\{"announcements":\[/);
@@ -159,8 +159,32 @@ test("Awards administration is consolidated into the unified dashboard", async (
     assert.match(moduleScript, /api\/admin\/awards\/settings/);
     assert.doesNotMatch(shellScript, /Awards Admin/);
     assert.doesNotMatch(awardsPage, /id="adminOverlay"/);
-    assert.match(adminPage, /admin-awards\.js\?v=2/);
+    assert.match(adminPage, /admin-awards\.js\?v=3/);
   } finally { await app.close(); }
+});
+
+test("approved PDF nominee import is preview-first, idempotent, and private until publication",async()=>{
+  const app=await fixture({seedData:false});
+  try{
+    const cookie=await adminCookie(app);
+    const previewResponse=await fetch(`${app.base}/api/admin/awards/import-preview`,{headers:{Cookie:cookie}}),preview=await previewResponse.json();
+    assert.equal(previewResponse.status,200);assert.equal(preview.total,95);assert.equal(preview.summary.unclear,5);assert.equal(preview.summary.new,90);
+    assert.equal((await fetch(`${app.base}/api/admin/awards/import`,{method:"POST",headers:{"Content-Type":"application/json",Cookie:cookie},body:JSON.stringify({confirm:false})})).status,400);
+    for(let attempt=0;attempt<2;attempt++)assert.equal((await fetch(`${app.base}/api/admin/awards/import`,{method:"POST",headers:{"Content-Type":"application/json",Cookie:cookie},body:JSON.stringify({confirm:true})})).status,201);
+    assert.equal(app.db.prepare("SELECT COUNT(*) count FROM nominees WHERE source='pdf_import'").get().count,90);
+    assert.equal(app.db.prepare("SELECT COUNT(DISTINCT person_id) count FROM nominees WHERE name IN ('Donyina Twumasi Daniel','Daniel Donyina Twumasi')").get().count,1);
+    assert.equal((await (await fetch(`${app.base}/api/awards`)).json()).nominees.length,0);
+    const draft=app.db.prepare("SELECT id,name,category_id categoryId,program,code FROM nominees WHERE source='pdf_import' ORDER BY id LIMIT 1").get();
+    const published=await fetch(`${app.base}/api/admin/awards/nominees/${draft.id}`,{method:"PUT",headers:{"Content-Type":"application/json",Cookie:cookie},body:JSON.stringify({...draft,publicationStatus:"published",active:true})});
+    assert.equal(published.status,200);
+    const publicData=await (await fetch(`${app.base}/api/awards`)).json();assert.equal(publicData.nominees.length,1);assert.equal("contactPhone" in publicData.nominees[0],false);
+    const another=app.db.prepare("SELECT id FROM nominees WHERE source='pdf_import' AND id<>? LIMIT 1").get(draft.id);
+    assert.equal((await fetch(`${app.base}/api/awards/transactions`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({nomineeId:another.id,votes:1,provider:"simulation"})})).status,400);
+  }finally{await app.close();}
+});
+
+test("Awards countdown markup and homepage timer are removed",async()=>{
+  const app=await fixture();try{const awardsPage=await (await fetch(`${app.base}/awards`)).text(),homeScript=await (await fetch(`${app.base}/hub.js`)).text();assert.doesNotMatch(awardsPage,/id="awardsCountdownSection"/);assert.doesNotMatch(homeScript,/homeAwardsCountdown|setupHomeAwardsCountdown/);assert.match(awardsPage,/Meet Your Nominees/);}finally{await app.close();}
 });
 
 test("public frontend retains accessibility and responsive spacing polish", async () => {
@@ -173,7 +197,7 @@ test("public frontend retains accessibility and responsive spacing polish", asyn
     assert.match(css, /\.urgent-notice-content b\{white-space:normal/);
     assert.match(css, /\.hub-hero h1\{font-size:clamp\(40px,12vw,49px\)/);
     assert.match(css, /\.publicity-metrics\{grid-template-columns:repeat\(4,1fr\)\}/);
-    assert.match(home, /\/hub\.css\?v=21/);
+    assert.match(home, /\/hub\.css\?v=22/);
     assert.match(awards, /\/hub\.css\?v=15/);
   } finally { await app.close(); }
 });
@@ -187,7 +211,7 @@ test("Awards hero uses a values panel without a large logo or duplicate countdow
     assert.match(html, /EXCELLENCE/);
     assert.match(html, /IMPACT/);
     assert.equal((html.match(/class="award-official-logo"/g) || []).length, 1);
-    assert.equal((html.match(/id="countdown"/g) || []).length, 1);
+    assert.equal((html.match(/id="countdown"/g) || []).length, 0);
   } finally { await app.close(); }
 });
 
@@ -700,7 +724,7 @@ test("Women Empowerment Seminar migrates once, cross-links publicity, remains ed
   try {
     const slug = "online-women-empowerment-seminar";
     const events = await (await fetch(`${app.base}/api/events`)).json();
-    const seminar = events.upcoming.find(item => item.slug === slug);
+    const seminar = [...events.upcoming,...events.past].find(item => item.slug === slug);
     assert.ok(seminar);
     assert.equal(seminar.title, "Online Women Empowerment Seminar");
     assert.equal(seminar.theme, "The Leader Within: Building the Skills, Mindset and Character for Leadership");
@@ -713,7 +737,7 @@ test("Women Empowerment Seminar migrates once, cross-links publicity, remains ed
     assert.equal(seminar.posterImage, null);
 
     const home = await (await fetch(`${app.base}/api/publicity/home`)).json();
-    assert.equal(home.events.some(item => item.slug === slug), true);
+    assert.equal(home.events.some(item => item.slug === slug), false);
     assert.equal(home.announcements.some(item => item.slug === slug), true);
     const detail = (await (await fetch(`${app.base}/api/events/${slug}`)).json()).event;
     assert.match(detail.description, /School Improvement Advisor/);
@@ -1160,7 +1184,7 @@ test("Awards CMS creates and edits records while protecting historical nominees"
     const categoryResponse = await fetch(`${app.base}/api/admin/awards/categories`, { method: "POST", headers: { "Content-Type": "application/json", Cookie: cookie }, body: JSON.stringify({ name: "Campus Impact", sortOrder: 99, active: true }) });
     assert.equal(categoryResponse.status, 201);
     const category = (await categoryResponse.json()).category;
-    const nomineeResponse = await fetch(`${app.base}/api/admin/awards/nominees`, { method: "POST", headers: { "Content-Type": "application/json", Cookie: cookie }, body: JSON.stringify({ name: "CMS Test Nominee", program: "Development Studies", code: "CMS01", categoryId: category.id, active: true, photo: pngUpload }) });
+    const nomineeResponse = await fetch(`${app.base}/api/admin/awards/nominees`, { method: "POST", headers: { "Content-Type": "application/json", Cookie: cookie }, body: JSON.stringify({ name: "CMS Test Nominee", program: "Development Studies", code: "CMS01", categoryId: category.id, active: true, publicationStatus: "published", photo: pngUpload }) });
     assert.equal(nomineeResponse.status, 201);
     const nominee = (await nomineeResponse.json()).nominee;
     const publicAwards = await (await fetch(`${app.base}/api/awards`)).json();
@@ -1296,7 +1320,7 @@ test("CMS migrations and content persist across a SQLite restart", () => {
     assert.equal(second.db.prepare("SELECT poster_image value FROM events WHERE slug='persistent-event'").get().value, "/api/publicity/files/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.webp");
     assert.equal(fs.existsSync(path.join(uploadDirectory, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.webp")), true);
     second.db.close();
-  } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+  } finally { try{fs.rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });}catch{} }
 });
 
 test("legacy open Awards configuration migrates once to the configured pre-launch state", () => {

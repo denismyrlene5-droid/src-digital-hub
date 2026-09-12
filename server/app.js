@@ -48,9 +48,10 @@ function createApp(options = {}) {
   let publicBaseUrl="";
   if(configuredBaseUrl){try{publicBaseUrl=new URL(configuredBaseUrl).origin;}catch{throw new Error("BASE_URL must be a valid absolute URL.");}}
   if(production&&(!publicBaseUrl||!publicBaseUrl.startsWith("https://")))throw new Error("Production requires an HTTPS BASE_URL.");
-  const seedData=options.seedData ?? !["production","staging"].includes(environment);
+  const seedData=options.seedData ?? (nodeEnvironment==="test"&&!production&&!staging);
   const db = options.db || createDatabase(databasePath,{seed:seedData});
   awards.migrateAwards(db);
+  if(seedData){db.prepare("UPDATE nominees SET publication_status='published',source='demo',active=1 WHERE source IN ('legacy','demo')").run();db.prepare("UPDATE categories SET active=1").run();}
   const publicity = createPublicityRepository(db,{seed:seedData});
   const services = createServicesRepository(db);
   const content = createContentRepository(db);
@@ -211,10 +212,11 @@ function createApp(options = {}) {
   }));
   app.get("/api/awards/files/:token", (req,res) => {
     const token=String(req.params.token||""); if(!/^[a-f0-9]{32}\.[a-z0-9]{2,5}$/.test(token))return res.sendStatus(404);
-    const visible=db.prepare("SELECT 1 FROM nominees n JOIN categories c ON c.id=n.category_id WHERE n.photo_token=? AND n.active=1 AND c.active=1").get(token);
+    const visible=db.prepare("SELECT 1 FROM nominees n JOIN categories c ON c.id=n.category_id WHERE n.photo_token=? AND n.active=1 AND n.publication_status='published' AND c.active=1").get(token);
     if(!visible)return res.sendStatus(404); res.setHeader("Cache-Control","public, max-age=3600"); res.sendFile(createUploadStore(uploadDirectory).absolute(token));
   });
   app.get("/api/awards", (req, res) => {const data=awards.publicData(db);if(maintenanceMode)data.voting={open:false,state:"paused",message:"Voting is temporarily unavailable during maintenance."};res.json(data);});
+  app.get("/api/awards/nominees/:slug",(req,res)=>{const item=awards.publicData(db).nominees.find(n=>n.profileSlug===req.params.slug);if(!item)return res.status(404).json({ok:false,message:"Published nominee not found."});res.json({nominee:item});});
   app.get("/api/awards/transactions/:reference", paymentLimit, (req, res) => {
     if (!/^SRCVOTE-[A-Za-z0-9_-]{20,60}$/.test(req.params.reference)) return res.status(400).json({ ok:false,message:"Invalid transaction reference." });
     const item=awards.transaction(db,req.params.reference); if(!item) return res.status(404).json({ok:false,message:"Transaction not found."});
@@ -328,8 +330,10 @@ function createApp(options = {}) {
   app.get("/api/admin/awards", auth.requireAwardsAdmin, (req,res)=>res.json({
     ...awards.adminData(db,req.query),
     categories:db.prepare("SELECT id,name,sort_order AS sortOrder,active FROM categories ORDER BY sort_order").all(),
-    nominees:db.prepare("SELECT n.id,n.name,n.program,n.code,n.active,n.photo_token AS photoToken,n.vote_total AS voteTotal,n.category_id AS categoryId,c.name AS category FROM nominees n JOIN categories c ON c.id=n.category_id ORDER BY c.sort_order,n.name").all()
+    nominees:db.prepare("SELECT n.id,n.name,n.program,n.level,n.short_message AS shortMessage,n.publication_status AS publicationStatus,n.profile_slug AS profileSlug,n.source,n.code,n.active,n.photo_token AS photoToken,n.vote_total AS voteTotal,n.category_id AS categoryId,n.person_id AS personId,c.name AS category FROM nominees n JOIN categories c ON c.id=n.category_id ORDER BY c.sort_order,n.name").all()
   }));
+  app.get("/api/admin/awards/import-preview",auth.requireAwardsAdmin,(req,res)=>res.json(awards.importPreview(db)));
+  app.post("/api/admin/awards/import",auth.requireAwardsAdmin,(req,res,next)=>{try{if(req.body?.confirm!==true)return res.status(400).json({ok:false,message:"Review and explicitly confirm the import first."});res.status(201).json(awards.applyApprovedImport(db,req.admin));}catch(error){next(error);}});
   app.put("/api/admin/awards/settings", auth.requireAwardsAdmin, (req,res,next)=>{
     try { const before=awards.settings(db); const updated=awards.updateSettings(db,req.body||{}); content.audit(req.admin,"awards.settings_updated","awards","settings",`Awards configuration changed from ${before.voting_state} to ${updated.voting_state}`); res.json({ok:true,settings:updated}); }
     catch(error){next(error);}
@@ -446,6 +450,7 @@ function createApp(options = {}) {
   const hubRoutes = ["/", "/announcements", "/events", "/academics", "/academics/course-structure", "/businesses", "/lost-found", "/feedback", "/feedback/status", "/media", "/executives", "/contact", "/nominations", "/admin"];
   hubRoutes.forEach(route => app.get(route, (req, res) => res.type("html").send(hubHtml(req))));
   app.get("/awards", (req, res) => res.sendFile(path.join(publicDirectory, "index.html")));
+  app.get("/awards/nominees/:slug", (req,res)=>res.sendFile(path.join(publicDirectory,"index.html")));
   app.get("/awards/payment/:reference", (req,res)=>res.sendFile(path.join(publicDirectory,"index.html")));
   app.get("/index.html", (req, res) => res.redirect(308, "/awards"));
   app.use(express.static(publicDirectory, { dotfiles: "deny", index: false }));

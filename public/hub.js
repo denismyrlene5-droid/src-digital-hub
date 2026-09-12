@@ -45,24 +45,12 @@
       ].map(item => `<a class="quick-card" href="${item[3]}"><span>${item[0]}</span><h3>${item[1]}</h3><p>${item[2]}</p><b aria-hidden="true">↗</b></a>`).join("")}</div></div></section>
     <section class="hub-section hub-section-tinted"><div class="hub-container"><div class="hub-section-heading"><div><span class="hub-eyebrow">STAY INFORMED</span><h2>Latest announcements</h2></div><a class="hub-text-link" href="/announcements">View all announcements →</a></div><div class="hub-three-grid" id="homeAnnouncements"><div class="publicity-loading">Loading current announcements…</div></div></div></section>
     <section class="hub-section"><div class="hub-container"><div class="hub-section-heading"><div><span class="hub-eyebrow">SAVE THE DATE</span><h2>Upcoming events</h2></div><a class="hub-text-link" href="/events">View all events →</a></div><div class="hub-three-grid" id="homeEvents"><div class="publicity-loading">Loading upcoming events…</div></div></div></section>
-    <section class="hub-awards-feature"><div class="hub-container awards-feature-grid"><div><span class="hub-eyebrow">SRC AWARDS 2026</span><h2>THE COUNTDOWN HAS BEGUN.</h2><h3>Recognition. Excellence. Impact.</h3><p>Something big is coming to UCC Sandwich – WISE Campus.</p><a class="hub-btn hub-btn-gold" href="/awards">Explore Awards</a></div><div class="awards-countdown-card" aria-live="polite"><img class="awards-feature-logo" src="${organization.logoUrl}" alt="UCC crest" width="96" height="96" loading="lazy"><strong id="homeAwardsCountdown">-- DAYS</strong><span id="homeAwardsCountdownLabel">Until SRC Awards 2026</span><small id="homeAwardsDate">15 September 2026 · Ghana</small></div></div></section>
+    <section class="hub-awards-feature"><div class="hub-container awards-feature-grid"><div><span class="hub-eyebrow">SRC AWARDS 2026</span><h2>MEET YOUR NOMINEES.</h2><h3>Recognition. Excellence. Impact.</h3><p>Discover the approved students and classes representing each award category.</p><a class="hub-btn hub-btn-gold" href="/awards#categories">Meet the Nominees</a></div><div class="awards-countdown-card"><img class="awards-feature-logo" src="${organization.logoUrl}" alt="UCC crest" width="96" height="96" loading="lazy"><strong>YOUR CAMPUS.</strong><span>Your nominees. Your choice.</span><small>Voting availability is controlled by the SRC Awards administrators.</small></div></div></section>
     <section class="hub-section"><div class="hub-container voice-panel"><div><span class="hub-eyebrow">YOUR VOICE MATTERS</span><h2>Help shape student life.</h2><p>Share a suggestion, raise a concern, or contribute an idea for a stronger campus community.</p></div><a class="hub-btn hub-btn-primary" href="/feedback">Go to Student Voice</a></div></section>
     <section class="hub-section hub-section-tinted"><div class="hub-container"><div class="hub-section-heading"><div><span class="hub-eyebrow">SUPPORT STUDENT ENTERPRISE</span><h2>Featured student businesses</h2></div><a class="hub-text-link" href="/businesses">Explore the directory →</a></div><div class="hub-three-grid" id="homeBusinesses"><div class="publicity-loading">Loading featured businesses…</div></div></div></section>
     <section class="hub-section"><div class="hub-container"><div class="hub-section-heading"><div><span class="hub-eyebrow">CAMPUS IN FRAME</span><h2>Recent media</h2></div><a class="hub-text-link" href="/media">Visit media →</a></div><div class="media-grid" id="homeMedia"><div class="publicity-loading">Loading published media…</div></div></div></section>`;
     const hero = main.querySelector(".hub-hero");
     if (organization.heroImage) { hero.style.backgroundImage = `linear-gradient(rgba(7,17,13,.8),rgba(7,17,13,.9)),url("${organization.heroImage}")`; hero.classList.add("has-image"); }
-    setupHomeAwardsCountdown();
-  }
-
-  async function setupHomeAwardsCountdown() {
-    const value=document.getElementById("homeAwardsCountdown"),label=document.getElementById("homeAwardsCountdownLabel"),date=document.getElementById("homeAwardsDate");
-    if(!value)return;
-    let target="2026-09-15T00:00:00.000Z";
-    try{const response=await fetch("/api/awards");if(response.ok){const awards=await response.json();target=awards.countdownTarget||awards.opensAt||target;}}catch{}
-    const parsed=Date.parse(target);if(!Number.isFinite(parsed))return;
-    date.textContent=new Intl.DateTimeFormat("en-GH",{dateStyle:"long",timeZone:"Africa/Accra"}).format(new Date(parsed))+" · Ghana";
-    const tick=()=>{const remaining=parsed-Date.now();if(remaining<=0){value.textContent="THE WAIT IS OVER.";label.textContent="SRC Awards 2026";return;}if(remaining<86400000){const hours=Math.floor(remaining/3600000),minutes=Math.floor(remaining%3600000/60000);value.textContent=`${hours} HOURS ${minutes} MIN`;}else value.textContent=`${Math.ceil(remaining/86400000)} DAYS`;};
-    tick();setInterval(tick,60000);
   }
 
   function placeholderPage(key) {

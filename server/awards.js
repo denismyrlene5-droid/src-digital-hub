@@ -1,9 +1,13 @@
 const crypto = require("crypto");
+const { approvedNominees } = require("./approved-nominees");
 
 const PAYMENT_STATUSES = new Set(["pending", "successful", "failed", "cancelled", "expired", "reversed", "refunded"]);
 const VOTING_STATES = new Set(["not_started", "open", "paused", "closed"]);
 const safeReference = () => `SRCVOTE-${crypto.randomBytes(18).toString("base64url")}`;
 const now = () => new Date().toISOString();
+const normalizeName = value => String(value || "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().replace(/\s+/g, " ");
+const personKey = value => normalizeName(value).split(" ").sort().join(" ");
+const slugify = value => normalizeName(value).replace(/ /g, "-");
 
 function addColumn(db, table, definition) {
   const name = definition.trim().split(/\s+/)[0];
@@ -16,6 +20,13 @@ function migrateAwards(db) {
   addColumn(db, "categories", "active INTEGER NOT NULL DEFAULT 1");
   addColumn(db, "nominees", "legacy_unverified_votes INTEGER NOT NULL DEFAULT 0");
   addColumn(db, "nominees", "photo_token TEXT");
+  db.exec(`CREATE TABLE IF NOT EXISTS award_people (id INTEGER PRIMARY KEY AUTOINCREMENT, display_name TEXT NOT NULL, normalized_name TEXT NOT NULL UNIQUE, programme TEXT NOT NULL DEFAULT '', level TEXT NOT NULL DEFAULT '', photo_token TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);`);
+  addColumn(db, "nominees", "person_id INTEGER REFERENCES award_people(id)");
+  addColumn(db, "nominees", "level TEXT");
+  addColumn(db, "nominees", "short_message TEXT");
+  addColumn(db, "nominees", "publication_status TEXT NOT NULL DEFAULT 'draft'");
+  addColumn(db, "nominees", "profile_slug TEXT");
+  addColumn(db, "nominees", "source TEXT NOT NULL DEFAULT 'legacy'");
   [
     "internal_id TEXT", "public_id TEXT", "category_id INTEGER REFERENCES categories(id)", "price_per_vote INTEGER NOT NULL DEFAULT 100",
     "paid_amount INTEGER", "payment_status TEXT NOT NULL DEFAULT 'pending'", "verification_status TEXT NOT NULL DEFAULT 'unverified'",
@@ -45,7 +56,21 @@ function migrateAwards(db) {
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
     CREATE INDEX IF NOT EXISTS idx_payment_adjustments_action_created ON payment_adjustments(action,created_at);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_nominees_profile_slug ON nominees(profile_slug) WHERE profile_slug IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_nominees_person_category ON nominees(person_id,category_id) WHERE person_id IS NOT NULL;
   `);
+  const insertPerson=db.prepare("INSERT OR IGNORE INTO award_people(display_name,normalized_name,programme,level,photo_token) VALUES(?,?,?,?,?)");
+  const attachPerson=db.prepare("UPDATE nominees SET person_id=?,profile_slug=COALESCE(profile_slug,?) WHERE id=?");
+  for(const item of db.prepare("SELECT id,name,program,category_id AS categoryId,photo_token AS photoToken FROM nominees").all()){
+    const key=personKey(item.name);insertPerson.run(item.name,key,item.program||"","",item.photoToken||null);
+    const personId=db.prepare("SELECT id FROM award_people WHERE normalized_name=?").get(key).id;
+    if(!db.prepare("SELECT 1 FROM nominees WHERE person_id=? AND category_id=? AND id<>?").get(personId,item.categoryId,item.id))attachPerson.run(personId,`${slugify(item.name)}-${item.id}`,item.id);
+  }
+  const demoEntries=[["BCR01","Esther Addo"],["BCR02","Ama Mensah"],["SPY01","Kwame Asare"],["SLY01","Nana Boateng"],["MPC01","Michael & Abena"],["MPC02","Kojo & Akosua"],["EOY01","Richmond Owusu"],["BDF01","Priscilla Nyarko"],["BDM01","Daniel Kumi"],["SMP01","Esi Arthur"],["CCY01","Yaw Mensah"],["MSS01","Adwoa Serwaa"],["MIS01","Kobby Amoako"],["AE01","Maame Frimpong"]];
+  const flagDemo=db.prepare("UPDATE nominees SET source='demo',active=0,publication_status='draft' WHERE code=? AND name=? AND NOT EXISTS(SELECT 1 FROM payments WHERE nominee_id=nominees.id) AND NOT EXISTS(SELECT 1 FROM vote_transactions WHERE nominee_id=nominees.id)");
+  demoEntries.forEach(entry=>flagDemo.run(...entry));
+  db.prepare("UPDATE nominees SET publication_status='published' WHERE source='legacy' AND active=1").run();
+  db.prepare("UPDATE categories SET active=0 WHERE EXISTS(SELECT 1 FROM nominees n WHERE n.category_id=categories.id AND n.source='demo') AND NOT EXISTS(SELECT 1 FROM nominees n WHERE n.category_id=categories.id AND n.source<>'demo') AND NOT EXISTS(SELECT 1 FROM payments p WHERE p.category_id=categories.id)").run();
   addColumn(db,"awards_settings","ledger_migrated INTEGER NOT NULL DEFAULT 0");
   db.prepare(`UPDATE payments SET public_id=reference,category_id=(SELECT category_id FROM nominees WHERE nominees.id=payments.nominee_id),
     payment_status=CASE WHEN status='success' THEN 'successful' WHEN status='amount_mismatch' THEN 'failed' ELSE COALESCE(status,'pending') END,
@@ -87,9 +112,9 @@ function validateInitiation(db, nomineeId, votes) {
   if (!availability.open) return { ok: false, status: 409, message: availability.message };
   if (!Number.isSafeInteger(votes) || votes < 1 || votes > config.max_votes) return { ok: false, status: 400, message: `Votes must be a whole number between 1 and ${config.max_votes}.` };
   if (!Number.isSafeInteger(nomineeId) || nomineeId < 1) return { ok: false, status: 400, message: "Invalid nominee." };
-  const nominee = db.prepare(`SELECT n.id,n.name,n.active,c.id AS category_id,c.name AS category,c.active AS category_active
+  const nominee = db.prepare(`SELECT n.id,n.name,n.active,n.publication_status,c.id AS category_id,c.name AS category,c.active AS category_active
     FROM nominees n JOIN categories c ON c.id=n.category_id WHERE n.id=?`).get(nomineeId);
-  if (!nominee || !nominee.active || !nominee.category_active) return { ok: false, status: 400, message: "This nominee is not eligible for voting." };
+  if (!nominee || !nominee.active || nominee.publication_status!=="published" || !nominee.category_active) return { ok: false, status: 400, message: "This nominee is not published or eligible for voting." };
   const expectedAmount = votes * config.price_per_vote;
   if (!Number.isSafeInteger(expectedAmount)) return { ok: false, status: 400, message: "Vote quantity is too large." };
   return { ok: true, nominee, config, expectedAmount };
@@ -206,17 +231,42 @@ function recordAdjustment(db,{reference,action,reason,providerReference,source="
 
 function publicData(db) {
   const config = settings(db); const voting = votingAvailability(config); const visible = Boolean(config.public_results_visible) && voting.state !== "not_started";
-  const rows = db.prepare(`SELECT n.id,n.name,c.name AS category,n.program,n.code,n.photo_token AS photoToken,n.vote_total AS votes
-    FROM nominees n JOIN categories c ON c.id=n.category_id WHERE n.active=1 AND c.active=1 ORDER BY c.sort_order,n.id`).all();
+  const rows = db.prepare(`SELECT n.id,n.name,c.name AS category,n.program,n.level,n.short_message AS shortMessage,n.profile_slug AS profileSlug,n.code,n.photo_token AS photoToken,n.vote_total AS votes
+    FROM nominees n JOIN categories c ON c.id=n.category_id WHERE n.active=1 AND n.publication_status='published' AND c.active=1 ORDER BY c.sort_order,n.id`).all();
   const totals = new Map(); rows.forEach(row => totals.set(row.category,(totals.get(row.category)||0)+row.votes));
   const ranks = new Map();
   if (visible) [...new Set(rows.map(r=>r.category))].forEach(category => rows.filter(r=>r.category===category).sort((a,b)=>b.votes-a.votes||a.id-b.id).forEach((r,i)=>ranks.set(r.id,i+1)));
   const nominees = rows.map(({votes,photoToken,...row}) => {
-    const publicRow = {...row,imageUrl:photoToken?`/api/awards/files/${photoToken}`:null};
+    const publicRow = {...row,imageUrl:photoToken?`/api/awards/files/${photoToken}`:null,profileUrl:`/awards/nominees/${row.profileSlug}`};
     return visible ? {...publicRow,percentage:totals.get(row.category)?votes/totals.get(row.category)*100:0,rank:ranks.get(row.id)} : publicRow;
   });
   return { title: config.awards_title, categories: [...new Set(rows.map(r=>r.category))], nominees, pricePerVote: config.price_per_vote,
     currency: config.currency, publicResultsVisible: visible, voting, opensAt: config.opens_at, countdownTarget: config.opens_at || "2026-09-15T00:00:00.000Z", closesAt: config.closes_at, maxVotes: config.max_votes };
+}
+
+function importPreview(db){
+  const categories=new Map(db.prepare("SELECT id,name FROM categories").all().map(row=>[row.name,row]));
+  const existing=db.prepare("SELECT n.id,n.name,n.source,c.name AS category FROM nominees n JOIN categories c ON c.id=n.category_id").all();
+  const proposed=approvedNominees.map(item=>{const match=existing.find(row=>row.category===item.category&&personKey(row.name)===personKey(item.name));return{...item,categoryId:categories.get(item.category)?.id||null,status:item.unclear?"unclear":match?"existing":categories.has(item.category)?"new":"new_category",existingId:match?.id||null};});
+  const approvedKeys=new Set(approvedNominees.map(item=>`${item.category}|${personKey(item.name)}`));
+  const missing=existing.filter(row=>row.source!=="demo"&&!approvedKeys.has(`${row.category}|${personKey(row.name)}`)).map(({id,name,category})=>({id,name,category}));
+  return{source:"UCC_WISE_SRC_Awards_Provisional_Nominee_List.pdf",total:proposed.length,proposed,summary:{new:proposed.filter(x=>["new","new_category"].includes(x.status)).length,existing:proposed.filter(x=>x.status==="existing").length,unclear:proposed.filter(x=>x.status==="unclear").length,newCategories:new Set(proposed.filter(x=>x.status==="new_category").map(x=>x.category)).size},missing};
+}
+
+function applyApprovedImport(db,admin={}){
+  const baseOrder=Number(db.prepare("SELECT COALESCE(MAX(sort_order),0) value FROM categories").get().value);
+  const confirmed=approvedNominees.filter(item=>!item.unclear),groupRank={"level-300":1,"level-350":2,general:3},names=[...new Set([...confirmed].sort((a,b)=>groupRank[a.group]-groupRank[b.group]).map(item=>item.category))];
+  const insertCategory=db.prepare("INSERT OR IGNORE INTO categories(name,sort_order,active) VALUES(?,?,1)");
+  names.forEach((name,index)=>insertCategory.run(name,baseOrder+index+1));
+  const categoryIds=new Map(db.prepare("SELECT id,name FROM categories").all().map(row=>[row.name,row.id]));
+  const insertPerson=db.prepare("INSERT OR IGNORE INTO award_people(display_name,normalized_name,programme,level) VALUES(?,?,?,?)");
+  const insertNominee=db.prepare("INSERT OR IGNORE INTO nominees(name,category_id,program,code,active,person_id,level,publication_status,profile_slug,source) VALUES(?,?,?,?,0,?,?, 'draft',?, 'pdf_import')");
+  db.exec("BEGIN IMMEDIATE");
+  try{
+    for(const item of confirmed){const level=item.group==="level-300"?"Level 300":item.group==="level-350"?"Level 350":"";const key=personKey(item.name);insertPerson.run(item.name,key,"",level);const personId=db.prepare("SELECT id FROM award_people WHERE normalized_name=?").get(key).id;const categoryId=categoryIds.get(item.category);const code=`PDF${crypto.createHash("sha256").update(`${item.category}|${key}`).digest("hex").slice(0,10).toUpperCase()}`;insertNominee.run(item.name,categoryId,"To be confirmed",code,personId,level,`${slugify(item.name)}-${categoryId}`);}
+    db.prepare("INSERT INTO audit_log(action,details) VALUES('awards.pdf_import_applied',?)").run(JSON.stringify({adminRole:admin.role||null,adminUsername:admin.username||null,total:approvedNominees.length}));db.exec("COMMIT");
+  }catch(error){db.exec("ROLLBACK");throw error;}
+  return importPreview(db);
 }
 
 function updateSettings(db, input) {
@@ -258,4 +308,4 @@ function adminData(db, filters={}) {
   return { settings: settings(db), metrics, transactions, adjustments };
 }
 
-module.exports={migrateAwards,settings,votingAvailability,validateInitiation,createTransaction,transaction,verifyAndCredit,markStatus,recordAdjustment,publicData,updateSettings,adminData};
+module.exports={migrateAwards,settings,votingAvailability,validateInitiation,createTransaction,transaction,verifyAndCredit,markStatus,recordAdjustment,publicData,updateSettings,adminData,importPreview,applyApprovedImport};

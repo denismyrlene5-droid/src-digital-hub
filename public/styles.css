@@ -166,12 +166,15 @@ button{cursor:pointer}
 .avatar img{width:100%;height:100%;object-fit:cover;border-radius:inherit}
 .rank-badge{font-size:10px;color:#8490a7;border:1px solid var(--line);padding:6px 8px;border-radius:999px}
 .nominee-card h3{margin:20px 0 5px;font-size:19px}
+.nominee-card h3 a{color:inherit;text-decoration:none}.nominee-card h3 a:hover{color:var(--gold2)}
 .nominee-category{font-size:12px;color:var(--gold);min-height:34px}
+.nominee-message{min-height:40px;color:#cbd2df;font-size:13px;line-height:1.55}
 .nominee-meta{display:flex;justify-content:space-between;align-items:center;margin:18px 0 14px;padding-top:14px;border-top:1px solid var(--line)}
 .nominee-meta span{font-size:11px;color:var(--muted)}
 .nominee-meta b{font-size:15px}
 .vote-btn{width:100%;border:1px solid rgba(215,173,84,.35);background:rgba(215,173,84,.07);color:var(--gold2);padding:11px;border-radius:11px;font-weight:800}
 .vote-btn:hover{background:linear-gradient(135deg,var(--gold2),var(--gold));color:#15100a}
+.vote-btn:disabled{cursor:not-allowed;opacity:.72}.nominee-share-actions{display:flex;justify-content:space-between;gap:10px;margin-top:12px}.nominee-share-actions a,.nominee-share-actions button{border:0;background:none;color:#adb6c8;font:inherit;font-size:11px;text-decoration:underline;cursor:pointer;padding:8px 0}.nominee-admin-preview{display:block;width:min(100%,280px);aspect-ratio:4/5;object-fit:cover;object-position:center;border-radius:16px;margin-top:10px;border:1px solid var(--hub-line)}
 .empty-state{grid-column:1/-1;text-align:center;color:var(--muted);padding:70px 20px;border:1px dashed var(--line);border-radius:18px}
 .leaderboard-section{padding-top:70px}
 .live-pill{border:1px solid rgba(121,214,154,.25);background:rgba(121,214,154,.07);color:#a9e8be;padding:8px 11px;border-radius:999px;font-size:12px}

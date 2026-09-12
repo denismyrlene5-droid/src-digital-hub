@@ -69,6 +69,17 @@ test("unified Awards admin updates the public countdown on desktop and mobile", 
   await expect(form).toBeVisible();
 });
 
+test("PDF nominee import preview and published nominee cards work on mobile",async({page},testInfo)=>{
+  test.skip(testInfo.project.name!=="desktop","The explicit mobile viewport runs once.");
+  await page.setViewportSize({width:390,height:844});await loginAsAdmin(page);await page.getByRole("button",{name:"Awards & Voting"}).click();
+  await page.getByRole("button",{name:"Preview import"}).click();await expect(page.getByText("95",{exact:true}).first()).toBeVisible();await expect(page.getByText("Needs PDF review")).toHaveCount(0);
+  page.once("dialog",dialog=>dialog.accept());await page.getByRole("button",{name:/Import 90 draft entries/}).click();
+  const admin=await (await page.request.get("/api/admin/awards")).json(),draft=admin.nominees.find(item=>item.source==="pdf_import");
+  expect(draft).toBeTruthy();await page.request.put(`/api/admin/awards/nominees/${draft.id}`,{data:{name:draft.name,program:draft.program,code:draft.code,categoryId:draft.categoryId,level:draft.level,publicationStatus:"published",active:true}});
+  await page.goto("/awards");await expect(page.getByRole("heading",{name:"Meet Your Nominees",exact:true})).toBeVisible();await expect(page.getByRole("heading",{name:draft.name})).toBeVisible();await expect(page.locator("#countdown")).toHaveCount(0);expect(await page.evaluate(()=>document.documentElement.scrollWidth-document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+  await page.getByRole("link",{name:draft.name}).click();await expect(page).toHaveURL(new RegExp(`/awards/nominees/${draft.profileSlug}$`));await expect(page.getByRole("heading",{name:draft.name})).toBeVisible();
+});
+
 test("Women Empowerment Seminar is responsive across homepage, publicity, details, and Admin", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop", "The explicit desktop and phone viewport matrix runs once.");
   const title = "Online Women Empowerment Seminar";

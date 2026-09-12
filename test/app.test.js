@@ -152,12 +152,14 @@ test("Awards administration is consolidated into the unified dashboard", async (
     const moduleScript = await (await fetch(`${app.base}/admin-awards.js`)).text();
     const shellScript = await (await fetch(`${app.base}/hub-shell.js`)).text();
     const awardsPage = await (await fetch(`${app.base}/awards`)).text();
+    const adminPage = await (await fetch(`${app.base}/admin`)).text();
     assert.match(moduleScript, /id="unifiedAwardsSettings"/);
     assert.match(moduleScript, /Awards launch \/ countdown target/);
     assert.match(moduleScript, /Payment reconciliation/);
     assert.match(moduleScript, /api\/admin\/awards\/settings/);
     assert.doesNotMatch(shellScript, /Awards Admin/);
     assert.doesNotMatch(awardsPage, /id="adminOverlay"/);
+    assert.match(adminPage, /admin-awards\.js\?v=2/);
   } finally { await app.close(); }
 });
 

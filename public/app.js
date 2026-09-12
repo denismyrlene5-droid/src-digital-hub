@@ -216,57 +216,6 @@ async function startMomoPayment() {
   } catch (error) { button.disabled = false; button.textContent = "Continue to Secure Payment"; setPaymentStatus("Could not start payment", error.message, false); }
 }
 
-async function loadAdmin() {
-  try {
-    const data = await api("/api/admin/summary");
-    byId("adminLogin").hidden = true; byId("adminContent").hidden = false; byId("adminLogout").hidden = false;
-    byId("adminTotalVotes").textContent = Number(data.totalVotes).toLocaleString();
-    byId("adminRevenue").textContent = `GH₵${Number(data.paidRevenue).toLocaleString()}`;
-    byId("adminNominees").textContent = data.nominees; byId("adminCategories").textContent = data.categories;
-    await loadAwardsAdmin();
-    return true;
-  } catch (error) {
-    byId("adminLogin").hidden = false; byId("adminContent").hidden = true; byId("adminLogout").hidden = true;
-    if (error.status === 503) byId("adminLoginMessage").textContent = "Set ADMIN_PASSWORD in .env and restart the server.";
-    if (error.status === 403) byId("adminLoginMessage").textContent = "This role can manage publicity but cannot access Awards administration.";
-    return false;
-  }
-}
-
-async function loadAwardsAdmin() {
-  const query=new URLSearchParams(); if(byId("transactionStatus")?.value)query.set("status",byId("transactionStatus").value);if(byId("transactionReference")?.value.trim())query.set("reference",byId("transactionReference").value.trim());if(byId("transactionCategory")?.value)query.set("categoryId",byId("transactionCategory").value);if(byId("transactionNominee")?.value)query.set("nomineeId",byId("transactionNominee").value);if(byId("transactionFrom")?.value)query.set("from",byId("transactionFrom").value);if(byId("transactionTo")?.value)query.set("to",`${byId("transactionTo").value}T23:59:59.999Z`);
-  const data=await api(`/api/admin/awards${query.size?`?${query}`:""}`);
-  byId("adminAwardsTitle").value=data.settings.awards_title;byId("adminVotingState").value=data.settings.voting_state;byId("adminPrice").value=data.settings.price_per_vote;byId("adminCurrency").value=data.settings.currency;byId("adminMaxVotes").value=data.settings.max_votes;byId("adminOpensAt").value=data.settings.opens_at?data.settings.opens_at.slice(0,16):"";byId("adminClosesAt").value=data.settings.closes_at?data.settings.closes_at.slice(0,16):"";byId("adminEventActive").checked=Boolean(data.settings.event_active);
-  byId("adminPublicResults").checked=Boolean(data.settings.public_results_visible);
-  byId("adminPending").textContent=Number(data.metrics.pending||0); byId("adminFailures").textContent=Number(data.metrics.verificationFailures||0);
-  byId("adminTransactions").innerHTML=data.transactions.length?data.transactions.slice(0,30).map(t=>`<tr><td>${escapeHtml(t.reference)}</td><td>${escapeHtml(t.nominee)}</td><td>${escapeHtml(t.votes)}</td><td>${escapeHtml(t.paymentStatus)}</td><td>${escapeHtml(t.verificationStatus)}</td><td>${escapeHtml(t.voteCreditStatus)}</td></tr>`).join(""):`<tr><td colspan="6">No payment transactions yet.</td></tr>`;
-  byId("adminCategoryList").innerHTML=data.categories.map(c=>`<label class="eligibility-row"><input type="checkbox" data-category-id="${c.id}" ${c.active?"checked":""}>${escapeHtml(c.name)}</label>`).join("");
-  byId("adminNomineeList").innerHTML=data.nominees.map(n=>`<label class="eligibility-row"><input type="checkbox" data-nominee-id="${n.id}" ${n.active?"checked":""}>${escapeHtml(n.name)} <small>${escapeHtml(n.category)}</small></label>`).join("");
-  const categoryValue=byId("transactionCategory").value,nomineeValue=byId("transactionNominee").value;byId("transactionCategory").innerHTML=`<option value="">All categories</option>`+data.categories.map(c=>`<option value="${c.id}">${escapeHtml(c.name)}</option>`).join("");byId("transactionNominee").innerHTML=`<option value="">All nominees</option>`+data.nominees.map(n=>`<option value="${n.id}">${escapeHtml(n.name)}</option>`).join("");byId("transactionCategory").value=categoryValue;byId("transactionNominee").value=nomineeValue;
-}
-
-function setupAdmin() {
-  const overlay = byId("adminOverlay");
-  const adminButton=byId("adminBtn");
-  if(!adminButton)return;
-  adminButton.addEventListener("click", async () => { overlay.classList.add("open"); document.body.classList.add("modal-open"); await loadAdmin(); });
-  const close = () => { overlay.classList.remove("open"); document.body.classList.remove("modal-open"); };
-  byId("closeAdmin").addEventListener("click", close); overlay.addEventListener("click", event => { if (event.target === overlay) close(); });
-  byId("adminLogin").addEventListener("submit", async event => {
-    event.preventDefault(); byId("adminLoginMessage").textContent = "";
-    try { await api("/api/admin/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: byId("adminUsername")?.value.trim() || "", password: byId("adminPassword").value }) }); byId("adminPassword").value = ""; await loadAdmin(); }
-    catch (error) { byId("adminLoginMessage").textContent = error.message; }
-  });
-  byId("adminLogout").addEventListener("click", async () => { await api("/api/admin/logout", { method: "POST" }); await loadAdmin(); });
-  byId("resetVotes").addEventListener("click", async () => {
-    if (!confirm("Reset all votes to zero?")) return;
-    await api("/api/admin/reset-votes", { method: "POST" }); await loadAwards(); await loadAdmin(); showToast("Votes reset", "All server-side votes were reset.");
-  });
-  byId("awardsSettingsForm").addEventListener("submit",async event=>{event.preventDefault();await api("/api/admin/awards/settings",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({awardsTitle:byId("adminAwardsTitle").value,eventActive:byId("adminEventActive").checked,votingState:byId("adminVotingState").value,opensAt:byId("adminOpensAt").value||null,closesAt:byId("adminClosesAt").value||null,pricePerVote:Number(byId("adminPrice").value),currency:byId("adminCurrency").value.toUpperCase(),maxVotes:Number(byId("adminMaxVotes").value),publicResultsVisible:byId("adminPublicResults").checked})});await loadAwards();await loadAdmin();showToast("Awards settings saved","Server-side voting controls are now active.");});
-  byId("transactionFilters").addEventListener("submit",async event=>{event.preventDefault();await loadAwardsAdmin();});
-  byId("adminContent").addEventListener("change",async event=>{const categoryId=event.target.dataset.categoryId,nomineeId=event.target.dataset.nomineeId;if(!categoryId&&!nomineeId)return;event.target.disabled=true;try{await api(categoryId?`/api/admin/awards/categories/${categoryId}`:`/api/admin/awards/nominees/${nomineeId}`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({active:event.target.checked})});await loadAwards();await loadAwardsAdmin();}catch(error){event.target.checked=!event.target.checked;showToast("Could not update eligibility",error.message);}finally{event.target.disabled=false;}});
-}
-
 function setupVoting() {
   byId("closeVoteModal").addEventListener("click", closeVoteModal);
   byId("voteModal").addEventListener("click", event => { if (event.target.id === "voteModal") closeVoteModal(); });
@@ -292,5 +241,5 @@ function setupCountdown() {
 }
 
 byId("searchInput").addEventListener("input", event => { searchTerm = event.target.value; renderNominees(); });
-setupVoting(); setupAdmin();
+setupVoting();
 Promise.all([loadAwards(), detectPaymentMode()]).then(()=>{setupCountdown();return loadReceiptPage();}).catch(error => showToast("Unable to load awards", error.message));

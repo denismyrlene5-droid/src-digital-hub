@@ -146,6 +146,21 @@ test("public navigation header remains in normal document flow", async () => {
   } finally { await app.close(); }
 });
 
+test("Awards administration is consolidated into the unified dashboard", async () => {
+  const app = await fixture();
+  try {
+    const moduleScript = await (await fetch(`${app.base}/admin-awards.js`)).text();
+    const shellScript = await (await fetch(`${app.base}/hub-shell.js`)).text();
+    const awardsPage = await (await fetch(`${app.base}/awards`)).text();
+    assert.match(moduleScript, /id="unifiedAwardsSettings"/);
+    assert.match(moduleScript, /Awards launch \/ countdown target/);
+    assert.match(moduleScript, /Payment reconciliation/);
+    assert.match(moduleScript, /api\/admin\/awards\/settings/);
+    assert.doesNotMatch(shellScript, /Awards Admin/);
+    assert.doesNotMatch(awardsPage, /id="adminOverlay"/);
+  } finally { await app.close(); }
+});
+
 test("public frontend retains accessibility and responsive spacing polish", async () => {
   const app = await fixture();
   try {

@@ -22,14 +22,13 @@
   const active = href => href === "/" ? path === "/" : path === href;
   const links = items => items.map(item => `<a href="${item.href}" class="hub-nav-link ${item.featured ? "hub-nav-featured" : ""} ${active(item.href) ? "is-active" : ""}" ${active(item.href) ? 'aria-current="page"' : ""}>${item.label}</a>`).join("");
   const extra = data.additionalNavigation.map(item => `<a href="${item.href}" ${active(item.href) ? 'aria-current="page"' : ""}>${item.label}</a>`).join("");
-  const awardsAdmin = path === "/awards" ? '<button class="hub-admin-trigger" id="adminBtn" type="button">Awards Admin</button>' : '';
   const header = document.getElementById("siteHeader");
   if (header) header.innerHTML = `<header class="hub-header">
     <a class="hub-brand" href="/" aria-label="SRC Digital Hub home"><img class="hub-brand-logo" src="${organization.logoUrl}" alt="UCC crest" width="54" height="54" fetchpriority="high"><span><strong class="hub-brand-campus">${organization.srcName}</strong><small class="hub-brand-council">${organization.institution}</small><small class="hub-brand-short">${organization.siteShortName}</small></span></a>
     <nav class="hub-desktop-nav" aria-label="Primary navigation">${links(data.navigation)}
       <details class="hub-more"><summary>More</summary><div>${extra}</div></details>
     </nav>
-    <div class="hub-header-actions">${awardsAdmin}<button class="hub-menu-button" type="button" aria-expanded="false" aria-controls="mobileNavigation"><span></span><span></span><span></span><span class="sr-only">Open menu</span></button></div>
+    <div class="hub-header-actions"><button class="hub-menu-button" type="button" aria-expanded="false" aria-controls="mobileNavigation"><span></span><span></span><span></span><span class="sr-only">Open menu</span></button></div>
     <nav class="hub-mobile-nav" id="mobileNavigation" aria-label="Mobile navigation" hidden>${links([...data.navigation, ...data.additionalNavigation])}</nav>
   </header>`;
   const footer = document.getElementById("siteFooter");

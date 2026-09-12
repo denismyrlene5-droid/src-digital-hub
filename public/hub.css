@@ -91,6 +91,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px soli
 .quick-card,.hub-card,.publicity-metrics article,.photo-tile,.admin-sidebar,.admin-table-wrap{
   border-radius:var(--hub-radius);border-color:var(--hub-line);box-shadow:0 8px 24px rgba(6,51,35,.05)
 }
+.cms-admin-section{margin-top:20px}.cms-admin-section>.admin-module-head{margin-top:0}.awards-settings-form{padding:0;box-shadow:none}.awards-settings-actions{display:flex;gap:10px;justify-content:flex-end}.awards-transaction-filters{grid-template-columns:minmax(150px,.45fr) minmax(190px,.7fr) minmax(180px,.6fr) minmax(180px,.6fr) auto}.awards-transaction-filters label{display:flex;flex-direction:column;gap:7px}.awards-transaction-filters label span{font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#55645b}.awards-transaction-table{min-width:1050px}.form-message.is-error,.admin-module-message.is-error{color:#9a3128}
 .quick-card,.hub-card{transition:transform .2s ease,border-color .2s ease,box-shadow .2s ease}
 .quick-card:hover,.hub-card:hover{transform:translateY(-3px);border-color:#b5c9be;box-shadow:var(--hub-shadow)}
 .quick-card>span,.placeholder-card>span{color:var(--hub-gold-dark)}
@@ -236,6 +237,7 @@ body.awards-page{background:var(--hub-bg);color:var(--hub-ink)}
   .awards-page .hero{margin-top:-76px;padding:150px 18px 76px}.awards-page .hero h1{font-size:clamp(43px,12vw,58px)}
   .awards-page .countdown-section{margin-top:-22px}.awards-page .admin-drawer{padding-inline:18px}.awards-page .admin-header{margin-inline:-18px;padding-inline:18px}
 }
+@media(max-width:768px){.awards-settings-actions{width:100%;flex-direction:column}.awards-settings-actions .hub-btn{width:100%}.awards-transaction-filters{grid-template-columns:1fr}.awards-transaction-table{min-width:0}}
 @media(max-width:480px){
   .hub-hero{padding-top:160px}.hub-hero h1{font-size:clamp(42px,13.5vw,54px)}.hub-hero .hero-service-line{font-size:14px;letter-spacing:.01em}
   .hub-section-heading h2,.voice-panel h2{font-size:33px}.quick-card{min-height:168px;padding:21px}

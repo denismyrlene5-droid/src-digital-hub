@@ -46,6 +46,29 @@ for (const route of publicRoutes) {
   });
 }
 
+test("unified Awards admin updates the public countdown on desktop and mobile", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop", "The desktop and mobile viewport matrix runs once.");
+  const original = await (await page.request.get("/api/awards")).json();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await loginAsAdmin(page);
+  await page.getByRole("button", { name: "Awards & Voting" }).click();
+  const form = page.locator("#unifiedAwardsSettings");
+  await expect(form).toBeVisible();
+  await expect(page.getByText("Reaching the countdown target does not automatically open voting.")).toBeVisible();
+  await form.locator('[name="votingState"]').selectOption("not_started");
+  await form.locator('[name="opensAt"]').fill("2099-09-15T12:30");
+  const expectedTarget = await form.locator('[name="opensAt"]').evaluate(input => new Date(input.value).toISOString());
+  await form.getByRole("button", { name: "Save Awards settings" }).click();
+  await expect(form.getByText("Awards settings saved.")).toBeVisible();
+  const publicAwards = await (await page.request.get("/api/awards")).json();
+  expect(publicAwards.voting.state).toBe("not_started");
+  expect(publicAwards.countdownTarget).toBe(expectedTarget);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+  await page.request.put("/api/admin/awards/settings", { data: { votingState: original.voting.state, opensAt: original.opensAt, closesAt: original.closesAt } });
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await expect(form).toBeVisible();
+});
+
 test("Women Empowerment Seminar is responsive across homepage, publicity, details, and Admin", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop", "The explicit desktop and phone viewport matrix runs once.");
   const title = "Online Women Empowerment Seminar";

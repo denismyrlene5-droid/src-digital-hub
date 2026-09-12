@@ -1,6 +1,6 @@
 # SRC Digital Hub
 
-This project extends the original SRC Awards localhost application into one Digital Hub while preserving the existing Awards categories, nominees, voting modal, leaderboard, Paystack test flow, and development payment simulation.
+This project extends the original SRC Awards localhost application into one Digital Hub while preserving the existing Awards categories, nominees, voting modal, leaderboard, payment history, and development payment simulation.
 
 ## Requirements and local start
 
@@ -34,7 +34,8 @@ Copy `.env.example` to `.env` and use long, distinct passwords:
 - `CONTENT_EDITOR_PASSWORD` — draft content, media, and executive editing without publish/delete authority
 - `ADMIN_USERS_JSON` — optional individual username accounts, for example an array of `{ "username": "name", "password": "<deployment-secret>", "role": "publicity_admin" }` records. Supported roles match the five roles above. Keep the value only in the deployment secret store and include the full active account list on every restart.
 - `DATABASE_PATH` — SQLite path; default `data/src-awards.sqlite`
-- `PAYSTACK_SECRET_KEY` — optional Paystack test secret only
+- `MOOLRE_API_USER`, `MOOLRE_PUBLIC_KEY`, `MOOLRE_ACCOUNT_NUMBER`, `MOOLRE_BUSINESS_EMAIL` — server-side Moolre hosted-checkout configuration
+- `PAYSTACK_SECRET_KEY` — optional legacy secret retained only to reconcile pre-migration Paystack transactions
 - `PORT`, `NODE_ENV`
 
 Authorization is checked on the server for every protected endpoint. Hiding a dashboard tab is not used as authorization. Never place secrets in `public/`.
@@ -98,11 +99,11 @@ Safe receipt / confirmation
 
 ### Provider modes
 
-The rest of Awards uses the common provider interface in `server/payment-providers.js`: initialization and trusted verification. Development simulation and Paystack test mode feed the same `verifyAndCredit` core; they do not maintain separate vote-credit logic.
+The rest of Awards uses the common provider interface in `server/payment-providers.js`: initialization and trusted verification. Development simulation, Moolre, and legacy Paystack reconciliation feed the same `verifyAndCredit` core; they do not maintain separate vote-credit logic.
 
 - `simulation` supports pending, successful, failed, cancelled, duplicate, repeated-verification, and amount-mismatch test cases. It is unavailable in production. If simulation is requested with `NODE_ENV=production`, startup fails safely.
-- `paystack_test` uses the existing documented charge and transaction-verification calls. The webhook validates the existing Paystack HMAC signature and then re-verifies the transaction server-side before crediting.
-- No production provider mode or production credential is enabled. Provider production credentials, live API behavior, webhook delivery, operational monitoring, refund/reversal policy, and a real-provider acceptance test remain required.
+- `moolre_sandbox` and `moolre_live` use Moolre hosted links and trusted Payment Status queries. Callback and return data never credit votes without that server-side query.
+- Legacy Paystack verification remains available for transactions created before the switch; the application no longer creates Paystack charges.
 
 ### Reconciliation
 
@@ -112,8 +113,9 @@ Safe server logs use the public transaction reference for creation, initializati
 
 ### Payment configuration
 
-- `PAYMENT_PROVIDER` — reserved provider selection (`simulation` locally; production mode is not enabled yet)
-- `PAYSTACK_SECRET_KEY` — optional Paystack **test** secret, server-side only
+- `PAYMENT_PROVIDER` — `simulation`, `moolre_sandbox`, `moolre_live`, or `disabled`
+- `MOOLRE_API_USER`, `MOOLRE_PUBLIC_KEY`, `MOOLRE_ACCOUNT_NUMBER`, `MOOLRE_BUSINESS_EMAIL` — required Moolre values, server-side only
+- `PAYSTACK_SECRET_KEY` — optional legacy reconciliation credential, server-side only
 - `SIMULATED_PAYMENTS_ENABLED` — local/test simulation switch; must be `false` in production
 
 Do not place any payment credential in `public/`, the database settings table, logs, or admin UI.
@@ -127,7 +129,7 @@ Run `npm test` for API/regression tests, `npm run lint` for JavaScript quality c
 ## Production-readiness documentation
 
 - `docs/PRODUCTION_READINESS.md` — environments, hosting requirements, administrator security, review findings, and controlled launch
-- `docs/PAYMENT_PROVIDER_SETUP.md` — Paystack test/live requirements and payment acceptance gates
+- `docs/PAYMENT_PROVIDER_SETUP.md` — Moolre/Railway variables, callback URLs, account requirements, and acceptance gates
 - `docs/BACKUP_AND_RECOVERY.md` — SQLite/media backup, verification, restore testing, and payment reconciliation
 - `docs/DEPLOYMENT_CHECKLIST.md` — staging, production, smoke-test, and launch checklists
 - `docs/OPERATIONS_RUNBOOK.md` — health, reconciliation, pause/resume, outages, credentials, and monitoring

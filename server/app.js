@@ -4,7 +4,7 @@ const fs = require("fs");
 const path = require("path");
 const { createDatabase, adminSummary } = require("./database");
 const awards = require("./awards");
-const { createSimulatedProvider, createPaystackProvider } = require("./payment-providers");
+const { createSimulatedProvider, createPaystackProvider, createMoolreProvider } = require("./payment-providers");
 const { createAuth, rateLimit, securityHeaders } = require("./security");
 const { createPublicityRepository } = require("./publicity");
 const { createPublicityRouter } = require("./publicity-routes");
@@ -21,8 +21,6 @@ const { createCampusPulseRouter } = require("./campus-pulse-routes");
 const { createNominationRepository } = require("./nominations");
 const { createNominationRouter } = require("./nomination-routes");
 
-const normalizePhone = phone => String(phone || "").replace(/[^\d+]/g, "");
-const validEmail = email => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && email.length <= 254;
 function parseAdminUsers(value) {
   if (!String(value || "").trim()) return [];
   let parsed;
@@ -77,8 +75,15 @@ function createApp(options = {}) {
   const publicDirectory = path.join(__dirname, "..", "public");
   const hubTemplate = fs.readFileSync(path.join(publicDirectory, "hub.html"), "utf8");
   const paystackKey = options.paystackKey ?? process.env.PAYSTACK_SECRET_KEY ?? "";
-  const paymentProvider = (options.paymentProvider ?? process.env.PAYMENT_PROVIDER) || (paystackKey.startsWith("sk_test_") ? "paystack_test" : "simulation");
-  if (!new Set(["simulation","paystack_test","paystack_live","disabled"]).has(paymentProvider)) throw new Error("PAYMENT_PROVIDER must be simulation, paystack_test, paystack_live, or disabled.");
+  const paymentProvider = (options.paymentProvider ?? process.env.PAYMENT_PROVIDER) || "simulation";
+  if (!new Set(["simulation","moolre_sandbox","moolre_live","paystack_test","paystack_live","disabled"]).has(paymentProvider)) throw new Error("PAYMENT_PROVIDER must be simulation, moolre_sandbox, moolre_live, or disabled.");
+  const moolreConfig = {
+    apiUser: options.moolreApiUser ?? process.env.MOOLRE_API_USER ?? "",
+    publicKey: options.moolrePublicKey ?? process.env.MOOLRE_PUBLIC_KEY ?? "",
+    accountNumber: options.moolreAccountNumber ?? process.env.MOOLRE_ACCOUNT_NUMBER ?? "",
+    businessEmail: options.moolreBusinessEmail ?? process.env.MOOLRE_BUSINESS_EMAIL ?? "",
+    expirationMinutes: options.moolreExpirationMinutes ?? process.env.MOOLRE_LINK_EXPIRATION_MINUTES ?? 15
+  };
   const adminPassword = options.adminPassword ?? process.env.ADMIN_PASSWORD ?? "";
   const publicityAdminPassword = options.publicityAdminPassword ?? process.env.PUBLICITY_ADMIN_PASSWORD ?? "";
   const studentAffairsAdminPassword = options.studentAffairsAdminPassword ?? process.env.STUDENT_AFFAIRS_ADMIN_PASSWORD ?? "";
@@ -97,13 +102,20 @@ function createApp(options = {}) {
   if(production&&!adminPassword&&!adminUsers.some(account=>account?.role==="super_admin"))throw new Error("Production requires a configured Super Admin account.");
   const simulationRequested = paymentProvider === "simulation" && (options.simulationEnabled ?? !["0", "false", "off"].includes(String(process.env.SIMULATED_PAYMENTS_ENABLED || "true").toLowerCase()));
   if (production && simulationRequested) throw new Error("Simulated payments cannot be enabled in production.");
-  if(production&&paymentProvider==="paystack_test")throw new Error("Paystack test mode cannot be used in production.");
-  if(staging&&paymentProvider==="paystack_live")throw new Error("Paystack live mode cannot be used in staging.");
-  if(paymentProvider==="paystack_live"&&!paystackKey.startsWith("sk_live_"))throw new Error("Paystack live mode requires a live server secret key.");
+  if(production&&paymentProvider==="moolre_sandbox")throw new Error("Moolre sandbox mode cannot be used in production.");
+  if(staging&&paymentProvider==="moolre_live")throw new Error("Moolre live mode cannot be used in staging.");
   const simulationEnabled = !production && simulationRequested;
   const simulatedProvider = createSimulatedProvider({ enabled: simulationEnabled });
-  const paystackMode=paymentProvider==="paystack_live"?"live":"test";
-  const paystackProvider = createPaystackProvider({ secretKey: paymentProvider.startsWith("paystack_") ? paystackKey : "", mode:paystackMode, fetchImpl: options.fetchImpl, diagnosticsEnabled: staging, diagnosticLogger: options.paymentDiagnosticLogger || console.info });
+  const paystackMode=paystackKey.startsWith("sk_live_")?"live":"test";
+  const paystackProvider = createPaystackProvider({ secretKey: paystackKey, mode:paystackMode, fetchImpl: options.fetchImpl, diagnosticsEnabled: staging, diagnosticLogger: options.paymentDiagnosticLogger || console.info });
+  const moolreMode=paymentProvider==="moolre_live"?"live":"sandbox";
+  const moolreProvider=createMoolreProvider({...moolreConfig,mode:moolreMode,fetchImpl:options.fetchImpl});
+  const activePaymentProvider=paymentProvider.startsWith("moolre_")&&moolreProvider.enabled?moolreProvider:paymentProvider==="simulation"&&simulatedProvider.enabled?simulatedProvider:null;
+  const providerForTransaction=item=>{
+    if(item?.provider===moolreProvider.name&&moolreProvider.enabled)return moolreProvider;
+    if(item?.provider===paystackProvider.name&&paystackProvider.enabled)return paystackProvider;
+    return null;
+  };
   const securityEvent=(event,details={})=>console.warn(JSON.stringify({timestamp:new Date().toISOString(),category:"security",event,...details}));
   const auth = createAuth({ db, adminUsers, adminPassword, publicityAdminPassword, studentAffairsAdminPassword, awardsAdminPassword, contentEditorPassword, secureCookies: production || staging, onSecurityEvent:securityEvent });
   const paymentLimit = rateLimit({ windowMs: 60_000, max: 20 });
@@ -164,6 +176,21 @@ function createApp(options = {}) {
   app.use("/api/nominations", createNominationRouter({ repository: nominations, uploadDirectory, requireAwardsAdmin: auth.requireAwardsAdmin, submissionLimit: nominationSubmissionLimit, audit: content.audit }));
   app.use(express.json({ limit: "32kb" }));
 
+  app.post("/api/moolre/callback", async (req,res,next)=>{
+    try{
+      const reference=String(req.body?.data?.externalref||"");
+      if(!/^SRCVOTE-[A-Za-z0-9_-]{20,60}$/.test(reference))return res.status(400).json({ok:false});
+      const item=awards.transaction(db,reference,true);
+      if(!item||!item.provider.startsWith("moolre_"))return res.status(404).json({ok:false});
+      const provider=providerForTransaction(item);
+      if(!provider)return res.status(503).json({ok:false});
+      const result=await provider.verify(item.reference,item);
+      if(result.status==="successful")awards.verifyAndCredit(db,item.reference,result,"moolre_callback");
+      else if(result.status!=="pending")awards.markStatus(db,item.reference,result.status,result.reason);
+      res.json({ok:true});
+    }catch(error){next(error);}
+  });
+
   function health(req,res){
     let database="healthy",storage="healthy";
     try{db.prepare("SELECT 1 AS ok").get();}catch{database="unhealthy";}
@@ -173,7 +200,15 @@ function createApp(options = {}) {
   }
   app.get("/health",health);
   app.get("/api/health",health);
-  app.get("/api/config", (req, res) => res.json({ paystackConfigured: paystackProvider.enabled, simulationEnabled, paymentProvider: paystackProvider.enabled ? paystackProvider.name : simulationEnabled ? "simulation" : "disabled", maintenanceMode, environment }));
+  app.get("/api/config", (req, res) => res.json({
+    paymentConfigured:Boolean(activePaymentProvider&&activePaymentProvider.name!=="simulation"),
+    moolreConfigured:moolreProvider.enabled,
+    paystackConfigured:paystackProvider.enabled,
+    simulationEnabled,
+    paymentProvider:activePaymentProvider?.name||"disabled",
+    maintenanceMode,
+    environment
+  }));
   app.get("/api/awards/files/:token", (req,res) => {
     const token=String(req.params.token||""); if(!/^[a-f0-9]{32}\.[a-z0-9]{2,5}$/.test(token))return res.sendStatus(404);
     const visible=db.prepare("SELECT 1 FROM nominees n JOIN categories c ON c.id=n.category_id WHERE n.photo_token=? AND n.active=1 AND c.active=1").get(token);
@@ -189,22 +224,21 @@ function createApp(options = {}) {
     try {
       if(maintenanceMode)return res.status(503).json({ok:false,message:"Voting is temporarily unavailable during maintenance."});
       const nomineeId=Number(req.body?.nomineeId), votes=Number(req.body?.votes);
-      const provider=req.body?.provider || (paystackProvider.enabled ? paystackProvider.name : "simulation");
-      if(provider==="simulation"&&!simulatedProvider.enabled) return res.status(404).json({ok:false,message:"Simulation is disabled."});
-      if(provider.startsWith("paystack_")&&(!paystackProvider.enabled||provider!==paystackProvider.name)) return res.status(503).json({ok:false,message:"The configured payment provider is unavailable."});
-      if(!["simulation","paystack_test","paystack_live"].includes(provider)) return res.status(400).json({ok:false,message:"Unsupported payment provider."});
-      if(provider.startsWith("paystack_")){
-        const email=String(req.body?.email||"").trim(),phone=normalizePhone(req.body?.phone),network=String(req.body?.network||"");
-        if(!validEmail(email))return res.status(400).json({ok:false,message:"Valid email required."});
-        if(!/^233\d{9}$/.test(phone.replace(/^\+/,""))&&!/^0\d{9}$/.test(phone))return res.status(400).json({ok:false,message:"Valid Ghana Mobile Money number required."});
-        if(!["mtn","atl","vod"].includes(network))return res.status(400).json({ok:false,message:"Unsupported Mobile Money network."});
-      }
-      const created=awards.createTransaction(db,{nomineeId,votes,provider});
+      if(!activePaymentProvider)return res.status(503).json({ok:false,message:"Payments are temporarily unavailable because Moolre is not configured."});
+      const requestedProvider=String(req.body?.provider||activePaymentProvider.name);
+      if(requestedProvider!==activePaymentProvider.name)return res.status(400).json({ok:false,message:"Unsupported payment provider."});
+      const provider=activePaymentProvider.name;
+      const metadata=provider.startsWith("moolre_")?{recipientAccount:moolreProvider.accountNumber}:{};
+      const created=awards.createTransaction(db,{nomineeId,votes,provider,metadata});
       if(!created.ok) return res.status(created.status).json({ok:false,message:created.message});
-      const initialized=provider==="simulation" ? await simulatedProvider.initialize(created) : await paystackProvider.initialize(created,{email:String(req.body?.email||"").trim(),phone:normalizePhone(req.body?.phone),network:String(req.body?.network||"")});
-      if(!initialized.ok) { awards.markStatus(db,created.reference,"failed","initialization_failed"); return res.status(502).json({ok:false,reference:created.reference,message:initialized.message}); }
+      const base=publicBaseUrl||`${req.protocol}://${req.get("host")}`;
+      const initialized=provider==="simulation" ? await simulatedProvider.initialize(created) : await moolreProvider.initialize(created,{callbackUrl:`${base}/api/moolre/callback`,redirectUrl:`${base}/awards/payment/${created.reference}`});
+      if(!initialized.ok) {
+        if(!initialized.uncertain)awards.markStatus(db,created.reference,"failed","initialization_failed");
+        return res.status(initialized.uncertain?202:502).json({ok:Boolean(initialized.uncertain),reference:created.reference,status:initialized.status||"failed",message:initialized.message});
+      }
       console.info(`[awards] payment_initialized reference=${created.reference} provider=${provider}`);
-      res.status(201).json({ok:true,reference:created.reference,nominee:created.nominee.name,category:created.nominee.category,votes:created.votes,pricePerVote:created.pricePerVote,expectedAmount:created.expectedAmount,currency:created.currency,status:initialized.status,simulated:Boolean(initialized.simulated),displayText:initialized.displayText});
+      res.status(201).json({ok:true,reference:created.reference,nominee:created.nominee.name,category:created.nominee.category,votes:created.votes,pricePerVote:created.pricePerVote,expectedAmount:created.expectedAmount,currency:created.currency,status:initialized.status,simulated:Boolean(initialized.simulated),displayText:initialized.displayText,authorizationUrl:initialized.authorizationUrl});
     } catch(error){ next(error); }
   });
   app.post("/api/awards/transactions/:reference/simulate", paymentLimit, (req,res,next)=>{
@@ -221,10 +255,11 @@ function createApp(options = {}) {
     try {
       const item=awards.transaction(db,req.params.reference,true); if(!item) return res.status(404).json({ok:false,message:"Transaction not found."});
       if(item.provider==="simulation") return res.status(400).json({ok:false,message:"Use the development simulation action."});
-      if(!paystackProvider.enabled) return res.status(503).json({ok:false,message:"Payment verification is unavailable."});
+      const provider=providerForTransaction(item);
+      if(!provider) return res.status(503).json({ok:false,message:"Payment verification is temporarily unavailable."});
       console.info(`[awards] verification_attempted reference=${item.reference}`);
-      const result=await paystackProvider.verify(item.reference);
-      if(result.status==="successful") { const verified=awards.verifyAndCredit(db,item.reference,result,"paystack_verify"); return res.status(verified.ok?200:400).json({...verified,transaction:awards.transaction(db,item.reference)}); }
+      const result=await provider.verify(item.reference,item);
+      if(result.status==="successful") { const verified=awards.verifyAndCredit(db,item.reference,result,`${item.provider}_verify`); return res.status(verified.ok?200:400).json({...verified,transaction:awards.transaction(db,item.reference)}); }
       if(result.status!=="pending") awards.markStatus(db,item.reference,result.status,result.reason);
       res.json({ok:true,credited:false,transaction:awards.transaction(db,item.reference)});
     } catch(error){ next(error); }
@@ -247,21 +282,7 @@ function createApp(options = {}) {
 
   app.post("/api/mobile-money-charge", paymentLimit, async (req, res, next) => {
     try {
-      if(maintenanceMode)return res.status(503).json({ok:false,message:"Voting is temporarily unavailable during maintenance."});
-      if (!paystackProvider.enabled) return res.status(400).json({ ok: false, message: "Paystack test mode is not configured." });
-      const vote = parseVote(req.body);
-      const email = String(req.body?.email || "").trim();
-      const phone = normalizePhone(req.body?.phone);
-      const provider = String(req.body?.provider || "");
-      if (!vote) return res.status(400).json({ ok: false, message: "Invalid vote request." });
-      if (!validEmail(email)) return res.status(400).json({ ok: false, message: "Valid email required." });
-      if (!/^233\d{9}$/.test(phone.replace(/^\+/, "")) && !/^0\d{9}$/.test(phone)) return res.status(400).json({ ok: false, message: "Valid Ghana Mobile Money number required." });
-      if (!["mtn", "atl", "vod"].includes(provider)) return res.status(400).json({ ok: false, message: "Unsupported Mobile Money network." });
-      const created=awards.createTransaction(db,{nomineeId:vote.nomineeId,votes:vote.votes,provider:paystackProvider.name});
-      if(!created.ok) return res.status(created.status).json({ok:false,message:created.message});
-      const result=await paystackProvider.initialize(created,{email,phone,network:provider});
-      if(!result.ok){awards.markStatus(db,created.reference,"failed","initialization_failed");return res.status(502).json({ok:false,message:result.message});}
-      res.json({ok:true,reference:created.reference,status:result.status,displayText:result.displayText,expectedAmount:created.expectedAmount,currency:created.currency});
+      res.status(410).json({ok:false,message:"This payment endpoint has moved to Moolre hosted checkout. Refresh the Awards page and try again."});
     } catch (error) { next(error); }
   });
 
@@ -271,10 +292,11 @@ function createApp(options = {}) {
       const local = awards.transaction(db,req.params.reference,true);
       if (!local) return res.status(404).json({ status: "unknown" });
       if (local.voteCreditStatus === "credited") return res.json({ status: "success", credited: false });
-      if(!paystackProvider.enabled) return res.json({status:"pending"});
-      const result=await paystackProvider.verify(local.reference);
+      const provider=providerForTransaction(local);
+      if(!provider)return res.json({status:"pending"});
+      const result=await provider.verify(local.reference,local);
       if (result.status === "successful") {
-        const credited = awards.verifyAndCredit(db,local.reference,result,"paystack_verify");
+        const credited = awards.verifyAndCredit(db,local.reference,result,`${local.provider}_verify`);
         if (!credited.ok) return res.status(400).json({ status: "failed", message: "Payment amount mismatch." });
         return res.json({ status: "success", credited: credited.credited });
       }

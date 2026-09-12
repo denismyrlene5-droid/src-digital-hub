@@ -36,7 +36,7 @@ For Linux hosting, use an equivalent protected absolute directory. Supply `DATAB
 
 ## Payment recovery after restore
 
-Never blindly replace newer payment data with an older database. Pause new voting first. Determine the backup timestamp, then reconcile every provider transaction created or updated after it using Paystack's transaction records. Signed provider retries remain idempotent, but a restored database may not know about post-backup references.
+Never blindly replace newer payment data with an older database. Pause new voting first. Determine the backup timestamp, then reconcile every provider transaction created or updated after it using Moolre Payment Status and, where applicable, legacy Paystack records. Provider retries remain idempotent, but a restored database may not know about post-backup references.
 
 For each missing provider-confirmed payment, use a reviewed recovery procedure that reconstructs the original server reference, nominee, vote quantity, stored expected amount, currency, and provider ID before verification. Do not credit based on screenshots or webhook payload alone. Re-run trusted server verification, confirm unique provider reference constraints, and audit every recovery. Reconcile reversals/refunds after successful payments before reopening voting.
 

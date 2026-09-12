@@ -115,11 +115,13 @@ function transaction(db, reference, admin = false) {
     p.votes,p.price_per_vote AS pricePerVote,p.expected_amount AS expectedAmount,p.paid_amount AS paidAmount,p.currency,p.provider,
     p.provider_reference AS providerReference,p.payment_status AS paymentStatus,p.verification_status AS verificationStatus,
     p.vote_credit_status AS voteCreditStatus,p.created_at AS createdAt,p.updated_at AS updatedAt,p.payment_verified_at AS paymentVerifiedAt,
-    p.votes_credited_at AS votesCreditedAt,p.failure_reason AS failureReason,
+    p.votes_credited_at AS votesCreditedAt,p.failure_reason AS failureReason,p.metadata_json AS metadataJson,
     a.action AS adjustmentAction,a.votes_removed AS votesRemoved,a.created_at AS adjustedAt
     FROM payments p JOIN nominees n ON n.id=p.nominee_id JOIN categories c ON c.id=p.category_id
     LEFT JOIN payment_adjustments a ON a.transaction_reference=p.reference WHERE p.reference=? OR p.public_id=?`).get(reference, reference);
   if (!row) return null;
+  if(admin){try{row.metadata=JSON.parse(row.metadataJson||"{}");}catch{row.metadata={};}}
+  delete row.metadataJson;
   if (!admin) delete row.providerReference, delete row.failureReason, delete row.categoryId, delete row.nomineeId;
   return row;
 }
@@ -140,7 +142,9 @@ function verifyAndCredit(db, reference, result, source = "provider_verify") {
     const status = PAYMENT_STATUSES.has(result?.status) ? result.status : "failed";
     return rejectVerification(db, existing.reference, result?.reason || "payment_not_successful", status);
   }
+  if(result.reference&&String(result.reference)!==existing.reference)return rejectVerification(db,existing.reference,"transaction_reference_mismatch");
   if (Number(result.amount) !== Number(existing.expectedAmount) || String(result.currency).toUpperCase() !== existing.currency) return rejectVerification(db, existing.reference, "amount_or_currency_mismatch");
+  if(existing.provider.startsWith("moolre_")&&existing.metadata?.recipientAccount&&String(result.recipientAccount||"")!==String(existing.metadata.recipientAccount))return rejectVerification(db,existing.reference,"recipient_account_mismatch");
   if(result.metadata && (Number(result.metadata.nominee_id)!==existing.nomineeId || Number(result.metadata.votes)!==existing.votes)) return rejectVerification(db,existing.reference,"transaction_metadata_mismatch");
   if (result.providerReference && existing.providerReference && result.providerReference !== existing.providerReference) return rejectVerification(db, existing.reference, "provider_reference_mismatch");
   if (result.providerReference) {

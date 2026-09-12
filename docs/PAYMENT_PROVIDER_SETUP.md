@@ -1,86 +1,70 @@
-# Paystack payment-provider setup
+# Moolre payment-provider setup
 
 ## Current status
 
-The repository implements server-side Ghana Mobile Money charges, transaction verification, HMAC-SHA512 webhook authentication, amount/currency/metadata checks, and atomic idempotent vote crediting. Development uses `simulation`; staging may use `paystack_test`; production may select `paystack_live` only when all launch gates are satisfied.
+New Awards payments use Moolre hosted checkout. The server creates a unique pending transaction and calculates its amount before requesting a single-use hosted link. A callback or payment return only triggers a server-to-server status query; neither is trusted as proof of payment. The existing SQLite transaction and vote ledgers provide atomic, idempotent fulfillment.
 
-This document does not authorize real payments. Live credentials and an approved Paystack business account are still external requirements.
+The previous Paystack verifier and signed webhook remain available only to reconcile Paystack transactions already stored before this migration. The retired `/api/mobile-money-charge` endpoint cannot create new Paystack charges.
 
 Official references:
 
-- [Paystack payment channels and Ghana Mobile Money](https://paystack.com/docs/payments/payment-channels/)
-- [Paystack transaction verification API](https://paystack.com/docs/api/transaction/)
-- [Paystack webhook signature verification](https://paystack.com/docs/payments/webhooks/)
-- [Paystack refunds](https://paystack.com/docs/payments/refunds/)
+- [Generate Payment Link](https://docs.moolre.com/ai/generate-payment-link.html)
+- [Payment Status](https://docs.moolre.com/ai/live/payment-status.html)
+- [Webhooks and Callbacks](https://docs.moolre.com/ai/guides/webhooks-and-callbacks.html)
+- [Authentication](https://docs.moolre.com/ai/guides/authentication.html)
+- [Idempotency and References](https://docs.moolre.com/ai/guides/idempotency-and-references.html)
 
-## Credentials and configuration
+## Railway variables
 
-| Name | Classification | Purpose |
+| Railway variable | Moolre dashboard/account field | Purpose |
 |---|---|---|
-| `BASE_URL` | Public, required in staging/production | Canonical HTTPS application origin; do not append a path |
-| `PAYMENT_PROVIDER` | Public server config, required | `simulation`, `paystack_test`, `paystack_live`, or `disabled` |
-| `PAYSTACK_SECRET_KEY` | Secret, required for either Paystack mode | Server authentication and webhook HMAC verification |
-| `SIMULATED_PAYMENTS_ENABLED` | Public server config | Local/testing switch; must be false in production |
+| `PAYMENT_PROVIDER` | Not a credential | Use `moolre_sandbox` for staging or `moolre_live` for production |
+| `MOOLRE_API_USER` | API Username | Sent only in the server-side `X-API-USER` header |
+| `MOOLRE_PUBLIC_KEY` | Public API Key | Sent only in the server-side `X-API-PUBKEY` header |
+| `MOOLRE_ACCOUNT_NUMBER` | Moolre Account Number | Intended recipient account and status-query scope |
+| `MOOLRE_BUSINESS_EMAIL` | Business/Merchant Email | Required by hosted payment-link creation |
+| `MOOLRE_LINK_EXPIRATION_MINUTES` | Not a credential | Optional single-use link lifetime; defaults to 15 |
+| `BASE_URL` | Public site origin | `https://uccwisesrc.com` in production |
+| `SIMULATED_PAYMENTS_ENABLED` | Not a credential | Must be `false` in production |
+| `PAYSTACK_SECRET_KEY` | Legacy Paystack secret key | Optional; retain temporarily only while old pending Paystack transactions need reconciliation |
 
-The current server-to-server Charge API flow does not use a public key in the browser. Do not add a public key unless the implementation changes to an official client checkout flow. Paystack signs webhooks with the account secret key; there is no separate webhook-secret variable in the present implementation.
+The selected hosted-link/status integration does **not** use Moolre's private key. Moolre's published callback documentation does not define a callback HMAC secret or signature header, so no callback-secret variable is invented. Callbacks are untrusted notifications and are independently verified through Payment Status before votes can be credited.
 
-## Provider account preparation
+## Callback and return settings
 
-1. Create the organization-owned Paystack account using official SRC/institution details.
-2. Complete Paystack's current Ghana business verification and settlement requirements in the provider dashboard. The institution must confirm requirements directly with Paystack; the application cannot determine account approval.
-3. Restrict provider-dashboard access to named authorized operators and enable provider-supported MFA.
-4. Obtain test credentials for staging. Never reuse production credentials in development or ordinary staging.
-5. Configure the staging webhook as `https://<staging-host>/api/paystack/webhook`.
-6. Confirm Ghana Mobile Money is enabled for the account. The implemented provider codes are `mtn`, `atl`, and `vod`, matching Paystack's documented Ghana codes.
+- Payment callback URL: `https://uccwisesrc.com/api/moolre/callback`
+- Payment return URL: generated per transaction as `https://uccwisesrc.com/awards/payment/<SRCVOTE-reference>`
+- Settlement Callback URL: not implemented or required for vote fulfillment. Settlement tracking is separate from confirming a customer payment.
 
-## Development
-
-Use `APP_ENV=development`, `PAYMENT_PROVIDER=simulation`, and `SIMULATED_PAYMENTS_ENABLED=true`. No provider credential is needed. Simulation must never be used to demonstrate a real financial settlement.
+If the Moolre dashboard requires an account-level payment callback, enter the payment callback URL above. The application also sends the same callback and the transaction-specific return URL when it creates each hosted link.
 
 ## Staging
 
-Use a separate database, upload location, administrator passwords, and Paystack test secret:
+Use a separate database and Moolre sandbox credentials:
 
 ```text
 APP_ENV=staging
 BASE_URL=https://<staging-host>
-PAYMENT_PROVIDER=paystack_test
+PAYMENT_PROVIDER=moolre_sandbox
 SIMULATED_PAYMENTS_ENABLED=false
-PAYSTACK_SECRET_KEY=<staging secret store value>
+MOOLRE_API_USER=<Railway secret value>
+MOOLRE_PUBLIC_KEY=<Railway secret value>
+MOOLRE_ACCOUNT_NUMBER=<Railway secret value>
+MOOLRE_BUSINESS_EMAIL=<Railway secret value>
 ```
 
-Configure the provider dashboard's test webhook to the staging URL. The Mobile Money Charge API may return an offline/pending state; the system waits for a signed `charge.success` webhook or calls Verify Transaction. Initialization never credits votes.
+Confirm with Moolre that the account is enabled for API access and hosted payment links and that the account number accepts the intended GHS payment channels. API username, public key, private key, account number, and callback configuration are distinct values and must not be substituted for one another.
 
-## Staging acceptance tests
+## Acceptance checks before live mode
 
-1. Initiate a one-vote payment and confirm the stored amount was calculated by the backend.
-2. Complete a successful test payment and confirm exactly one ledger entry and one vote credit.
-3. Exercise failed, cancelled, and pending cases supported by the provider test environment.
-4. replay the same signed webhook and verify no extra vote is added.
-5. trigger repeated verification requests and confirm idempotency.
-6. test an amount/currency mismatch using the automated test harness, not by altering provider data.
-7. confirm an invalid signature is rejected.
-8. confirm a success redirect or receipt refresh does not credit votes.
-9. confirm transaction reconciliation shows the correct state without payer secrets.
-10. record a test refund/reversal internally only after the provider dashboard confirms it; confirm votes are removed once.
+1. Keep production at `PAYMENT_PROVIDER=disabled` while validating sandbox on staging.
+2. Initiate one vote and confirm the link request sends the server-calculated GHS amount.
+3. Complete a sandbox payment and confirm exactly one payment ledger entry and one vote credit.
+4. Replay its callback and refresh the return page repeatedly; confirm no extra votes are added.
+5. Leave a payment pending/interrupted and confirm **Check Payment Again** safely re-queries Moolre.
+6. Test failed and cancelled payment experiences supported by the Moolre account.
+7. Confirm invalid, unknown, amount-mismatched, and recipient-mismatched responses never credit votes.
+8. Confirm old pending Paystack references can still be reconciled before removing `PAYSTACK_SECRET_KEY`.
+9. Obtain explicit financial approval before changing production to `moolre_live` and conducting a separately authorized small live transaction.
 
-## Live-mode gate
-
-Before setting `PAYMENT_PROVIDER=paystack_live`:
-
-- Provider account is approved and live Mobile Money is enabled.
-- `BASE_URL` is the final HTTPS origin.
-- Live webhook URL is configured and a signed delivery has been tested.
-- Live secret is in the hosting secret store, never a file or database setting.
-- Database and media backups plus restore testing are complete.
-- Monitoring and on-call ownership are active.
-- Refund/reversal policy is signed off.
-- A separately authorized, small controlled live transaction is scheduled.
-
-Production refuses simulation, refuses Paystack test mode, and refuses live mode without a live-key prefix. There is no silent fallback.
-
-## Refund limitation
-
-Paystack documents a Refund API, but this application intentionally does not call it yet. The internal protected adjustment endpoint records a refund/reversal only after an authorized operator confirms the external provider outcome and supplies the exact transaction and provider references. Provider-side refund initiation and refund-webhook mapping require a separately reviewed implementation and test credentials.
-
-**REAL PAYMENTS: NOT YET ENABLED**
+No live charge is initiated by repository tests.

@@ -7,8 +7,9 @@ const crypto = require("node:crypto");
 const sharp = require("sharp");
 const { DatabaseSync } = require("node:sqlite");
 const { createApp } = require("../server/app");
+const awards = require("../server/awards");
 const { createPublicityRepository } = require("../server/publicity");
-const { createPaystackProvider } = require("../server/payment-providers");
+const { createPaystackProvider, createMoolreProvider } = require("../server/payment-providers");
 const { createCampusPulseRepository, normalizeGhanaPhone } = require("../server/campus-pulse");
 const { createNominationRepository, pairKey, csvCell } = require("../server/nominations");
 
@@ -287,8 +288,7 @@ test("duplicate authenticated provider webhooks are re-verified and credit exact
   const app=await fixture({paystackKey:secret,paymentProvider:"paystack_test",fetchImpl});
   try{
     const before=app.db.prepare("SELECT vote_total AS total FROM nominees WHERE id=1").get().total;
-    const created=await fetch(`${app.base}/api/mobile-money-charge`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({nomineeId:1,votes:3,email:"student@example.edu",phone:"0551234567",provider:"mtn"})});
-    assert.equal(created.status,200); const item=await created.json();
+    const item=awards.createTransaction(app.db,{nomineeId:1,votes:3,provider:"paystack_test"});
     const event=JSON.stringify({event:"charge.success",data:{reference:item.reference,amount:1,currency:"USD",id:"untrusted-browser-like-data"}});
     const signature=crypto.createHmac("sha512",secret).update(event).digest("hex");
     const deliver=()=>fetch(`${app.base}/api/paystack/webhook`,{method:"POST",headers:{"Content-Type":"application/json","x-paystack-signature":signature},body:event});
@@ -303,8 +303,8 @@ test("duplicate provider transaction references are rejected without credit",asy
   const fetchImpl=async url=>({ok:true,json:async()=>String(url).includes("/charge")?{status:true,data:{status:"pending"}}:{status:true,data:{status:"success",amount:300,currency:"GHS",id:12345}}});
   const app=await fixture({paystackKey:secret,paymentProvider:"paystack_test",fetchImpl});
   try{
-    const make=async()=>await (await fetch(`${app.base}/api/mobile-money-charge`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({nomineeId:1,votes:3,email:"student@example.edu",phone:"0551234567",provider:"mtn"})})).json();
-    const first=await make(),second=await make();
+    const make=()=>awards.createTransaction(app.db,{nomineeId:1,votes:3,provider:"paystack_test"});
+    const first=make(),second=make();
     assert.equal((await fetch(`${app.base}/api/verify/${first.reference}`)).status,200);
     const duplicate=await fetch(`${app.base}/api/verify/${second.reference}`); assert.equal(duplicate.status,400);
     const state=app.db.prepare("SELECT verification_status AS verificationStatus,vote_credit_status AS creditStatus FROM payments WHERE reference=?").get(second.reference);
@@ -322,13 +322,15 @@ test("production blocks simulation and emits production security headers",async(
   }finally{await app.close();}
 });
 
-test("staging simulation works while incomplete live-provider configuration fails safely",async()=>{
+test("staging simulation works while incomplete Moolre configuration fails safely",async()=>{
   const staging=await fixture({environment:"staging",paymentProvider:"simulation",simulationEnabled:true,seedData:true});
   try{assert.equal((await createSimulatedTransaction(staging,{votes:1})).status,201);}finally{await staging.close();}
-  const uploadDirectory=fs.mkdtempSync(path.join(os.tmpdir(),"src-live-config-test-"));
+  const unavailable=await fixture({paymentProvider:"moolre_sandbox",simulationEnabled:false});
   try {
-    assert.throws(()=>createApp({databasePath:":memory:",uploadDirectory,environment:"production",baseUrl:"https://hub.example.edu",paymentProvider:"paystack_live",paystackKey:"",adminPassword:"production-super-admin-password"}),/live server secret key/i);
-  } finally { fs.rmSync(uploadDirectory,{recursive:true,force:true}); }
+    const response=await fetch(`${unavailable.base}/api/awards/transactions`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({nomineeId:1,votes:1})});
+    assert.equal(response.status,503);
+    assert.match((await response.json()).message,/Moolre is not configured/i);
+  } finally { await unavailable.close(); }
 });
 
 test("staging does not seed demonstration content unless explicitly requested",async()=>{
@@ -347,6 +349,77 @@ test("Paystack accepts asynchronous charge states and rejects terminal charge st
   assert.deepEqual(await asynchronous.initialize(transaction,payer),{ok:true,status:"pay_offline",displayText:"Approve on your phone"});
   const terminal=createPaystackProvider({secretKey:"sk_test_terminal",fetchImpl:async()=>({ok:true,status:200,json:async()=>({status:true,message:"Charge failed",data:{status:"failed"}})})});
   assert.deepEqual(await terminal.initialize(transaction,payer),{ok:false,message:"Charge failed"});
+});
+
+test("Moolre hosted checkout uses documented headers, major-unit amount, and return URLs",async()=>{
+  let request;
+  const provider=createMoolreProvider({
+    apiUser:"merchant-user",publicKey:"public-key",accountNumber:"100000001",businessEmail:"payments@example.edu",mode:"sandbox",
+    fetchImpl:async(url,options)=>{request={url,options,body:JSON.parse(options.body)};return {ok:true,status:200,json:async()=>({status:1,code:"POS09",data:{authorization_url:"https://pay.moolre.com/checkout/abc",reference:"MLR-1"}})};}
+  });
+  const transaction={reference:"SRCVOTE-test-reference-123456",currency:"GHS",expectedAmount:300,votes:3,nominee:{id:1}};
+  const result=await provider.initialize(transaction,{callbackUrl:"https://uccwisesrc.com/api/moolre/callback",redirectUrl:`https://uccwisesrc.com/awards/payment/${transaction.reference}`});
+  assert.equal(result.ok,true);assert.equal(result.authorizationUrl,"https://pay.moolre.com/checkout/abc");
+  assert.equal(request.url,"https://sandbox.moolre.com/embed/link");
+  assert.equal(request.options.headers["X-API-USER"],"merchant-user");assert.equal(request.options.headers["X-API-PUBKEY"],"public-key");
+  assert.equal(request.options.headers.Authorization,undefined);
+  assert.equal(request.body.amount,"3.00");assert.equal(request.body.externalref,transaction.reference);assert.equal(request.body.accountnumber,"100000001");
+  assert.equal(request.body.callback,"https://uccwisesrc.com/api/moolre/callback");assert.equal(request.body.redirect,`https://uccwisesrc.com/awards/payment/${transaction.reference}`);
+});
+
+test("Moolre initialization timeouts remain pending instead of becoming confirmed failures",async()=>{
+  const provider=createMoolreProvider({apiUser:"merchant-user",publicKey:"public-key",accountNumber:"100000001",businessEmail:"payments@example.edu",fetchImpl:async()=>{throw new TypeError("network timeout");}});
+  const result=await provider.initialize({reference:"SRCVOTE-test-reference-123456",currency:"GHS",expectedAmount:300,votes:3,nominee:{id:1}});
+  assert.equal(result.ok,false);assert.equal(result.uncertain,true);assert.equal(result.status,"pending");
+});
+
+test("Moolre verification maps statuses and rejects reference, account, currency, and amount anomalies",async()=>{
+  let providerData={txstatus:1,externalref:"SRCVOTE-test-reference-123456",accountnumber:"100000001",amount:"3.00",transactionid:"MLR-100",currency:"GHS"};
+  const provider=createMoolreProvider({apiUser:"merchant-user",publicKey:"public-key",accountNumber:"100000001",businessEmail:"payments@example.edu",fetchImpl:async()=>({ok:true,status:200,json:async()=>({status:1,data:providerData})})});
+  const transaction={reference:providerData.externalref,currency:"GHS",expectedAmount:300};
+  assert.deepEqual(await provider.verify(transaction.reference,transaction),{status:"successful",reference:transaction.reference,amount:300,currency:"GHS",recipientAccount:"100000001",providerReference:"MLR-100"});
+  providerData={...providerData,txstatus:0};assert.deepEqual(await provider.verify(transaction.reference,transaction),{status:"pending"});
+  providerData={...providerData,txstatus:2};assert.deepEqual(await provider.verify(transaction.reference,transaction),{status:"failed",reason:"provider_failed"});
+  providerData={...providerData,txstatus:1,externalref:"SRCVOTE-other-reference-123456"};assert.equal((await provider.verify(transaction.reference,transaction)).reason,"provider_reference_mismatch");
+  providerData={...providerData,externalref:transaction.reference,accountnumber:"999999999"};assert.equal((await provider.verify(transaction.reference,transaction)).reason,"recipient_account_mismatch");
+  providerData={...providerData,accountnumber:"100000001",currency:"USD"};assert.equal((await provider.verify(transaction.reference,transaction)).reason,"currency_mismatch");
+  providerData={...providerData,currency:"GHS",amount:"not-a-number"};assert.equal((await provider.verify(transaction.reference,transaction)).reason,"invalid_provider_amount");
+});
+
+test("Moolre callbacks always re-verify and concurrent duplicates credit votes once",async()=>{
+  const moolre={moolreApiUser:"merchant-user",moolrePublicKey:"public-key",moolreAccountNumber:"100000001",moolreBusinessEmail:"payments@example.edu"};
+  let reference="";
+  const fetchImpl=async(url,options)=>{
+    const body=JSON.parse(options.body);
+    if(String(url).endsWith("/embed/link")){reference=body.externalref;return {ok:true,status:200,json:async()=>({status:1,data:{authorization_url:"https://pay.moolre.com/checkout/abc",reference:"MLR-LINK"}})};}
+    return {ok:true,status:200,json:async()=>({status:1,data:{txstatus:1,externalref:body.id,accountnumber:"100000001",amount:"3.00",transactionid:"MLR-PAID",currency:"GHS"}})};
+  };
+  const app=await fixture({paymentProvider:"moolre_sandbox",fetchImpl,...moolre});
+  try{
+    const before=app.db.prepare("SELECT vote_total AS total FROM nominees WHERE id=1").get().total;
+    const created=await fetch(`${app.base}/api/awards/transactions`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({nomineeId:1,votes:3,provider:"moolre_sandbox",amount:1})});
+    assert.equal(created.status,201);assert.equal((await created.json()).authorizationUrl,"https://pay.moolre.com/checkout/abc");
+    const callback=()=>fetch(`${app.base}/api/moolre/callback`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({status:1,data:{externalref:reference,txstatus:1,amount:"0.01"}})});
+    const responses=await Promise.all(Array.from({length:6},callback));assert.equal(responses.every(item=>item.status===200),true);
+    assert.equal(app.db.prepare("SELECT vote_total AS total FROM nominees WHERE id=1").get().total,before+3);
+    assert.equal(app.db.prepare("SELECT COUNT(*) AS count FROM vote_transactions WHERE reference=?").get(reference).count,1);
+    assert.equal((await fetch(`${app.base}/api/moolre/callback`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({status:1,data:{externalref:"invalid"}})})).status,400);
+  }finally{await app.close();}
+});
+
+test("Moolre amount mismatch and unverified callback claims never credit votes",async()=>{
+  const config={moolreApiUser:"merchant-user",moolrePublicKey:"public-key",moolreAccountNumber:"100000001",moolreBusinessEmail:"payments@example.edu"};
+  let reference="",verificationStatus=0,amount="3.00";
+  const fetchImpl=async(url,options)=>{const body=JSON.parse(options.body);if(String(url).endsWith("/embed/link")){reference=body.externalref;return {ok:true,status:200,json:async()=>({status:1,data:{authorization_url:"https://pay.moolre.com/checkout/abc"}})};}return {ok:true,status:200,json:async()=>({status:1,data:{txstatus:verificationStatus,externalref:body.id,accountnumber:"100000001",amount,transactionid:"MLR-CHECK",currency:"GHS"}})};};
+  const app=await fixture({paymentProvider:"moolre_sandbox",fetchImpl,...config});
+  try{
+    const before=app.db.prepare("SELECT vote_total AS total FROM nominees WHERE id=1").get().total;
+    await fetch(`${app.base}/api/awards/transactions`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({nomineeId:1,votes:3})});
+    const callback=()=>fetch(`${app.base}/api/moolre/callback`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({status:1,data:{externalref:reference,txstatus:1,amount:"3.00"}})});
+    assert.equal((await callback()).status,200);assert.equal(app.db.prepare("SELECT vote_total AS total FROM nominees WHERE id=1").get().total,before);
+    verificationStatus=1;amount="2.99";assert.equal((await callback()).status,200);assert.equal(app.db.prepare("SELECT vote_total AS total FROM nominees WHERE id=1").get().total,before);
+    assert.equal(app.db.prepare("SELECT verification_status AS status FROM payments WHERE reference=?").get(reference).status,"rejected");
+  }finally{await app.close();}
 });
 
 test("maintenance and voting pause reject initiation without changing valid votes",async()=>{

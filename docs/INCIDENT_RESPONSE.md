@@ -18,4 +18,4 @@ For every incident: assign an incident lead, preserve timestamps and transaction
 
 ## Emergency contacts and evidence
 
-Before launch, assign named owners for application, database/backups, Paystack, SRC communications, and data protection. Store contact details outside the repository. Evidence exports must be access-controlled and must exclude passwords, secret keys, session tokens, full private feedback, and unnecessary payer information.
+Before launch, assign named owners for application, database/backups, Moolre, SRC communications, and data protection. Store contact details outside the repository. Evidence exports must be access-controlled and must exclude passwords, secret keys, session tokens, full private feedback, and unnecessary payer information.

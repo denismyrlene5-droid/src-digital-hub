@@ -132,7 +132,7 @@ function openVoteModal(id) {
   selectedVotes = 10; byId("customVotes").value = 10;
   document.querySelectorAll(".vote-packs button").forEach(b => b.classList.toggle("active", b.dataset.votes === "10"));
   byId("paymentStatus").hidden = true; byId("confirmDemoVote").disabled = false;
-  byId("confirmDemoVote").textContent = paymentConfigured ? "Pay with Mobile Money" : "Simulate Test Payment";
+  byId("confirmDemoVote").textContent = paymentConfigured ? "Continue to Secure Payment" : "Simulate Test Payment";
   updateVoteSummary();
   byId("voteModal").classList.add("open"); byId("voteModal").setAttribute("aria-hidden", "false"); document.body.classList.add("modal-open");
 }
@@ -167,10 +167,12 @@ function setPaymentStatus(title, text, spinning = true) {
 async function detectPaymentMode() {
   try {
     const data = await api("/api/config");
-    paymentConfigured = Boolean(data.paystackConfigured); simulationEnabled = Boolean(data.simulationEnabled);configuredPaymentProvider=data.paymentProvider||"disabled";
+    paymentConfigured = Boolean(data.paymentConfigured); simulationEnabled = Boolean(data.simulationEnabled);configuredPaymentProvider=data.paymentProvider||"disabled";
     const environmentBadge=byId("adminEnvironmentBadge");if(environmentBadge)environmentBadge.textContent=data.environment==="staging"?"STAGING":data.environment==="production"?"PRODUCTION":"LOCAL";
+    const hostedCheckout=configuredPaymentProvider.startsWith("moolre_");
+    const legacyFields=byId("legacyPaymentFields");if(legacyFields)legacyFields.hidden=hostedCheckout;
     byId("paymentModeNote").textContent = paymentConfigured
-      ? "Paystack TEST mode is connected. Your MoMo PIN is entered only on your phone."
+      ? "Payment is completed securely on Moolre. This website never asks for your payment PIN."
       : simulationEnabled ? "Development simulation is active. No money will be charged." : "Payments are not configured.";
   } catch { byId("paymentModeNote").textContent = "Start the Node server to enable voting."; }
 }
@@ -181,8 +183,11 @@ async function loadReceiptPage() {
   const main=document.querySelector("main");
   main.innerHTML=`<section class="section receipt-page"><span class="section-kicker">PAYMENT STATUS</span><h1>Checking your transaction…</h1><div class="payment-status" style="display:flex"><span class="payment-spinner"></span><div><b>Trusted server lookup</b><p>Refreshing this page will not credit votes twice.</p></div></div></section>`;
   try{
+    try{await api(`/api/awards/transactions/${encodeURIComponent(match[1])}/verify`,{method:"POST"});}catch{}
     const {transaction:t}=await api(`/api/awards/transactions/${encodeURIComponent(match[1])}`);
-    main.innerHTML=`<section class="section receipt-page"><span class="section-kicker">PAYMENT RECEIPT</span><h1>${t.voteCreditStatus==="credited"?"Votes credited":"Payment status"}</h1><div class="receipt-grid"><div><span>Reference</span><b>${escapeHtml(t.reference)}</b></div><div><span>Nominee</span><b>${escapeHtml(t.nominee)}</b></div><div><span>Category</span><b>${escapeHtml(t.category)}</b></div><div><span>Votes</span><b>${escapeHtml(t.votes)}</b></div><div><span>Amount</span><b>${escapeHtml(formatMoney(t.expectedAmount))}</b></div><div><span>Payment</span><b>${escapeHtml(t.paymentStatus)}</b></div><div><span>Vote credit</span><b>${escapeHtml(t.voteCreditStatus)}</b></div><div><span>Created</span><b>${escapeHtml(new Date(t.createdAt).toLocaleString())}</b></div></div><a class="btn btn-outline" href="/awards">Back to Awards</a></section>`;
+    const retry=t.paymentStatus==="pending"?`<button class="btn btn-gold" id="retryPaymentCheck" type="button">Check Payment Again</button>`:"";
+    main.innerHTML=`<section class="section receipt-page"><span class="section-kicker">PAYMENT RECEIPT</span><h1>${t.voteCreditStatus==="credited"?"Votes credited":"Payment status"}</h1><div class="receipt-grid"><div><span>Reference</span><b>${escapeHtml(t.reference)}</b></div><div><span>Nominee</span><b>${escapeHtml(t.nominee)}</b></div><div><span>Category</span><b>${escapeHtml(t.category)}</b></div><div><span>Votes</span><b>${escapeHtml(t.votes)}</b></div><div><span>Amount</span><b>${escapeHtml(formatMoney(t.expectedAmount))}</b></div><div><span>Payment</span><b>${escapeHtml(t.paymentStatus)}</b></div><div><span>Vote credit</span><b>${escapeHtml(t.voteCreditStatus)}</b></div><div><span>Created</span><b>${escapeHtml(new Date(t.createdAt).toLocaleString())}</b></div></div>${retry}<a class="btn btn-outline" href="/awards">Back to Awards</a></section>`;
+    byId("retryPaymentCheck")?.addEventListener("click",()=>location.reload());
   }catch(error){main.innerHTML=`<section class="section receipt-page"><h1>Transaction unavailable</h1><p>${escapeHtml(error.message)}</p><a class="btn btn-outline" href="/awards">Back to Awards</a></section>`;}
 }
 
@@ -202,26 +207,13 @@ async function simulatePayment() {
 
 async function startMomoPayment() {
   if (!paymentConfigured) return simulatePayment();
-  const email = byId("payerEmail").value.trim(), phone = byId("payerPhone").value.trim(), provider = byId("payerNetwork").value;
-  if (!email || !email.includes("@")) return showToast("Email required", "Enter a valid email for the Paystack test transaction.");
-  if (!phone || phone.replace(/\D/g, "").length < 10) return showToast("MoMo number required", "Enter a valid Ghana Mobile Money number.");
   const button = byId("confirmDemoVote"); button.disabled = true; button.textContent = "Starting payment...";
-  setPaymentStatus("Starting Mobile Money payment", "Connecting securely to Paystack test mode.");
+  setPaymentStatus("Starting secure payment", "Creating your Moolre hosted checkout link.");
   try {
-    const data = await api("/api/awards/transactions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ nomineeId: selectedNominee.id, votes: selectedVotes, email, phone, network:provider, provider:configuredPaymentProvider }) });
-    setPaymentStatus("Approve the Mobile Money prompt", data.displayText || "Complete authorization on your mobile phone."); button.textContent = "Waiting for approval...";
-    const started = Date.now();
-    const pollPayment = async () => {
-      try {
-        const verify = await api(`/api/awards/transactions/${encodeURIComponent(data.reference)}/verify`,{method:"POST"});
-        if (verify.transaction?.voteCreditStatus === "credited") { paymentPollingTimer = null; await loadAwards(); closeVoteModal(); showToast("Payment verified", `Your votes were credited. Reference: ${data.reference}`); return; }
-        if (["failed","cancelled","expired"].includes(verify.transaction?.paymentStatus) || Date.now() - started > 180000) { paymentPollingTimer = null; button.disabled = false; button.textContent = "Try Payment Again"; setPaymentStatus("Payment not completed", "No votes were credited. You may safely retry.", false); return; }
-      } catch {}
-      if (Date.now() - started > 180000) { paymentPollingTimer = null; button.disabled = false; button.textContent = "Try Payment Again"; setPaymentStatus("Payment not completed", "Verification timed out. No votes were credited; you may safely retry.", false); return; }
-      paymentPollingTimer = setTimeout(pollPayment, 4000);
-    };
-    paymentPollingTimer = setTimeout(pollPayment, 4000);
-  } catch (error) { button.disabled = false; button.textContent = "Pay with Mobile Money"; setPaymentStatus("Could not start payment", error.message, false); }
+    const data = await api("/api/awards/transactions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ nomineeId: selectedNominee.id, votes: selectedVotes, provider:configuredPaymentProvider }) });
+    if(data.authorizationUrl){window.location.assign(data.authorizationUrl);return;}
+    window.location.assign(`/awards/payment/${encodeURIComponent(data.reference)}`);
+  } catch (error) { button.disabled = false; button.textContent = "Continue to Secure Payment"; setPaymentStatus("Could not start payment", error.message, false); }
 }
 
 async function loadAdmin() {

@@ -25,11 +25,11 @@ Use Awards administration to set voting state to `paused`. This rejects new init
 
 ## Payment failure/uncredited workflow
 
-Search by public reference. Check local expected amount/currency/provider state. Query Paystack through the existing server verification path. Never credit from a screenshot, redirect, or webhook body alone. Escalate amount mismatches, duplicate provider references and verified-uncredited records to the financial owner.
+Search by public reference. Check local expected amount/currency/provider state. Query Moolre through the existing server verification path (or Paystack only for a pre-migration Paystack record). Never credit from a screenshot, redirect, or callback body alone. Escalate amount, account, currency, duplicate-reference, and verified-uncredited anomalies to the financial owner.
 
 ## Refund/reversal workflow
 
-The application does not initiate Paystack refunds. First complete and verify the external action in the provider dashboard under approved institutional policy. A Super Admin may then call the protected adjustment workflow with exact local reference, provider reference, action, confirmation, and a meaningful reason. The database atomically removes the original transaction's votes once, prevents negative totals/double adjustment, retains history, and writes an audit record.
+The application does not initiate provider refunds. First complete and verify the external action in the provider dashboard under approved institutional policy. A Super Admin may then call the protected adjustment workflow with exact local reference, provider reference, action, confirmation, and a meaningful reason. The database atomically removes the original transaction's votes once, prevents negative totals/double adjustment, retains history, and writes an audit record.
 
 ## Backup and restore
 
@@ -46,7 +46,7 @@ Pause new voting, retain transaction references, keep webhook/verification endpo
 
 ## Suspicious login or credential rotation
 
-Pause affected operations, rotate the role secret in the environment secret store, restart to invalidate sessions, review audit/security logs, verify content and payment changes, then document the incident. Rotate Paystack credentials in the provider dashboard and secret store together; keep payment mode disabled until a signed webhook and verification test pass.
+Pause affected operations, rotate the role secret in the environment secret store, restart to invalidate sessions, review audit/security logs, verify content and payment changes, then document the incident. Rotate affected Moolre credentials in the provider dashboard and secret store together; keep payment mode disabled until callback and server-side status-verification tests pass.
 
 ## Monitoring thresholds
 

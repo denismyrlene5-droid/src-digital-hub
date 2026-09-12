@@ -336,6 +336,7 @@ footer{
   gap:12px;
   margin:16px 0;
 }
+.payment-fields[hidden]{display:none}
 .payment-fields>div:last-child{grid-column:1/-1}
 .payment-fields input,.payment-fields select{
   width:100%;

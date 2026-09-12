@@ -184,7 +184,7 @@
         <input id="customVotes" type="number" min="1" max="10000" value="10" />
       </div>
 
-      <div class="payment-fields">
+      <div class="payment-fields" id="legacyPaymentFields">
         <div>
           <label class="field-label" for="payerEmail">Email</label>
           <input id="payerEmail" type="email" placeholder="you@example.com" autocomplete="email" />
@@ -212,13 +212,13 @@
       <div class="payment-status" id="paymentStatus" hidden>
         <span class="payment-spinner"></span>
         <div>
-          <b id="paymentStatusTitle">Waiting for Mobile Money approval</b>
-          <p id="paymentStatusText">Approve the payment prompt on your phone.</p>
+          <b id="paymentStatusTitle">Checking payment status</b>
+          <p id="paymentStatusText">Payment confirmation is verified securely by the server.</p>
         </div>
       </div>
 
-      <button class="btn btn-gold btn-full" id="confirmDemoVote">Pay with Mobile Money</button>
-      <p class="modal-footnote" id="paymentModeNote">Localhost test mode. Your MoMo PIN is never entered on this website.</p>
+      <button class="btn btn-gold btn-full" id="confirmDemoVote">Continue to Secure Payment</button>
+      <p class="modal-footnote" id="paymentModeNote">Payment configuration is loading.</p>
     </div>
   </div>
 

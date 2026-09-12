@@ -5,8 +5,8 @@
 | Environment | Purpose | Data/storage | Payment mode |
 |---|---|---|---|
 | Development | Local implementation and automated tests | Local disposable/developer SQLite and uploads | Simulation |
-| Staging | Production-like acceptance, restore drills, role and webhook testing | Separate persistent staging database/uploads | Paystack test/sandbox |
-| Production | Approved public service | Dedicated encrypted persistent database/uploads | Disabled until controlled Paystack live authorization |
+| Staging | Production-like acceptance, restore drills, role and callback testing | Separate persistent staging database/uploads | Moolre sandbox |
+| Production | Approved public service | Dedicated encrypted persistent database/uploads | Disabled until controlled Moolre live authorization |
 
 Never copy private production feedback into staging. If realistic data is needed, use anonymized fixtures. Staging callback/webhook URLs and credentials must be separate.
 
@@ -16,7 +16,7 @@ Never copy private production feedback into staging. If realistic data is needed
 - Persistent SQLite volume supporting WAL and reliable locking; one application writer node unless the database architecture is deliberately changed.
 - Persistent private upload storage; object storage is preferred for production.
 - HTTPS reverse proxy, environment-specific hostname, process supervision, centralized logs, backup scheduler and external health monitoring.
-- Webhook: `https://<host>/api/paystack/webhook`.
+- Payment callback: `https://<host>/api/moolre/callback` (retain the Paystack webhook only while legacy transactions require it).
 - Health: `https://<host>/health`.
 
 No domain is hardcoded. Use `BASE_URL=https://<environment-host>`.
@@ -41,7 +41,7 @@ Remaining blocker: roles are shared credentials, not named/deactivatable adminis
 ## Controlled launch order
 
 1. Internal technical/admin test.
-2. Small trusted student pilot with simulation or Paystack test.
+2. Small trusted student pilot with simulation or Moolre sandbox.
 3. Staging sign-off by SRC leadership on content, contacts, nominees, price, dates and visibility.
 4. Separately authorized controlled production transaction after every payment checklist item passes.
 5. Public launch after reconciliation and a short feature freeze.

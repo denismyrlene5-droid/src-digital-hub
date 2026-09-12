@@ -87,4 +87,131 @@ function createPaystackProvider({ secretKey, mode = "test", fetchImpl = fetch, d
   };
 }
 
-module.exports={createSimulatedProvider,createPaystackProvider};
+function normalizeAccountNumber(value) {
+  return String(value || "").trim();
+}
+
+function moolreStatus(value) {
+  const status = Number(value);
+  if (status === 1) return "successful";
+  if (status === 2) return "failed";
+  return "pending";
+}
+
+function createMoolreProvider({
+  apiUser,
+  publicKey,
+  accountNumber,
+  businessEmail,
+  mode = "sandbox",
+  fetchImpl = fetch,
+  timeoutMs = 15_000,
+  expirationMinutes = 15
+}) {
+  const credentials = {
+    apiUser: String(apiUser || "").trim(),
+    publicKey: String(publicKey || "").trim(),
+    accountNumber: normalizeAccountNumber(accountNumber),
+    businessEmail: String(businessEmail || "").trim()
+  };
+  const enabled = Boolean(credentials.apiUser && credentials.publicKey && credentials.accountNumber && credentials.businessEmail);
+  const baseUrl = mode === "live" ? "https://api.moolre.com" : "https://sandbox.moolre.com";
+  const headers = {
+    "Content-Type": "application/json",
+    "X-API-USER": credentials.apiUser,
+    "X-API-PUBKEY": credentials.publicKey
+  };
+  const request = (pathname, body) => fetchImpl(`${baseUrl}${pathname}`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(timeoutMs)
+  });
+
+  return {
+    name: `moolre_${mode}`,
+    enabled,
+    mode,
+    accountNumber: credentials.accountNumber,
+    async initialize(transaction, { callbackUrl, redirectUrl } = {}) {
+      if (!enabled) return { ok: false, message: "Moolre payments are not configured." };
+      const body = {
+        type: 1,
+        amount: (Number(transaction.expectedAmount) / 100).toFixed(2),
+        email: credentials.businessEmail,
+        externalref: transaction.reference,
+        reusable: "0",
+        currency: transaction.currency,
+        accountnumber: credentials.accountNumber,
+        expiration_time: Math.floor(Math.max(1, Math.min(1440, Number(expirationMinutes) || 15))),
+        metadata: {
+          nominee_id: transaction.nominee.id,
+          votes: transaction.votes,
+          purpose: "SRC Awards voting"
+        }
+      };
+      if (callbackUrl) body.callback = callbackUrl;
+      if (redirectUrl) body.redirect = redirectUrl;
+      let response;
+      let result;
+      try {
+        response = await request("/embed/link", body);
+        result = await response.json();
+      } catch (error) {
+        return { ok: false, uncertain: true, status: "pending", message: "The payment link status is uncertain. Check this transaction again." };
+      }
+      if (!response.ok) {
+        const uncertain = Number(response.status) >= 500 || Number(response.status) === 429;
+        return { ok: false, uncertain, status: uncertain ? "pending" : "failed", message: uncertain ? "The payment provider is temporarily unavailable. Check this transaction again." : "Moolre could not create the payment link." };
+      }
+      const authorizationUrl = String(result?.data?.authorization_url || "");
+      let safeUrl;
+      try {
+        safeUrl = new URL(authorizationUrl);
+      } catch {
+        safeUrl = null;
+      }
+      if (Number(result?.status) !== 1 || !safeUrl || safeUrl.protocol !== "https:" || !/(^|\.)moolre\.com$/i.test(safeUrl.hostname)) {
+        return { ok: false, status: "failed", message: String(result?.message || "Moolre returned an invalid payment link.").slice(0, 180) };
+      }
+      return {
+        ok: true,
+        status: "pending",
+        authorizationUrl: safeUrl.href,
+        providerReference: String(result?.data?.reference || "")
+      };
+    },
+    async verify(reference, transaction = {}) {
+      if (!enabled) return { status: "pending", reason: "provider_unavailable" };
+      let response;
+      let result;
+      try {
+        response = await request("/open/transact/status", { type: 1, idtype: 1, id: reference, accountnumber: credentials.accountNumber });
+        result = await response.json();
+      } catch {
+        return { status: "pending", reason: "provider_unavailable" };
+      }
+      if (!response.ok || Number(result?.status) !== 1 || !result?.data) return { status: "pending", reason: "provider_unavailable" };
+      const data = result.data;
+      if (String(data.externalref || "") !== reference) return { status: "failed", reason: "provider_reference_mismatch" };
+      if (normalizeAccountNumber(data.accountnumber) !== credentials.accountNumber) return { status: "failed", reason: "recipient_account_mismatch" };
+      if (data.currency && String(data.currency).toUpperCase() !== String(transaction.currency || "GHS").toUpperCase()) return { status: "failed", reason: "currency_mismatch" };
+      const status = moolreStatus(data.txstatus);
+      if (status === "successful") {
+        const majorAmount = Number(data.amount);
+        if (!Number.isFinite(majorAmount) || majorAmount < 0) return { status: "failed", reason: "invalid_provider_amount" };
+        return {
+          status,
+          reference: String(data.externalref),
+          amount: Math.round((majorAmount + Number.EPSILON) * 100),
+          currency: String(transaction.currency || "GHS").toUpperCase(),
+          recipientAccount: normalizeAccountNumber(data.accountnumber),
+          providerReference: String(data.transactionid || "")
+        };
+      }
+      return status === "failed" ? { status, reason: "provider_failed" } : { status };
+    }
+  };
+}
+
+module.exports={createSimulatedProvider,createPaystackProvider,createMoolreProvider};

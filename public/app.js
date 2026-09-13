@@ -15,6 +15,7 @@ let voting = { open: false, state: "not_started", message: "Voting has not start
 let publicResultsVisible = false;
 let countdownTarget = "2026-09-15T00:00:00.000Z";
 let nominationsOpen = false;
+let activeProfileSlug = "";
 const awardGroup = category => category.startsWith("Level 300 ") ? "Level 300" : category.startsWith("Level 350 ") ? "Level 350" : "General";
 
 const byId = id => document.getElementById(id);
@@ -40,8 +41,8 @@ async function loadAwards() {
   nominationsOpen = nominationData?.nominations?.phase?.accepting === true;
   categories = ["All", "Level 300", "Level 350", "General", ...data.categories];
   nominees = data.nominees;
-  const profileSlug=location.pathname.match(/^\/awards\/nominees\/([a-z0-9-]+)$/)?.[1];
-  if(profileSlug){const profile=nominees.find(item=>item.profileSlug===profileSlug);nominees=profile?[profile]:[];document.title=profile?`${profile.name} | SRC Awards`:`Nominee unavailable | SRC Awards`;}
+  activeProfileSlug=location.pathname.match(/^\/awards\/nominees\/([a-z0-9-]+)$/)?.[1]||"";
+  if(activeProfileSlug){const profile=nominees.find(item=>item.profileSlug===activeProfileSlug);nominees=profile?[profile]:[];document.title=profile?`${profile.name} | SRC Awards`:`Nominee unavailable | SRC Awards`;}
   pricePerVote = data.pricePerVote; awardsCurrency = data.currency; maxVotes = data.maxVotes;
   voting = data.voting; publicResultsVisible = data.publicResultsVisible; countdownTarget = data.countdownTarget || data.opensAt || countdownTarget;
   byId("pricePerVote").textContent = formatMoney(pricePerVote);
@@ -50,8 +51,22 @@ async function loadAwards() {
   applyVotingPresentation();
   renderTabs();
   renderNominees();
+  if(activeProfileSlug) setupFlyerStudio();
   populateLeaderboardFilter();
   renderLeaderboard();
+}
+
+async function setupFlyerStudio(){
+  const grid=byId("nomineeGrid");
+  let profile;try{profile=await api(`/api/awards/nominees/${encodeURIComponent(activeProfileSlug)}`);}catch{return;}
+  const studio=document.createElement("section");studio.className="flyer-studio";studio.setAttribute("aria-labelledby","flyerStudioTitle");
+  studio.innerHTML=`<div><span class="section-kicker">CAMPAIGN TOOLKIT</span><h3 id="flyerStudioTitle">Download Campaign Flyer</h3><p>Preview and save an official flyer for one published category nomination.</p></div><label><span>Category nomination</span><select data-flyer-nomination>${profile.nominations.map(item=>`<option value="${escapeHtml(item.profileSlug)}" ${item.profileSlug===activeProfileSlug?"selected":""}>${escapeHtml(item.category)}</option>`).join("")}</select></label><div class="flyer-format-actions"><button type="button" class="secondary-btn" data-flyer-format="status">WhatsApp Status</button><button type="button" class="secondary-btn" data-flyer-format="square">Square post</button></div><div class="flyer-preview-wrap"><img data-flyer-preview alt="Campaign flyer preview" width="540" height="960"><p data-flyer-loading>Choose a format to create the preview.</p></div><div class="flyer-download-actions" hidden><a class="vote-btn" data-flyer-download download>Download PNG</a><button type="button" class="secondary-btn" data-flyer-share>Share Flyer</button><button type="button" class="secondary-btn" data-flyer-copy>Copy nominee link</button></div><p class="flyer-note">On supported phones, Share Flyer opens the device share sheet. It cannot post automatically to WhatsApp Status.</p>`;
+  grid.insertAdjacentElement("afterend",studio);
+  const select=studio.querySelector("[data-flyer-nomination]"),preview=studio.querySelector("[data-flyer-preview]"),loading=studio.querySelector("[data-flyer-loading]"),actions=studio.querySelector(".flyer-download-actions"),download=studio.querySelector("[data-flyer-download]"),share=studio.querySelector("[data-flyer-share]");let currentBlob,currentFormat="status",currentFilename="src-awards-flyer.png",objectUrl;
+  const render=async format=>{currentFormat=format;loading.textContent="Generating secure preview…";loading.hidden=false;actions.hidden=true;preview.removeAttribute("src");if(objectUrl)URL.revokeObjectURL(objectUrl);try{const response=await fetch(`/api/awards/nominees/${encodeURIComponent(select.value)}/flyer?format=${format}`);if(!response.ok)throw new Error("Flyer preview is unavailable.");currentFilename=response.headers.get("content-disposition")?.match(/filename="([^"]+)"/)?.[1]||`src-awards-${format}.png`;currentBlob=await response.blob();objectUrl=URL.createObjectURL(currentBlob);preview.src=objectUrl;preview.width=540;preview.height=format==="status"?960:540;loading.hidden=true;actions.hidden=false;download.href=`/api/awards/nominees/${encodeURIComponent(select.value)}/flyer?format=${format}&download=1`;}catch(error){loading.textContent=error.message;}};
+  studio.querySelectorAll("[data-flyer-format]").forEach(button=>button.addEventListener("click",()=>render(button.dataset.flyerFormat)));select.addEventListener("change",()=>render(currentFormat));
+  share.addEventListener("click",async()=>{if(!currentBlob)return;const file=new window.File([currentBlob],currentFilename,{type:"image/png"});if(navigator.canShare?.({files:[file]}))await navigator.share({files:[file],title:"SRC Awards campaign flyer"});else{download.click();showToast("Flyer downloaded","Use your phone's share menu to send the PNG.");}});
+  studio.querySelector("[data-flyer-copy]").addEventListener("click",async()=>{const url=`${location.origin}/awards/nominees/${select.value}`;await navigator.clipboard.writeText(url);showToast("Link copied","The exact nominee/category link is ready to share.");});
 }
 
 function applyVotingPresentation(){

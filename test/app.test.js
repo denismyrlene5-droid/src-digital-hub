@@ -5,6 +5,7 @@ const os = require("node:os");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const sharp = require("sharp");
+const jsQR = require("jsqr");
 const { DatabaseSync } = require("node:sqlite");
 const { createApp } = require("../server/app");
 const awards = require("../server/awards");
@@ -12,6 +13,7 @@ const { createPublicityRepository } = require("../server/publicity");
 const { createPaystackProvider, createMoolreProvider } = require("../server/payment-providers");
 const { createCampusPulseRepository, normalizeGhanaPhone } = require("../server/campus-pulse");
 const { createNominationRepository, pairKey, csvCell } = require("../server/nominations");
+const { createNomineeFlyer } = require("../server/award-flyers");
 
 async function fixture(options = {}) {
   const uploadDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "src-services-test-"));
@@ -159,7 +161,7 @@ test("Awards administration is consolidated into the unified dashboard", async (
     assert.match(moduleScript, /api\/admin\/awards\/settings/);
     assert.doesNotMatch(shellScript, /Awards Admin/);
     assert.doesNotMatch(awardsPage, /id="adminOverlay"/);
-    assert.match(adminPage, /admin-awards\.js\?v=3/);
+    assert.match(adminPage, /admin-awards\.js\?v=4/);
   } finally { await app.close(); }
 });
 
@@ -197,7 +199,7 @@ test("public frontend retains accessibility and responsive spacing polish", asyn
     assert.match(css, /\.urgent-notice-content b\{white-space:normal/);
     assert.match(css, /\.hub-hero h1\{font-size:clamp\(40px,12vw,49px\)/);
     assert.match(css, /\.publicity-metrics\{grid-template-columns:repeat\(4,1fr\)\}/);
-    assert.match(home, /\/hub\.css\?v=22/);
+    assert.match(home, /\/hub\.css\?v=23/);
     assert.match(awards, /\/hub\.css\?v=15/);
   } finally { await app.close(); }
 });
@@ -1886,5 +1888,26 @@ test("administrator merge and unmerge preserve original nomination evidence", as
     assert.equal(app.nominations.listNominees({categoryId}).length,2);
     assert.equal(app.db.prepare("SELECT COUNT(*) count FROM nomination_submissions").get().count,2);
     assert.equal(app.nominations.merges()[0].reversedAt!==null,true);
+  }finally{await app.close();}
+});
+
+test("campaign flyers have exact dimensions, stable category links and public draft protection", async () => {
+  const app=await fixture({baseUrl:"https://uccwisesrc.com"});
+  try{
+    const nominee=app.db.prepare("SELECT id,profile_slug AS profileSlug FROM nominees WHERE active=1 AND publication_status='published' ORDER BY id LIMIT 1").get();
+    for(const [format,width,height] of [["status",1080,1920],["square",1080,1080]]){
+      const response=await fetch(`${app.base}/api/awards/nominees/${nominee.profileSlug}/flyer?format=${format}`);
+      assert.equal(response.status,200);assert.equal(response.headers.get("content-type"),"image/png");
+      const metadata=await sharp(Buffer.from(await response.arrayBuffer())).metadata();assert.equal(metadata.width,width);assert.equal(metadata.height,height);
+    }
+    const generated=await createNomineeFlyer({db:app.db,uploadDirectory:app.uploadDirectory,publicDirectory:path.join(__dirname,"..","public"),baseUrl:"https://uccwisesrc.com",selector:{id:nominee.id},format:"square",allowDraft:false});
+    assert.equal(generated.targetUrl,`https://uccwisesrc.com/awards/nominees/${nominee.profileSlug}`);
+    const raw=await sharp(generated.buffer).ensureAlpha().raw().toBuffer({resolveWithObject:true}),decoded=jsQR(new Uint8ClampedArray(raw.data),raw.info.width,raw.info.height);
+    assert.equal(decoded.data,generated.targetUrl);
+    const variants=[];for(const state of ["not_started","open","closed"]){app.db.prepare("UPDATE awards_settings SET voting_state=? WHERE id=1").run(state);variants.push(crypto.createHash("sha256").update((await createNomineeFlyer({db:app.db,uploadDirectory:app.uploadDirectory,publicDirectory:path.join(__dirname,"..","public"),baseUrl:"https://uccwisesrc.com",selector:{id:nominee.id},format:"status",allowDraft:false})).buffer).digest("hex"));}assert.equal(new Set(variants).size,3);
+    app.db.prepare("UPDATE nominees SET publication_status='draft',active=0 WHERE id=?").run(nominee.id);
+    assert.equal((await fetch(`${app.base}/api/awards/nominees/${nominee.profileSlug}/flyer?format=square`)).status,404);
+    assert.equal((await fetch(`${app.base}/api/admin/awards/nominees/${nominee.id}/flyer?format=square`)).status,401);
+    const cookie=await adminCookie(app);assert.equal((await fetch(`${app.base}/api/admin/awards/nominees/${nominee.id}/flyer?format=square`,{headers:{Cookie:cookie}})).status,200);
   }finally{await app.close();}
 });

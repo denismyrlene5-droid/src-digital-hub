@@ -342,3 +342,4 @@ body.awards-page{background:var(--hub-bg);color:var(--hub-ink)}
   .urgent-notice-content span{display:block;font-size:10px}
   .urgent-notice-content button{width:44px;height:44px}
 }
+.photo-missing{display:block;margin-top:5px;color:#9b3a3a;font-weight:700}.admin-flyer-preview{display:grid;gap:16px}.admin-flyer-preview label{display:grid;gap:7px}.admin-flyer-preview select{min-height:46px;padding:0 12px}.admin-flyer-preview img{display:block;max-width:100%;width:auto;max-height:68vh;margin:auto;border-radius:12px;object-fit:contain;background:#071a31}

@@ -161,7 +161,7 @@ test("Awards administration is consolidated into the unified dashboard", async (
     assert.match(moduleScript, /api\/admin\/awards\/settings/);
     assert.doesNotMatch(shellScript, /Awards Admin/);
     assert.doesNotMatch(awardsPage, /id="adminOverlay"/);
-    assert.match(adminPage, /admin-awards\.js\?v=4/);
+    assert.match(adminPage, /admin-awards\.js\?v=5/);
   } finally { await app.close(); }
 });
 
@@ -1921,5 +1921,18 @@ test("known demo nominees with historical totals are hidden without deleting the
     assert.equal(nominee.active,0);assert.equal(nominee.publicationStatus,"draft");assert.equal(nominee.source,"demo");assert.equal(nominee.voteTotal,7);
     assert.equal(app.db.prepare("SELECT active FROM categories WHERE id=?").get(before.categoryId).active,0);
     assert.equal(awards.publicData(app.db).nominees.some(item=>item.id===before.id),false);
+  }finally{await app.close();}
+});
+
+test("private nominee photo links are revoked on regeneration and approval preserves publication state",async()=>{
+  const app=await fixture({initialVotingState:null});try{
+    const cookie=await adminCookie(app),nominee=app.db.prepare("SELECT id,person_id personId FROM nominees LIMIT 1").get();
+    app.db.prepare("UPDATE nominees SET publication_status='draft',active=0 WHERE id=?").run(nominee.id);
+    const make=()=>fetch(`${app.base}/api/nominee-photos/admin/links`,{method:"POST",headers:{"Content-Type":"application/json",Cookie:cookie},body:JSON.stringify({personId:nominee.personId,days:7})}),first=await(await make()).json(),second=await(await make()).json();
+    assert.equal((await fetch(`${app.base}/api/nominee-photos/submit/${first.token}`)).status,410);assert.equal((await fetch(`${app.base}/api/nominee-photos/submit/${second.token}`)).status,200);
+    const image=(await sharp({create:{width:700,height:700,channels:3,background:"#123456"}}).jpeg().toBuffer()).toString("base64"),submitted=await fetch(`${app.base}/api/nominee-photos/submit/${second.token}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({image:{data:image},message:"Ready to serve",correctionNote:"",consent:true,idempotencyKey:"photo-submit-00000001"})});assert.equal(submitted.status,201);
+    const overview=await(await fetch(`${app.base}/api/nominee-photos/admin/overview`,{headers:{Cookie:cookie}})).json(),pending=overview.submissions.find(x=>x.status==="pending");assert.ok(pending);
+    await fetch(`${app.base}/api/nominee-photos/admin/submissions/${pending.id}/review`,{method:"POST",headers:{"Content-Type":"application/json",Cookie:cookie},body:JSON.stringify({status:"approved"})});
+    assert.notEqual(app.db.prepare("SELECT photo_token token FROM award_people WHERE id=?").get(nominee.personId).token,null);assert.equal(app.db.prepare("SELECT publication_status status FROM nominees WHERE id=?").get(nominee.id).status,"draft");
   }finally{await app.close();}
 });

@@ -21,6 +21,7 @@ const { createCampusPulseRouter } = require("./campus-pulse-routes");
 const { createNominationRepository } = require("./nominations");
 const { createNominationRouter } = require("./nomination-routes");
 const { createNomineeFlyer } = require("./award-flyers");
+const { createRepository: createNomineePhotoRepository, createRouter: createNomineePhotoRouter } = require("./nominee-photo-submissions");
 
 function parseAdminUsers(value) {
   if (!String(value || "").trim()) return [];
@@ -74,6 +75,7 @@ function createApp(options = {}) {
     if (fs.existsSync(source) && !fs.existsSync(destination)) fs.copyFileSync(source, destination, fs.constants.COPYFILE_EXCL);
   }
   const nominations = createNominationRepository(db, { heroTokens: nominationHeroTokens });
+  const nomineePhotos=createNomineePhotoRepository(db,uploadDirectory);
   const publicDirectory = path.join(__dirname, "..", "public");
   const hubTemplate = fs.readFileSync(path.join(publicDirectory, "hub.html"), "utf8");
   const paystackKey = options.paystackKey ?? process.env.PAYSTACK_SECRET_KEY ?? "";
@@ -176,6 +178,7 @@ function createApp(options = {}) {
   app.use("/api/campus-pulse", createCampusPulseRouter({ repository: campusPulse, requirePulseAdmin: auth.requirePulseAdmin, submissionLimit: campusPulseSubmissionLimit, audit: content.audit }));
   app.use("/api/nominations/admin", requireSameOrigin);
   app.use("/api/nominations", createNominationRouter({ repository: nominations, uploadDirectory, requireAwardsAdmin: auth.requireAwardsAdmin, submissionLimit: nominationSubmissionLimit, audit: content.audit }));
+  app.use("/api/nominee-photos",createNomineePhotoRouter(nomineePhotos,auth.requireAwardsAdmin,rateLimit({windowMs:900000,max:8})));
   app.use(express.json({ limit: "32kb" }));
 
   app.post("/api/moolre/callback", async (req,res,next)=>{
@@ -331,8 +334,8 @@ function createApp(options = {}) {
   app.get("/api/admin/summary", auth.requireAwardsAdmin, (req, res) => res.json({ ...adminSummary(db), ...awards.adminData(db).metrics }));
   app.get("/api/admin/awards", auth.requireAwardsAdmin, (req,res)=>res.json({
     ...awards.adminData(db,req.query),
-    categories:db.prepare("SELECT id,name,sort_order AS sortOrder,active FROM categories ORDER BY sort_order").all(),
-    nominees:db.prepare("SELECT n.id,n.name,n.program,n.level,n.short_message AS shortMessage,n.publication_status AS publicationStatus,n.profile_slug AS profileSlug,n.source,n.code,n.active,n.photo_token AS photoToken,n.vote_total AS voteTotal,n.category_id AS categoryId,n.person_id AS personId,c.name AS category FROM nominees n JOIN categories c ON c.id=n.category_id ORDER BY c.sort_order,n.name").all()
+    categories:db.prepare("SELECT c.id,c.name,c.sort_order AS sortOrder,c.active FROM categories c WHERE NOT(c.active=0 AND EXISTS(SELECT 1 FROM nominees d WHERE d.category_id=c.id AND d.source='demo') AND NOT EXISTS(SELECT 1 FROM nominees genuine WHERE genuine.category_id=c.id AND genuine.source<>'demo')) ORDER BY c.sort_order").all(),
+    nominees:db.prepare("SELECT n.id,n.name,n.program,n.level,n.short_message AS shortMessage,n.publication_status AS publicationStatus,n.profile_slug AS profileSlug,n.source,n.code,n.active,n.photo_token AS photoToken,n.vote_total AS voteTotal,n.category_id AS categoryId,n.person_id AS personId,c.name AS category FROM nominees n JOIN categories c ON c.id=n.category_id WHERE n.source<>'demo' ORDER BY c.sort_order,n.name").all()
   }));
   app.get("/api/admin/awards/import-preview",auth.requireAwardsAdmin,(req,res)=>res.json(awards.importPreview(db)));
   app.post("/api/admin/awards/import",auth.requireAwardsAdmin,(req,res,next)=>{try{if(req.body?.confirm!==true)return res.status(400).json({ok:false,message:"Review and explicitly confirm the import first."});res.status(201).json(awards.applyApprovedImport(db,req.admin));}catch(error){next(error);}});
@@ -455,6 +458,7 @@ function createApp(options = {}) {
   app.get("/awards", (req, res) => res.sendFile(path.join(publicDirectory, "index.html")));
   app.get("/awards/nominees/:slug", (req,res)=>res.sendFile(path.join(publicDirectory,"index.html")));
   app.get("/awards/payment/:reference", (req,res)=>res.sendFile(path.join(publicDirectory,"index.html")));
+  app.get("/nominee-photo/:token",(req,res)=>res.type("html").set({"Cache-Control":"no-store","Referrer-Policy":"no-referrer","X-Robots-Tag":"noindex, nofollow"}).sendFile(path.join(publicDirectory,"nominee-photo.html")));
   app.get("/index.html", (req, res) => res.redirect(308, "/awards"));
   app.use(express.static(publicDirectory, { dotfiles: "deny", index: false }));
   app.use("/api", (req, res) => res.status(404).json({ ok: false, message: "API endpoint not found." }));

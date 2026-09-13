@@ -67,10 +67,10 @@ function migrateAwards(db) {
     if(!db.prepare("SELECT 1 FROM nominees WHERE person_id=? AND category_id=? AND id<>?").get(personId,item.categoryId,item.id))attachPerson.run(personId,`${slugify(item.name)}-${item.id}`,item.id);
   }
   const demoEntries=[["BCR01","Esther Addo"],["BCR02","Ama Mensah"],["SPY01","Kwame Asare"],["SLY01","Nana Boateng"],["MPC01","Michael & Abena"],["MPC02","Kojo & Akosua"],["EOY01","Richmond Owusu"],["BDF01","Priscilla Nyarko"],["BDM01","Daniel Kumi"],["SMP01","Esi Arthur"],["CCY01","Yaw Mensah"],["MSS01","Adwoa Serwaa"],["MIS01","Kobby Amoako"],["AE01","Maame Frimpong"]];
-  const flagDemo=db.prepare("UPDATE nominees SET source='demo',active=0,publication_status='draft' WHERE code=? AND name=? AND NOT EXISTS(SELECT 1 FROM payments WHERE nominee_id=nominees.id) AND NOT EXISTS(SELECT 1 FROM vote_transactions WHERE nominee_id=nominees.id)");
+  const flagDemo=db.prepare("UPDATE nominees SET source='demo',active=0,publication_status='draft' WHERE code=? AND name=?");
   demoEntries.forEach(entry=>flagDemo.run(...entry));
   db.prepare("UPDATE nominees SET publication_status='published' WHERE source='legacy' AND active=1").run();
-  db.prepare("UPDATE categories SET active=0 WHERE EXISTS(SELECT 1 FROM nominees n WHERE n.category_id=categories.id AND n.source='demo') AND NOT EXISTS(SELECT 1 FROM nominees n WHERE n.category_id=categories.id AND n.source<>'demo') AND NOT EXISTS(SELECT 1 FROM payments p WHERE p.category_id=categories.id)").run();
+  db.prepare("UPDATE categories SET active=0 WHERE EXISTS(SELECT 1 FROM nominees n WHERE n.category_id=categories.id AND n.source='demo') AND NOT EXISTS(SELECT 1 FROM nominees n WHERE n.category_id=categories.id AND n.source<>'demo')").run();
   addColumn(db,"awards_settings","ledger_migrated INTEGER NOT NULL DEFAULT 0");
   db.prepare(`UPDATE payments SET public_id=reference,category_id=(SELECT category_id FROM nominees WHERE nominees.id=payments.nominee_id),
     payment_status=CASE WHEN status='success' THEN 'successful' WHEN status='amount_mismatch' THEN 'failed' ELSE COALESCE(status,'pending') END,

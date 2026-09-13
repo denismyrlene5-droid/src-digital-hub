@@ -1911,3 +1911,15 @@ test("campaign flyers have exact dimensions, stable category links and public dr
     const cookie=await adminCookie(app);assert.equal((await fetch(`${app.base}/api/admin/awards/nominees/${nominee.id}/flyer?format=square`,{headers:{Cookie:cookie}})).status,200);
   }finally{await app.close();}
 });
+
+test("known demo nominees with historical totals are hidden without deleting their records", async()=>{
+  const app=await fixture({initialVotingState:null});
+  try{
+    const before=app.db.prepare("SELECT id,category_id AS categoryId FROM nominees WHERE code='AE01' AND name='Maame Frimpong'").get();assert.ok(before);
+    app.db.prepare("UPDATE nominees SET vote_total=7 WHERE id=?").run(before.id);awards.migrateAwards(app.db);
+    const nominee=app.db.prepare("SELECT active,publication_status AS publicationStatus,source,vote_total AS voteTotal FROM nominees WHERE id=?").get(before.id);
+    assert.equal(nominee.active,0);assert.equal(nominee.publicationStatus,"draft");assert.equal(nominee.source,"demo");assert.equal(nominee.voteTotal,7);
+    assert.equal(app.db.prepare("SELECT active FROM categories WHERE id=?").get(before.categoryId).active,0);
+    assert.equal(awards.publicData(app.db).nominees.some(item=>item.id===before.id),false);
+  }finally{await app.close();}
+});

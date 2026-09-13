@@ -2,6 +2,7 @@ let categories = ["All"];
 let nominees = [];
 let activeCategory = "All";
 let searchTerm = "";
+let activeProgramme = "All programmes";
 let selectedNominee = null;
 let selectedVotes = 10;
 let paymentPollingTimer = null;
@@ -89,6 +90,7 @@ function applyVotingPresentation(){
 function renderTabs() {
   const el = byId("categoryTabs");
   el.innerHTML = categories.map(category => `<button class="category-tab ${category === activeCategory ? "active" : ""}" data-category="${category}">${category}</button>`).join("");
+  let programme=document.getElementById("programmeFilter");if(!programme){programme=document.createElement("select");programme.id="programmeFilter";programme.className="nominee-programme-filter";programme.setAttribute("aria-label","Filter nominees by programme");el.insertAdjacentElement("afterend",programme);programme.addEventListener("change",()=>{activeProgramme=programme.value;renderNominees();});}const programmes=["All programmes",...new Set(nominees.map(item=>item.program).filter(Boolean))];programme.innerHTML=programmes.map(value=>`<option ${value===activeProgramme?"selected":""}>${escapeHtml(value)}</option>`).join("");
   el.querySelectorAll(".category-tab").forEach(button => button.addEventListener("click", () => {
     activeCategory = button.dataset.category;
     renderTabs(); renderNominees();
@@ -97,7 +99,7 @@ function renderTabs() {
 
 function filteredNominees() {
   const query = searchTerm.trim().toLowerCase();
-  return nominees.filter(n => (activeCategory === "All" || n.category === activeCategory || awardGroup(n.category)===activeCategory) &&
+  return nominees.filter(n => (activeCategory === "All" || n.category === activeCategory || awardGroup(n.category)===activeCategory) && (activeProgramme==="All programmes"||n.program===activeProgramme) &&
     (!query || [n.name, n.category, n.program, n.code].some(value => value.toLowerCase().includes(query))));
 }
 

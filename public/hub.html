@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#07110d" />
+  <link rel="manifest" href="/manifest.webmanifest">
   <title>SRC Digital Hub</title>
   <meta name="description" content="The central digital home for SRC updates, events, awards, student services, and campus community." />
   <!-- SOCIAL_META -->
@@ -28,6 +29,7 @@
   <script src="/academics.js?v=1"></script>
   <script src="/campus-pulse.js?v=1"></script>
   <script src="/nominations.js?v=2"></script>
-  <script src="/publicity.js?v=17"></script>
+  <script src="/publicity.js?v=18"></script>
+  <script>if("serviceWorker" in navigator)addEventListener("load",()=>navigator.serviceWorker.register("/sw.js"));</script>
 </body>
 </html>

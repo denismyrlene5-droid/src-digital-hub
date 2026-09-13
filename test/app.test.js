@@ -118,6 +118,42 @@ test("Digital Hub and Awards routes are available", async () => {
   } finally { await app.close(); }
 });
 
+test("Phase 7 public install assets and event calendar downloads are available", async () => {
+  const app = await fixture({ environment: "staging" });
+  try {
+    const manifest = await fetch(`${app.base}/manifest.webmanifest`);
+    assert.equal(manifest.status, 200);
+    assert.equal((await manifest.json()).start_url, "/");
+    const worker = await (await fetch(`${app.base}/sw.js`)).text();
+    assert.match(worker, /pathname\.startsWith\("\/api\/"\)/);
+    assert.match(worker, /pathname\.startsWith\("\/admin"\)/);
+    assert.match(worker, /pathname\.startsWith\("\/nominee-photo\/"\)/);
+
+    const calendar = await fetch(`${app.base}/events/online-women-empowerment-seminar/calendar.ics`);
+    assert.equal(calendar.status, 200);
+    assert.match(calendar.headers.get("content-type"), /text\/calendar/);
+    const body = await calendar.text();
+    assert.match(body, /BEGIN:VCALENDAR/);
+    assert.match(body, /SUMMARY:Online Women Empowerment Seminar/);
+    assert.match(body, /UID:event-\d+@uccwisesrc\.com/);
+  } finally { await app.close(); }
+});
+
+test("admin system health is protected and returns no credentials", async () => {
+  const app = await fixture();
+  try {
+    assert.equal((await fetch(`${app.base}/api/admin/system-health`)).status, 401);
+    const cookie = await adminCookie(app);
+    const response = await fetch(`${app.base}/api/admin/system-health`, { headers: { Cookie: cookie } });
+    assert.equal(response.status, 200);
+    const health = await response.json();
+    assert.equal(health.database, "healthy");
+    assert.equal(health.storage, "healthy");
+    assert.equal(typeof health.pendingPayments, "number");
+    assert.deepEqual(Object.keys(health).sort(), ["database", "environment", "paymentConfigured", "paymentProvider", "pendingPayments", "storage"].sort());
+  } finally { await app.close(); }
+});
+
 test("homepage hero uses the CMS activity panel without duplicating Awards", async () => {
   const app = await fixture();
   try {

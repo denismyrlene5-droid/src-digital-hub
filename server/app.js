@@ -332,6 +332,7 @@ function createApp(options = {}) {
     }});
   });
   app.get("/api/admin/summary", auth.requireAwardsAdmin, (req, res) => res.json({ ...adminSummary(db), ...awards.adminData(db).metrics }));
+  app.get("/api/admin/system-health",auth.requireAnyAdmin,(req,res)=>{let database="healthy",storage="healthy";try{db.prepare("SELECT 1").get();}catch{database="unhealthy";}try{fs.accessSync(uploadDirectory,fs.constants.R_OK|fs.constants.W_OK);}catch{storage="unhealthy";}res.json({environment,database,storage,paymentProvider:activePaymentProvider?.name||"disabled",paymentConfigured:Boolean(activePaymentProvider&&activePaymentProvider.name!=="simulation"),pendingPayments:Number(db.prepare("SELECT COUNT(*) count FROM payments WHERE payment_status='pending'").get().count)});});
   app.get("/api/admin/awards", auth.requireAwardsAdmin, (req,res)=>res.json({
     ...awards.adminData(db,req.query),
     categories:db.prepare("SELECT c.id,c.name,c.sort_order AS sortOrder,c.active FROM categories c WHERE NOT(c.active=0 AND EXISTS(SELECT 1 FROM nominees d WHERE d.category_id=c.id AND d.source='demo') AND NOT EXISTS(SELECT 1 FROM nominees genuine WHERE genuine.category_id=c.id AND genuine.source<>'demo')) ORDER BY c.sort_order").all(),
@@ -424,6 +425,7 @@ function createApp(options = {}) {
     if (!record) return res.status(404).send("Announcement not found.");
     res.type("html").send(detailHtml(req, record, "announcement"));
   });
+  app.get("/events/:slug/calendar.ics",(req,res)=>{const event=publicity.getEventBySlug(req.params.slug);if(!event)return res.status(404).send("Event not found.");const clean=value=>String(value||"").replace(/\\/g,"\\\\").replace(/\r?\n/g,"\\n").replace(/([,;])/g,"\\$1"),date=String(event.eventDate).replace(/-/g,""),time=event.startTime?String(event.startTime).replace(":","")+"00":"090000",end=event.endTime?String(event.endTime).replace(":","")+"00":time,stamp=new Date().toISOString().replace(/[-:]/g,"").replace(/\.\d{3}/,"");const calendar=`BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//UCC WISE SRC//Digital Hub//EN\r\nBEGIN:VEVENT\r\nUID:event-${event.id}@uccwisesrc.com\r\nDTSTAMP:${stamp}\r\nDTSTART:${date}T${time}\r\nDTEND:${date}T${end}\r\nSUMMARY:${clean(event.title)}\r\nDESCRIPTION:${clean(event.shortDescription)}\r\nLOCATION:${clean(event.venue)}\r\nURL:${publicBaseUrl||`${req.protocol}://${req.get("host")}`}/events/${event.slug}\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n`;res.type("text/calendar").setHeader("Content-Disposition",`attachment; filename="${event.slug}.ics"`);res.send(calendar);});
   app.get("/events/:slug", (req, res) => {
     const record = publicity.getEventBySlug(req.params.slug);
     if (!record) return res.status(404).send("Event not found.");

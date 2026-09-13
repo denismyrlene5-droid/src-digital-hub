@@ -3,6 +3,7 @@ const { approvedNominees } = require("./approved-nominees");
 
 const PAYMENT_STATUSES = new Set(["pending", "successful", "failed", "cancelled", "expired", "reversed", "refunded"]);
 const VOTING_STATES = new Set(["not_started", "open", "paused", "closed"]);
+const CAMPAIGN_STAGES = new Set(["nominations","verification","nominees_published","voting","voting_closed","results"]);
 const safeReference = () => `SRCVOTE-${crypto.randomBytes(18).toString("base64url")}`;
 const now = () => new Date().toISOString();
 const normalizeName = value => String(value || "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().replace(/\s+/g, " ");
@@ -72,6 +73,7 @@ function migrateAwards(db) {
   db.prepare("UPDATE nominees SET publication_status='published' WHERE source='legacy' AND active=1").run();
   db.prepare("UPDATE categories SET active=0 WHERE EXISTS(SELECT 1 FROM nominees n WHERE n.category_id=categories.id AND n.source='demo') AND NOT EXISTS(SELECT 1 FROM nominees n WHERE n.category_id=categories.id AND n.source<>'demo')").run();
   addColumn(db,"awards_settings","ledger_migrated INTEGER NOT NULL DEFAULT 0");
+  addColumn(db,"awards_settings","campaign_stage TEXT NOT NULL DEFAULT 'verification'");
   db.prepare(`UPDATE payments SET public_id=reference,category_id=(SELECT category_id FROM nominees WHERE nominees.id=payments.nominee_id),
     payment_status=CASE WHEN status='success' THEN 'successful' WHEN status='amount_mismatch' THEN 'failed' ELSE COALESCE(status,'pending') END,
     verification_status=CASE WHEN status='success' THEN 'verified' WHEN status='amount_mismatch' THEN 'rejected' ELSE 'unverified' END,
@@ -240,7 +242,7 @@ function publicData(db) {
     const publicRow = {...row,imageUrl:photoToken?`/api/awards/files/${photoToken}`:null,profileUrl:`/awards/nominees/${row.profileSlug}`};
     return visible ? {...publicRow,percentage:totals.get(row.category)?votes/totals.get(row.category)*100:0,rank:ranks.get(row.id)} : publicRow;
   });
-  return { title: config.awards_title, categories: [...new Set(rows.map(r=>r.category))], nominees, pricePerVote: config.price_per_vote,
+  return { title: config.awards_title, campaignStage:config.campaign_stage, categories: [...new Set(rows.map(r=>r.category))], nominees, pricePerVote: config.price_per_vote,
     currency: config.currency, publicResultsVisible: visible, voting, opensAt: config.opens_at, countdownTarget: config.opens_at || "2026-09-15T00:00:00.000Z", closesAt: config.closes_at, maxVotes: config.max_votes };
 }
 
@@ -272,6 +274,7 @@ function applyApprovedImport(db,admin={}){
 function updateSettings(db, input) {
   const current = settings(db);
   if("votingState" in input&&!VOTING_STATES.has(input.votingState)){const e=new Error("Invalid voting state.");e.status=400;throw e;}
+  if("campaignStage" in input&&!CAMPAIGN_STAGES.has(input.campaignStage)){const e=new Error("Invalid campaign stage.");e.status=400;throw e;}
   if("pricePerVote" in input&&(!Number.isSafeInteger(Number(input.pricePerVote))||Number(input.pricePerVote)<1||Number(input.pricePerVote)>1000000)){const e=new Error("Price per vote must be a valid positive integer in minor currency units.");e.status=400;throw e;}
   if("maxVotes" in input&&(!Number.isSafeInteger(Number(input.maxVotes))||Number(input.maxVotes)<1||Number(input.maxVotes)>100000)){const e=new Error("Maximum votes is invalid.");e.status=400;throw e;}
   if("currency" in input&&!/^[A-Z]{3}$/.test(input.currency||"")){const e=new Error("Currency must be a three-letter uppercase code.");e.status=400;throw e;}
@@ -280,6 +283,7 @@ function updateSettings(db, input) {
     awards_title: typeof input.awardsTitle === "string" && input.awardsTitle.trim().length >= 3 && input.awardsTitle.trim().length <= 100 ? input.awardsTitle.trim() : current.awards_title,
     event_active: typeof input.eventActive === "boolean" ? Number(input.eventActive) : current.event_active,
     voting_state: VOTING_STATES.has(input.votingState) ? input.votingState : current.voting_state,
+    campaign_stage: CAMPAIGN_STAGES.has(input.campaignStage) ? input.campaignStage : current.campaign_stage,
     opens_at: input.opensAt === null || input.opensAt === "" ? null : (input.opensAt ? new Date(input.opensAt).toISOString() : current.opens_at),
     closes_at: input.closesAt === null || input.closesAt === "" ? null : (input.closesAt ? new Date(input.closesAt).toISOString() : current.closes_at),
     price_per_vote: Number.isSafeInteger(Number(input.pricePerVote)) && Number(input.pricePerVote)>=1 && Number(input.pricePerVote)<=1000000 ? Number(input.pricePerVote) : current.price_per_vote,
@@ -288,8 +292,8 @@ function updateSettings(db, input) {
     max_votes: Number.isSafeInteger(Number(input.maxVotes)) && Number(input.maxVotes)>=1 && Number(input.maxVotes)<=100000 ? Number(input.maxVotes) : current.max_votes
   };
   if (next.opens_at && next.closes_at && Date.parse(next.closes_at)<=Date.parse(next.opens_at)) { const e=new Error("Closing time must be after opening time."); e.status=400; throw e; }
-  db.prepare(`UPDATE awards_settings SET awards_title=?,event_active=?,voting_state=?,opens_at=?,closes_at=?,price_per_vote=?,currency=?,public_results_visible=?,max_votes=?,updated_at=? WHERE id=1`)
-    .run(next.awards_title,next.event_active,next.voting_state,next.opens_at,next.closes_at,next.price_per_vote,next.currency,next.public_results_visible,next.max_votes,now());
+  db.prepare(`UPDATE awards_settings SET awards_title=?,event_active=?,voting_state=?,campaign_stage=?,opens_at=?,closes_at=?,price_per_vote=?,currency=?,public_results_visible=?,max_votes=?,updated_at=? WHERE id=1`)
+    .run(next.awards_title,next.event_active,next.voting_state,next.campaign_stage,next.opens_at,next.closes_at,next.price_per_vote,next.currency,next.public_results_visible,next.max_votes,now());
   return settings(db);
 }
 

@@ -15,6 +15,7 @@ let voting = { open: false, state: "not_started", message: "Voting has not start
 let publicResultsVisible = false;
 let countdownTarget = "2026-09-15T00:00:00.000Z";
 let nominationsOpen = false;
+let campaignStage = "verification";
 let activeProfileSlug = "";
 const awardGroup = category => category.startsWith("Level 300 ") ? "Level 300" : category.startsWith("Level 350 ") ? "Level 350" : "General";
 
@@ -44,7 +45,7 @@ async function loadAwards() {
   activeProfileSlug=location.pathname.match(/^\/awards\/nominees\/([a-z0-9-]+)$/)?.[1]||"";
   if(activeProfileSlug){const profile=nominees.find(item=>item.profileSlug===activeProfileSlug);nominees=profile?[profile]:[];document.title=profile?`${profile.name} | SRC Awards`:`Nominee unavailable | SRC Awards`;}
   pricePerVote = data.pricePerVote; awardsCurrency = data.currency; maxVotes = data.maxVotes;
-  voting = data.voting; publicResultsVisible = data.publicResultsVisible; countdownTarget = data.countdownTarget || data.opensAt || countdownTarget;
+  voting = data.voting; campaignStage=data.campaignStage||"verification"; publicResultsVisible = data.publicResultsVisible; countdownTarget = data.countdownTarget || data.opensAt || countdownTarget;
   byId("pricePerVote").textContent = formatMoney(pricePerVote);
   byId("votingStateBadge").textContent = voting.state.replace("_", " ").toUpperCase();
   byId("votingStateBadge").className = voting.open ? "status-open" : "status-closed";
@@ -81,8 +82,8 @@ function applyVotingPresentation(){
   primary.textContent=voting.state==="paused"?"Voting Paused":voting.state==="closed"?"Voting Closed":"Start Voting";
   primary.setAttribute("aria-disabled",String(!voting.open));primary.tabIndex=voting.open?0:-1;primary.classList.toggle("is-disabled",!voting.open);
   if(nominationStage){byId("awardsHeroEyebrow").textContent="SRC AWARDS 2026";byId("awardsHeroTitle").textContent="NOMINATIONS ARE OPEN.";byId("awardsHeroIntro").textContent="Someone deserves the spotlight. Nominate yourself or someone who deserves recognition in the UCC Sandwich – WISE Campus SRC Awards.";byId("awardsPrelaunchTitle").textContent="Put someone in the spotlight.";byId("awardsPrelaunchIntro").textContent="Nominate yourself or recognise someone whose achievement and impact deserve to be celebrated.";byId("awardsPrelaunchBody").textContent="Submitting a nomination is free and does not count as a vote.";byId("awardsPrelaunchClosing").textContent="NOMINATIONS ARE OPEN.";}
-  else if(prelaunch){byId("awardsHeroEyebrow").textContent="SRC AWARDS 2026";byId("awardsHeroTitle").innerHTML="MEET YOUR<br><span>NOMINEES.</span>";byId("awardsHeroIntro").textContent="Discover the approved students and classes representing the UCC Sandwich – WISE Campus SRC Awards.";byId("awardsPrelaunchTitle").innerHTML="Celebrating Excellence.<br>Recognising Impact.";byId("awardsPrelaunchIntro").textContent="Official nominees will appear below as the Awards team publishes them.";byId("awardsPrelaunchBody").textContent="Voting remains unavailable until the server-controlled voting state is opened.";byId("awardsPrelaunchClosing").textContent="VOTING OPENS SOON.";}
-  else{byId("awardsHeroEyebrow").textContent="THE PEOPLE'S CHOICE • CAMPUS 2026";byId("awardsHeroTitle").innerHTML="Celebrate excellence.<br><span>Vote your favorite.</span>";byId("awardsHeroIntro").textContent="Discover nominees, support your favorites, and follow the race.";}
+  else if(prelaunch){const verification=campaignStage==="verification";byId("awardsHeroEyebrow").textContent="SRC AWARDS 2026";byId("awardsHeroTitle").innerHTML=verification?"NOMINEES UNDER<br><span>REVIEW.</span>":"MEET YOUR<br><span>NOMINEES.</span>";byId("awardsHeroIntro").textContent=verification?"The Awards team is reviewing nominations and preparing the official nominee list.":"Discover the approved students and classes representing the UCC Sandwich – WISE Campus SRC Awards.";byId("awardsPrelaunchTitle").innerHTML="Celebrating Excellence.<br>Recognising Impact.";byId("awardsPrelaunchIntro").textContent=verification?"Verified nominees will appear after review and consent.":"Official nominees appear below as the Awards team publishes them.";byId("awardsPrelaunchBody").textContent="Voting remains unavailable until the separate server-controlled voting state is opened.";byId("awardsPrelaunchClosing").textContent=verification?"VERIFICATION IN PROGRESS.":"VOTING OPENS SOON.";}
+  else{byId("awardsHeroEyebrow").textContent="THE PEOPLE'S CHOICE • CAMPUS 2026";byId("awardsHeroTitle").innerHTML=campaignStage==="results"?"THE RESULTS.<br><span>Celebrating excellence.</span>":campaignStage==="voting_closed"?"VOTING HAS<br><span>CLOSED.</span>":"Celebrate excellence.<br><span>Vote your favorite.</span>";byId("awardsHeroIntro").textContent=campaignStage==="results"?"Official results and recognised nominees are presented by the SRC Awards team.":campaignStage==="voting_closed"?"Voting is closed. Thank you for supporting the SRC Awards.":"Discover nominees, support your favorites, and follow the race.";}
 }
 
 function renderTabs() {

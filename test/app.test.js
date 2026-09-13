@@ -161,7 +161,7 @@ test("Awards administration is consolidated into the unified dashboard", async (
     assert.match(moduleScript, /api\/admin\/awards\/settings/);
     assert.doesNotMatch(shellScript, /Awards Admin/);
     assert.doesNotMatch(awardsPage, /id="adminOverlay"/);
-    assert.match(adminPage, /admin-awards\.js\?v=8/);
+    assert.match(adminPage, /admin-awards\.js\?v=9/);
   } finally { await app.close(); }
 });
 
@@ -1936,3 +1936,5 @@ test("private nominee photo links are revoked on regeneration and approval prese
     assert.notEqual(app.db.prepare("SELECT photo_token token FROM award_people WHERE id=?").get(nominee.personId).token,null);assert.equal(app.db.prepare("SELECT publication_status status FROM nominees WHERE id=?").get(nominee.id).status,"draft");
   }finally{await app.close();}
 });
+
+test("campaign stage changes messaging state without opening voting",async()=>{const app=await fixture({initialVotingState:"not_started"});try{const cookie=await adminCookie(app),updated=await fetch(`${app.base}/api/admin/awards/settings`,{method:"PUT",headers:{"Content-Type":"application/json",Cookie:cookie},body:JSON.stringify({campaignStage:"nominees_published"})});assert.equal(updated.status,200);const publicAwards=await(await fetch(`${app.base}/api/awards`)).json();assert.equal(publicAwards.campaignStage,"nominees_published");assert.equal(publicAwards.voting.open,false);assert.equal((await fetch(`${app.base}/api/admin/awards/settings`,{method:"PUT",headers:{"Content-Type":"application/json",Cookie:cookie},body:JSON.stringify({campaignStage:"invalid"})})).status,400);}finally{await app.close();}});

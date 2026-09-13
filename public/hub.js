@@ -52,6 +52,7 @@
     const hero = main.querySelector(".hub-hero");
     if (organization.heroImage) { hero.style.backgroundImage = `linear-gradient(rgba(7,17,13,.8),rgba(7,17,13,.9)),url("${organization.heroImage}")`; hero.classList.add("has-image"); }
   }
+  async function updateHomeAwardsStage(){try{const response=await fetch("/api/awards"),awards=await response.json(),panel=main.querySelector(".hub-awards-feature");if(!response.ok||!panel)return;const copy={nominations:["NOMINATIONS","Nominate someone deserving.","Awards nominations and eligibility are managed through the official nomination process."],verification:["VERIFICATION IN PROGRESS","Nominees are under review.","The Awards team is verifying nominations, photos and consent."],nominees_published:["MEET YOUR NOMINEES","Recognition. Excellence. Impact.","Discover the approved students and classes representing each award category."],voting:["VOTING IS OPEN","Support your nominee.","Choose the published nominee you believe deserves recognition."],voting_closed:["VOTING HAS CLOSED","Thank you for participating.","Voting is closed while the Awards team completes the next stage."],results:["AWARDS RESULTS","Celebrating excellence.","Explore the official results and recognised nominees."]}[awards.campaignStage]||null;if(!copy)return;panel.querySelector("h2").textContent=copy[0];panel.querySelector("h3").textContent=copy[1];panel.querySelector("p").textContent=copy[2];const link=panel.querySelector("a");link.textContent=awards.campaignStage==="nominations"&&nominationsOpen?"Nominate Free":awards.campaignStage==="voting"&&awards.voting.open?"Vote Now":"View Awards";link.href=awards.campaignStage==="nominations"&&nominationsOpen?"/nominations":"/awards";}catch{}}
 
   function placeholderPage(key) {
     const info = data.pages[key];
@@ -64,6 +65,6 @@
   }
 
   const publicityPage = ["announcements", "events", "academics", "academics/course-structure", "nominations", "admin", "feedback", "feedback/status", "lost-found", "businesses", "media", "executives"].includes(page) || /^(announcements|events|lost-found|businesses|media|executives)\//.test(page);
-  if (page === "home") homePage();
+  if (page === "home") {homePage();updateHomeAwardsStage();}
   else if (!publicityPage) placeholderPage(page);
 })();

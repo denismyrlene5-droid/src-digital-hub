@@ -79,7 +79,10 @@ function createPublicityRouter({ repository, uploadDirectory, requirePublicityAd
   }));
   router.use("/publicity/admin/announcements", express.json({ limit: "28mb" }));
   router.use("/publicity/admin/events", express.json({ limit: "8mb" }));
-  router.use(express.json({ limit: "32kb" }));
+  // Keep the small fallback parser inside Publicity. This router is mounted at
+  // /api, so an unscoped parser would reject larger bodies belonging to other
+  // modules (for example Base64 nominee photos) before their own parsers run.
+  router.use("/publicity/admin", express.json({ limit: "32kb" }));
   router.get("/publicity/admin/files/:token", handle((req, res) => {
     const token = repository.adminAnnouncementFile(req.params.token);
     const file = token && uploads.absolute(token);

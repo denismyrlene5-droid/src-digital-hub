@@ -178,6 +178,7 @@ function createApp(options = {}) {
   app.use("/api/campus-pulse", createCampusPulseRouter({ repository: campusPulse, requirePulseAdmin: auth.requirePulseAdmin, submissionLimit: campusPulseSubmissionLimit, audit: content.audit }));
   app.use("/api/nominations/admin", requireSameOrigin);
   app.use("/api/nominations", createNominationRouter({ repository: nominations, uploadDirectory, requireAwardsAdmin: auth.requireAwardsAdmin, submissionLimit: nominationSubmissionLimit, audit: content.audit }));
+  app.use("/api/nominee-photos/admin", express.json({ limit: "32kb" }));
   app.use("/api/nominee-photos",createNomineePhotoRouter(nomineePhotos,auth.requireAwardsAdmin,rateLimit({windowMs:900000,max:8})));
   // Awards nominee photos are Base64 JSON and must reach their scoped 8 MB
   // parser before the small default parser used by ordinary API requests.

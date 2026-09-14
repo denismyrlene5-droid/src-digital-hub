@@ -206,10 +206,13 @@ test("approved PDF nominee import is preview-first, idempotent, and private unti
   try{
     const cookie=await adminCookie(app);
     const previewResponse=await fetch(`${app.base}/api/admin/awards/import-preview`,{headers:{Cookie:cookie}}),preview=await previewResponse.json();
-    assert.equal(previewResponse.status,200);assert.equal(preview.total,95);assert.equal(preview.summary.unclear,5);assert.equal(preview.summary.new,90);
+    assert.equal(previewResponse.status,200);assert.equal(preview.total,95);assert.equal(preview.summary.unclear,0);assert.equal(preview.summary.new,95);assert.equal(preview.summary.existing,0);
     assert.equal((await fetch(`${app.base}/api/admin/awards/import`,{method:"POST",headers:{"Content-Type":"application/json",Cookie:cookie},body:JSON.stringify({confirm:false})})).status,400);
     for(let attempt=0;attempt<2;attempt++)assert.equal((await fetch(`${app.base}/api/admin/awards/import`,{method:"POST",headers:{"Content-Type":"application/json",Cookie:cookie},body:JSON.stringify({confirm:true})})).status,201);
-    assert.equal(app.db.prepare("SELECT COUNT(*) count FROM nominees WHERE source='pdf_import'").get().count,90);
+    assert.equal(app.db.prepare("SELECT COUNT(*) count FROM nominees WHERE source='pdf_import'").get().count,95);
+    assert.equal(app.db.prepare("SELECT COUNT(*) count FROM nominees n JOIN categories c ON c.id=n.category_id WHERE c.name='Level 350 Best Course Rep of the Year' AND n.source='pdf_import' AND n.publication_status='draft' AND n.active=0").get().count,5);
+    app.db.prepare("DELETE FROM nominees WHERE category_id=(SELECT id FROM categories WHERE name='Level 350 Best Course Rep of the Year')").run();awards.migrateAwards(app.db);
+    assert.equal(app.db.prepare("SELECT COUNT(*) count FROM nominees n JOIN categories c ON c.id=n.category_id WHERE c.name='Level 350 Best Course Rep of the Year' AND n.source='pdf_import'").get().count,5);
     assert.equal(app.db.prepare("SELECT COUNT(DISTINCT person_id) count FROM nominees WHERE name IN ('Donyina Twumasi Daniel','Daniel Donyina Twumasi')").get().count,1);
     assert.equal((await (await fetch(`${app.base}/api/awards`)).json()).nominees.length,0);
     const draft=app.db.prepare("SELECT id,name,category_id categoryId,program,code FROM nominees WHERE source='pdf_import' ORDER BY id LIMIT 1").get();

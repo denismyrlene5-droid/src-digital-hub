@@ -70,6 +70,16 @@ function migrateAwards(db) {
   const demoEntries=[["BCR01","Esther Addo"],["BCR02","Ama Mensah"],["SPY01","Kwame Asare"],["SLY01","Nana Boateng"],["MPC01","Michael & Abena"],["MPC02","Kojo & Akosua"],["EOY01","Richmond Owusu"],["BDF01","Priscilla Nyarko"],["BDM01","Daniel Kumi"],["SMP01","Esi Arthur"],["CCY01","Yaw Mensah"],["MSS01","Adwoa Serwaa"],["MIS01","Kobby Amoako"],["AE01","Maame Frimpong"]];
   const flagDemo=db.prepare("UPDATE nominees SET source='demo',active=0,publication_status='draft' WHERE code=? AND name=?");
   demoEntries.forEach(entry=>flagDemo.run(...entry));
+  const confirmedCourseReps=approvedNominees.filter(item=>item.category==="Level 350 Best Course Rep of the Year");
+  if(confirmedCourseReps.length&&Number(db.prepare("SELECT COUNT(*) count FROM nominees WHERE source='pdf_import'").get().count)){
+    const sortOrder=Number(db.prepare("SELECT COALESCE(MAX(sort_order),0)+1 value FROM categories").get().value);
+    db.prepare("INSERT OR IGNORE INTO categories(name,sort_order,active) VALUES(?,?,1)").run("Level 350 Best Course Rep of the Year",sortOrder);
+    db.prepare("UPDATE categories SET active=1 WHERE name='Level 350 Best Course Rep of the Year'").run();
+    const categoryId=db.prepare("SELECT id FROM categories WHERE name='Level 350 Best Course Rep of the Year'").get().id;
+    const insertConfirmedPerson=db.prepare("INSERT OR IGNORE INTO award_people(display_name,normalized_name,programme,level) VALUES(?,?,?,?)");
+    const insertConfirmedNominee=db.prepare("INSERT OR IGNORE INTO nominees(name,category_id,program,code,active,person_id,level,publication_status,profile_slug,source) VALUES(?,?,?,?,0,?,?, 'draft',?, 'pdf_import')");
+    for(const item of confirmedCourseReps){const key=personKey(item.name);insertConfirmedPerson.run(item.name,key,"To be confirmed","Level 350");const personId=db.prepare("SELECT id FROM award_people WHERE normalized_name=?").get(key).id;const code=`PDF${crypto.createHash("sha256").update(`${item.category}|${key}`).digest("hex").slice(0,10).toUpperCase()}`;insertConfirmedNominee.run(item.name,categoryId,"To be confirmed",code,personId,"Level 350",`${slugify(item.name)}-${categoryId}`);}
+  }
   db.prepare("UPDATE nominees SET publication_status='published' WHERE source='legacy' AND active=1").run();
   db.prepare("UPDATE categories SET active=0 WHERE EXISTS(SELECT 1 FROM nominees n WHERE n.category_id=categories.id AND n.source='demo') AND NOT EXISTS(SELECT 1 FROM nominees n WHERE n.category_id=categories.id AND n.source<>'demo')").run();
   addColumn(db,"awards_settings","ledger_migrated INTEGER NOT NULL DEFAULT 0");

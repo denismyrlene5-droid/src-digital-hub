@@ -36,6 +36,6 @@ const groups = {
   }
 };
 
-const approvedNominees = Object.entries(groups).flatMap(([group, categories]) => Object.entries(categories).flatMap(([category, names]) => names.map(name => ({ group, category, name, unclear: category === "Level 350 Best Course Rep of the Year" }))));
+const approvedNominees = Object.entries(groups).flatMap(([group, categories]) => Object.entries(categories).flatMap(([category, names]) => names.map(name => ({ group, category, name, unclear: false }))));
 
 module.exports = { approvedNominees };

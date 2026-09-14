@@ -1108,6 +1108,29 @@ test("replacing and deleting managed images removes obsolete upload files", asyn
   } finally { await app.close(); }
 });
 
+test("a nominee photo stays synchronized across the same person's category entries", async () => {
+  const app = await fixture();
+  const stored = token => fs.existsSync(path.join(app.uploadDirectory, token));
+  try {
+    const cookie = await adminCookie(app);
+    const categories = app.db.prepare("SELECT id FROM categories WHERE active=1 ORDER BY id LIMIT 2").all();
+    assert.equal(categories.length, 2);
+    const create = async (code, categoryId, photo) => {
+      const response = await fetch(`${app.base}/api/admin/awards/nominees`, { method:"POST", headers:{"Content-Type":"application/json",Cookie:cookie}, body:JSON.stringify({name:"Shared Photo Nominee",program:"Development Studies",level:"Level 300",code,categoryId,publicationStatus:"published",active:true,photo}) });
+      assert.equal(response.status, 201);
+      return (await response.json()).nominee;
+    };
+    const first = await create("SHARE01", categories[0].id, pngUpload);
+    const second = await create("SHARE02", categories[1].id, webpUpload);
+    assert.equal(stored(first.photoToken), false);
+    assert.equal(stored(second.photoToken), true);
+    const linked = app.db.prepare("SELECT DISTINCT photo_token AS token FROM nominees WHERE person_id=?").all(second.personId);
+    assert.deepEqual(linked.map(row => row.token), [second.photoToken]);
+    const publicData = await (await fetch(`${app.base}/api/awards`)).json();
+    assert.equal(publicData.nominees.filter(item => item.name === "Shared Photo Nominee").every(item => item.imageUrl.endsWith(second.photoToken)), true);
+  } finally { await app.close(); }
+});
+
 test("media drafts stay private, published albums are public, and uploads are protected", async () => {
   const app = await fixture({ publicityAdminPassword: "publicity-password" });
   try {

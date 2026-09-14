@@ -500,3 +500,47 @@ body[data-page="contact"] .contact-card{min-height:220px;border:0;border-top:4px
 body[data-page="contact"] .contact-card h2{margin-top:42px;font-size:clamp(20px,2.3vw,29px);color:#063c2b}
 @media(max-width:768px){body[data-page="feedback"] .page-hero>.hub-container,body[data-page="feedback/status"] .page-hero>.hub-container,body[data-page="lost-found"] .page-hero>.hub-container,body[data-page^="lost-found/"] .page-hero>.hub-container,body[data-page="media"] .page-hero>.hub-container,body[data-page^="media/"] .page-hero>.hub-container,body[data-page="executives"] .page-hero>.hub-container,body[data-page^="executives/"] .page-hero>.hub-container,body[data-page="contact"] .page-hero>.hub-container{padding-left:18px}body[data-page="feedback"] .page-hero h1,body[data-page="feedback/status"] .page-hero h1,body[data-page="lost-found"] .page-hero h1,body[data-page^="lost-found/"] .page-hero h1,body[data-page="media"] .page-hero h1,body[data-page^="media/"] .page-hero h1,body[data-page="executives"] .page-hero h1,body[data-page^="executives/"] .page-hero h1,body[data-page="contact"] .page-hero h1{font-size:clamp(44px,12vw,63px)}body[data-page^="lost-found/"] .detail-layout,body[data-page^="executives/"] .executive-profile{gap:30px}}
 @media(max-width:480px){body[data-page="lost-found"] .service-card,body[data-page="media"] .media-album-card,body[data-page="executives"] .executive-card{border-radius:4px 19px 4px 4px}body[data-page="feedback"] .service-form,body[data-page="feedback/status"] .service-form{padding:20px}}
+
+/* Awards and nominations: ceremonial navy, champagne gold, and calm editorial surfaces. */
+body.awards-page{background:#f3eddf}
+.awards-page .hero{min-height:720px;background:radial-gradient(circle at 82% 18%,rgba(211,170,70,.22),transparent 26%),linear-gradient(120deg,#041127,#08213d 68%,#10364a)}
+.awards-page .hero:before{content:"";position:absolute;inset:0;z-index:-1;opacity:.11;background-image:linear-gradient(rgba(255,255,255,.12) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.1) 1px,transparent 1px);background-size:70px 70px;mask-image:linear-gradient(90deg,#000,transparent 70%)}
+.awards-page .hero-copy{position:relative;padding-left:24px}.awards-page .hero-copy:before{content:"";position:absolute;left:0;top:2px;width:3px;height:74px;border-radius:99px;background:var(--hub-gold)}
+.awards-page .hero h1{max-width:720px;font-size:clamp(58px,7vw,94px);line-height:.89;letter-spacing:-.05em}
+.awards-page .awards-values-panel{border-radius:5px 30px 5px 5px;background:linear-gradient(145deg,rgba(9,54,39,.96),rgba(3,34,24,.98));box-shadow:22px 24px 0 rgba(1,12,28,.28),0 28px 70px rgba(0,0,0,.25)}
+.awards-page .awards-values-panel:before{border-radius:3px 21px 3px 3px}
+.awards-page .awards-prelaunch{margin-block:70px;padding:clamp(38px,6vw,70px);border-top:4px solid var(--hub-gold);border-radius:5px 28px 5px 5px;background:#fffdf7;box-shadow:0 18px 45px rgba(28,38,33,.08)}
+.awards-page .awards-prelaunch h2{color:#06172e;letter-spacing:-.035em;line-height:.95}
+.awards-page .meet-nominees-section{max-width:none;padding-inline:max(28px,calc((100% - 1184px)/2));background:#e7dfd0}
+.awards-page .meet-nominees-section .section-heading{padding-bottom:23px;border-bottom:1px solid rgba(19,42,32,.16)}
+.awards-page .section-heading h2{font-size:clamp(40px,4.7vw,60px);line-height:1;letter-spacing:-.03em}
+.awards-page .search-wrap{border:0;border-radius:4px 17px 4px 4px;box-shadow:0 12px 30px rgba(30,42,34,.09)}
+.awards-page .category-tab{border-radius:4px;padding-inline:17px}
+.awards-page .nominee-programme-filter{border:0;border-radius:4px 16px 4px 4px;box-shadow:0 10px 28px rgba(30,42,34,.08)}
+.awards-page .nominee-grid{gap:24px}
+.awards-page .nominee-card{border:0;border-top:4px solid var(--hub-gold);border-radius:5px 24px 5px 5px;background:#fffdf7;box-shadow:0 13px 35px rgba(36,43,35,.08)}
+.awards-page .nominee-card:hover{border-color:var(--hub-gold);box-shadow:0 21px 48px rgba(29,42,32,.13)}
+.awards-page .avatar{border-radius:4px 15px 4px 4px}
+.awards-page .vote-btn{border-radius:4px}
+.awards-page .leaderboard-card,.awards-page .stats-card,.awards-page .step-card{border:0;border-radius:5px 22px 5px 5px;background:#fffdf7;box-shadow:0 13px 35px rgba(36,43,35,.08)}
+.awards-page .stats-card,.awards-page .step-card{border-top:4px solid var(--hub-gold)}
+body[data-page="nominations"]{background:#f3eddf}
+body[data-page="nominations"] .nomination-page-hero{min-height:680px;background:#06172e}
+body[data-page="nominations"] .nomination-page-head{padding-left:25px;border-left:3px solid var(--hub-gold)}
+body[data-page="nominations"] .nomination-page-head h1{font-size:clamp(55px,7vw,88px);line-height:.9;letter-spacing:-.045em}
+body[data-page="nominations"] .nomination-media-shade{background:linear-gradient(90deg,rgba(3,15,33,.99) 0%,rgba(3,15,33,.88) 36%,rgba(3,15,33,.22) 70%,rgba(3,15,33,.02) 100%)}
+body[data-page="nominations"] .nomination-journey-section{padding-block:clamp(65px,8vw,100px)}
+body[data-page="nominations"] .nomination-status-banner{border:0;border-left:4px solid var(--hub-gold);border-radius:4px 17px 4px 4px;background:#fffdf7;box-shadow:0 10px 28px rgba(30,42,34,.07)}
+body[data-page="nominations"] .nomination-wizard,body[data-page="nominations"] .nomination-closed-state{border:0;border-top:4px solid var(--hub-gold);border-radius:5px 28px 5px 5px;background:#fffdf7;box-shadow:0 20px 50px rgba(25,40,31,.1)}
+body[data-page="nominations"] .nomination-steps{position:relative}
+body[data-page="nominations"] .nomination-steps:before{content:"";position:absolute;left:10%;right:10%;top:17px;height:1px;background:#d6cdbb}
+body[data-page="nominations"] .nomination-steps li{position:relative;z-index:1}
+body[data-page="nominations"] .nomination-steps b{background:#fffdf7}
+body[data-page="nominations"] .nomination-choice-grid,body[data-page="nominations"] .nomination-category-list{gap:14px}
+body[data-page="nominations"] .nomination-choice-grid button,body[data-page="nominations"] .nomination-category-list button{border:1px solid #d8d0bf;border-radius:4px 18px 4px 4px;background:#fffdf7}
+body[data-page="nominations"] .nomination-choice-grid button:hover,body[data-page="nominations"] .nomination-category-list button:hover{border-color:var(--hub-gold);background:#faf5e8}
+body[data-page="nominations"] .nomination-category-summary,body[data-page="nominations"] .nomination-review>div{border-radius:4px 14px 4px 4px}
+body[data-page="nominations"] .nomination-wizard input,body[data-page="nominations"] .nomination-wizard textarea,body[data-page="nominations"] .nomination-wizard select{border-radius:4px 12px 4px 4px}
+@media(max-width:768px){.awards-page .hero{min-height:auto}.awards-page .hero-copy{padding-left:18px}.awards-page .awards-values-panel{box-shadow:12px 14px 0 rgba(1,12,28,.25)}.awards-page .meet-nominees-section{padding-inline:16px}body[data-page="nominations"] .nomination-page-head{padding-left:18px}body[data-page="nominations"] .nomination-page-hero{min-height:0}body[data-page="nominations"] .nomination-steps:before{display:none}}
+@media(max-width:680px){body[data-page="nominations"] .nomination-page-head{border-left:0}body[data-page="nominations"] .nomination-feature-copy{background:#06172e}}
+@media(max-width:480px){.awards-page .hero h1{font-size:clamp(43px,13vw,57px)}.awards-page .nominee-card{border-radius:4px 19px 4px 4px}.awards-page .awards-prelaunch{margin-inline:14px}body[data-page="nominations"] .nomination-page-head h1{font-size:clamp(40px,12vw,53px)}body[data-page="nominations"] .nomination-wizard{border-radius:4px 20px 4px 4px}}

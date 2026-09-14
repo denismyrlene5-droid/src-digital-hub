@@ -235,8 +235,8 @@ test("public frontend retains accessibility and responsive spacing polish", asyn
     assert.match(css, /\.urgent-notice-content b\{white-space:normal/);
     assert.match(css, /\.hub-hero h1\{font-size:clamp\(40px,12vw,49px\)/);
     assert.match(css, /\.publicity-metrics\{grid-template-columns:repeat\(4,1fr\)\}/);
-    assert.match(home, /\/hub\.css\?v=29/);
-    assert.match(awards, /\/hub\.css\?v=15/);
+    assert.match(home, /\/hub\.css\?v=30/);
+    assert.match(awards, /\/hub\.css\?v=16/);
   } finally { await app.close(); }
 });
 

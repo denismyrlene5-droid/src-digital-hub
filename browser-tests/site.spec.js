@@ -189,7 +189,7 @@ test("open nominations are promoted only while the authoritative phase accepts s
     await expect(normalHero.getByRole("link", { name: "Nominate Free" })).toHaveCount(0);
     await expect(normalHero.getByRole("link", { name: "Explore Events" })).toBeVisible();
     await page.goto("/awards");
-    await expect(page.getByRole("heading", { name: "SOMETHING BIG IS COMING." })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "NOMINATIONS ARE OPEN." })).toHaveCount(0);
     await expect(page.locator("#awardsNominationCta")).toBeHidden();
   } finally {
     database.prepare("UPDATE nomination_phases SET status='draft',opens_at=NULL,closes_at=NULL").run();

@@ -13,7 +13,6 @@ const designs = Object.freeze({
   ivory: { label:"Ivory Editorial", start:"#f4eedf", middle:"#fffaf0", end:"#d9c8a4", accent:"#98752e", text:"#173b32", soft:"#4d554f", motif:"editorial" },
   royal: { label:"Royal Blue", start:"#061c48", middle:"#123f88", end:"#071832", accent:"#e1bd62", text:"#ffffff", soft:"#e9f0ff", motif:"stars" }
 });
-const esc = value => String(value ?? "").replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" })[character]);
 const cleanFilename = value => String(value || "nominee").normalize("NFKD").replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 70) || "nominee";
 const groupFor = category => category.startsWith("Level 300 ") ? "Level 300" : category.startsWith("Level 350 ") ? "Level 350" : "General";
 const wrap = (value, limit) => {

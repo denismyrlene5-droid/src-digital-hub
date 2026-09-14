@@ -6,6 +6,13 @@ const sharp = require("sharp");
 const { createUploadStore } = require("./uploads");
 
 const formats = Object.freeze({ status: { width: 1080, height: 1920, label: "WhatsApp Status" }, square: { width: 1080, height: 1080, label: "Square post" } });
+const designs = Object.freeze({
+  emerald: { label:"Emerald Prestige", start:"#032f25", middle:"#075440", end:"#142d30", accent:"#d6b45f", text:"#fffaf0", soft:"#eef4e9", motif:"circles" },
+  midnight: { label:"Midnight Gold", start:"#031329", middle:"#102a49", end:"#11182c", accent:"#d3b46d", text:"#ffffff", soft:"#f4efe5", motif:"rays" },
+  burgundy: { label:"Burgundy Excellence", start:"#2d0713", middle:"#681c2e", end:"#111d35", accent:"#e0bd72", text:"#fff9f0", soft:"#f6eadf", motif:"arches" },
+  ivory: { label:"Ivory Editorial", start:"#f4eedf", middle:"#fffaf0", end:"#d9c8a4", accent:"#98752e", text:"#173b32", soft:"#4d554f", motif:"editorial" },
+  royal: { label:"Royal Blue", start:"#061c48", middle:"#123f88", end:"#071832", accent:"#e1bd62", text:"#ffffff", soft:"#e9f0ff", motif:"stars" }
+});
 const esc = value => String(value ?? "").replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" })[character]);
 const cleanFilename = value => String(value || "nominee").normalize("NFKD").replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 70) || "nominee";
 const groupFor = category => category.startsWith("Level 300 ") ? "Level 300" : category.startsWith("Level 350 ") ? "Level 350" : "General";
@@ -27,6 +34,13 @@ const textPath = (value, x, y, size, font, fill, letterSpacing = 0) => {
   return `<path d="${paths.join(" ")}" fill="${fill}"/>`;
 };
 const pathLines = (lines, x, y, size, gap, font, fill, letterSpacing = 0) => lines.map((line, index) => textPath(line, x, y + index * gap, size, font, fill, letterSpacing)).join("");
+const motif = (name,width,height,accent) => ({
+  circles:`<circle cx="${width-70}" cy="150" r="250" fill="none" stroke="${accent}" opacity=".13" stroke-width="3"/><circle cx="${width-70}" cy="150" r="175" fill="none" stroke="${accent}" opacity=".11" stroke-width="2"/>`,
+  rays:`<path d="M${width} 0 L620 ${height} M${width-170} 0 L430 ${height}" stroke="${accent}" opacity=".08" stroke-width="80"/>`,
+  arches:`<path d="M-120 ${height*.72} Q${width/2} ${height*.3} ${width+120} ${height*.72}" fill="none" stroke="${accent}" opacity=".12" stroke-width="4"/><path d="M-120 ${height*.8} Q${width/2} ${height*.4} ${width+120} ${height*.8}" fill="none" stroke="${accent}" opacity=".08" stroke-width="3"/>`,
+  editorial:`<rect x="54" y="54" width="18" height="${height-108}" fill="${accent}" opacity=".7"/><path d="M760 0 L${width} 0 L${width} 330 Z" fill="${accent}" opacity=".12"/>`,
+  stars:`<g fill="${accent}" opacity=".16"><path d="M900 92l12 30 31 2-24 20 8 31-27-17-27 17 8-31-24-20 31-2z"/><path d="M970 245l8 20 21 1-16 14 5 20-18-11-18 11 5-20-16-14 21-1z"/></g>`
+})[name]||"";
 
 function nomineeRecord(db, selector, allowDraft) {
   const where = selector.id ? "n.id=?" : "n.profile_slug=?";
@@ -48,9 +62,12 @@ async function portraitData(item, uploads, width, height, sansBold) {
   return `data:image/svg+xml;base64,${placeholder.toString("base64")}`;
 }
 
-async function createNomineeFlyer({ db, uploadDirectory, publicDirectory, baseUrl, selector, format = "status", allowDraft = false }) {
+async function createNomineeFlyer({ db, uploadDirectory, publicDirectory, baseUrl, selector, format = "status", design, allowDraft = false }) {
   const size = formats[format]; if (!size) { const error = new Error("Choose status or square format."); error.status = 400; throw error; }
   const item = nomineeRecord(db, selector, allowDraft); if (!item) { const error = new Error("Published nominee not found."); error.status = 404; throw error; }
+  const designNames=Object.keys(designs),designName=design||designNames[(Number(item.id)-1)%designNames.length];
+  if(!designs[designName]){const error=new Error("Choose a valid flyer design.");error.status=400;throw error;}
+  const theme=designs[designName];
   const settings = db.prepare("SELECT voting_state AS votingState,awards_title AS awardsTitle FROM awards_settings WHERE id=1").get();
   const origin = String(baseUrl || "https://uccwisesrc.com").replace(/\/$/, "");
   const targetUrl = `${origin}/awards/nominees/${encodeURIComponent(item.profileSlug)}`;
@@ -81,19 +98,19 @@ async function createNomineeFlyer({ db, uploadDirectory, publicDirectory, baseUr
   const programmeY=categoryY + categoryLines.length * (categorySize + (isStatus ? 10 : 6)) + (isStatus ? 48 : 25);
   const headlineLines=isStatus?[headline]:wrap(headline,34).slice(0,2),headlineY=isStatus?height-220:895,instructionY=isStatus?height-165:965;
   const svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
-    <defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#06182f"/><stop offset=".67" stop-color="#102a49"/><stop offset="1" stop-color="#741f2a"/></linearGradient><clipPath id="photo"><rect x="90" y="${photoY}" width="900" height="${photoH}" rx="28"/></clipPath></defs>
-    <rect width="100%" height="100%" fill="url(#bg)"/><rect x="32" y="32" width="1016" height="${height - 64}" rx="34" fill="none" stroke="#b99a59" stroke-width="3"/>
-    <image href="${logo}" x="76" y="65" width="112" height="112" preserveAspectRatio="xMidYMid meet"/>${textPath("UCC SANDWICH–WISE CAMPUS",215,108,25,sansBold,"#d3b46d",3)}${textPath(settings.awardsTitle || "SRC Awards 2026",215,151,34,serif,"#fff")}
-    ${textPath(`${groupFor(item.category).toUpperCase()} AWARDS`,isStatus?90:215,isStatus ? photoY - 55 : 185,28,sansBold,"#d3b46d",5)}
-    <image href="${portrait}" x="90" y="${photoY}" width="900" height="${photoH}" preserveAspectRatio="xMidYMid slice" clip-path="url(#photo)"/><rect x="90" y="${photoY}" width="900" height="${photoH}" rx="28" fill="none" stroke="#d3b46d" stroke-width="3"/>
-    ${pathLines(nameLines,90,detailsY,nameSize,nameSize+7,serif,"#fff")}
-    ${pathLines(categoryLines,90,categoryY,categorySize,categorySize+(isStatus?10:6),sansBold,"#d3b46d")}
-    ${programmeDisplay ? textPath(programmeDisplay,90,programmeY,isStatus?26:19,sans,"#f4efe5") : ""}
-    ${pathLines(headlineLines,90,headlineY,isStatus?30:22,isStatus?36:27,sansBold,"#fff",3)}${textPath(instruction,90,instructionY,isStatus?24:20,sans,"#f4efe5")}
-    ${textPath("uccwisesrc.com",90,height-(isStatus?90:62),isStatus?28:23,sansBold,"#d3b46d")}<image href="${qr}" x="${qrX}" y="${qrY}" width="${qrSize}" height="${qrSize}"/>
+    <defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="${theme.start}"/><stop offset=".62" stop-color="${theme.middle}"/><stop offset="1" stop-color="${theme.end}"/></linearGradient><clipPath id="photo"><rect x="90" y="${photoY}" width="900" height="${photoH}" rx="${designName==="ivory"?4:28}"/></clipPath></defs>
+    <rect width="100%" height="100%" fill="url(#bg)"/>${motif(theme.motif,width,height,theme.accent)}<rect x="32" y="32" width="1016" height="${height - 64}" rx="${designName==="ivory"?4:34}" fill="none" stroke="${theme.accent}" stroke-width="3"/>
+    <image href="${logo}" x="76" y="65" width="112" height="112" preserveAspectRatio="xMidYMid meet"/>${textPath("UCC SANDWICH–WISE CAMPUS",215,108,25,sansBold,theme.accent,3)}${textPath(settings.awardsTitle || "SRC Awards 2026",215,151,34,serif,theme.text)}
+    ${textPath(`${groupFor(item.category).toUpperCase()} AWARDS`,isStatus?90:215,isStatus ? photoY - 55 : 185,28,sansBold,theme.accent,5)}
+    <image href="${portrait}" x="90" y="${photoY}" width="900" height="${photoH}" preserveAspectRatio="xMidYMid slice" clip-path="url(#photo)"/><rect x="90" y="${photoY}" width="900" height="${photoH}" rx="${designName==="ivory"?4:28}" fill="none" stroke="${theme.accent}" stroke-width="${designName==="royal"?6:3}"/>
+    ${pathLines(nameLines,90,detailsY,nameSize,nameSize+7,serif,theme.text)}
+    ${pathLines(categoryLines,90,categoryY,categorySize,categorySize+(isStatus?10:6),sansBold,theme.accent)}
+    ${programmeDisplay ? textPath(programmeDisplay,90,programmeY,isStatus?26:19,sans,theme.soft) : ""}
+    ${pathLines(headlineLines,90,headlineY,isStatus?30:22,isStatus?36:27,sansBold,theme.text,3)}${textPath(instruction,90,instructionY,isStatus?24:20,sans,theme.soft)}
+    ${textPath("uccwisesrc.com",90,height-(isStatus?90:62),isStatus?28:23,sansBold,theme.accent)}<image href="${qr}" x="${qrX}" y="${qrY}" width="${qrSize}" height="${qrSize}"/>
   </svg>`;
   const buffer = await sharp(Buffer.from(svg)).png({ compressionLevel: 9 }).toBuffer();
-  return { buffer, item, targetUrl, filename: `${cleanFilename(item.name)}-${cleanFilename(item.category)}-${format}.png`, width, height };
+  return { buffer, item, targetUrl, design:designName, filename: `${cleanFilename(item.name)}-${cleanFilename(item.category)}-${designName}-${format}.png`, width, height };
 }
 
-module.exports = { createNomineeFlyer, formats };
+module.exports = { createNomineeFlyer, formats, designs };

@@ -14,6 +14,11 @@ const wrap = (value, limit) => {
   if (line) lines.push(line); return lines;
 };
 const textLines = (lines, x, y, size, gap, attrs = "") => lines.map((line, index) => `<text x="${x}" y="${y + index * gap}" ${attrs} font-size="${size}">${esc(line)}</text>`).join("");
+const fontData = (publicDirectory, filename) => {
+  const file = path.join(publicDirectory, "assets", "fonts", filename);
+  if (!fs.existsSync(file)) { const error = new Error("A required flyer font is unavailable."); error.status = 503; throw error; }
+  return fs.readFileSync(file).toString("base64");
+};
 
 function nomineeRecord(db, selector, allowDraft) {
   const where = selector.id ? "n.id=?" : "n.profile_slug=?";
@@ -23,14 +28,14 @@ function nomineeRecord(db, selector, allowDraft) {
   return row;
 }
 
-async function portraitData(item, uploads, width, height) {
+async function portraitData(item, uploads, width, height, sansFont) {
   const source = item.photoToken && uploads.absolute(item.photoToken);
   if (source && fs.existsSync(source)) {
     const image = await sharp(source).rotate().resize(width, height, { fit: "cover", position: "centre" }).png().toBuffer();
     return `data:image/png;base64,${image.toString("base64")}`;
   }
   const initials = item.name.split(/\s+/).filter(Boolean).slice(0, 2).map(word => word[0]).join("").toUpperCase();
-  const placeholder = Buffer.from(`<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="#13253f"/><circle cx="${width / 2}" cy="${height / 2}" r="${Math.min(width, height) * .2}" fill="#a88a4a" opacity=".25"/><text x="50%" y="52%" text-anchor="middle" font-family="Arial" font-weight="700" font-size="${Math.min(width, height) * .16}" fill="#f7f2e8">${esc(initials)}</text></svg>`);
+  const placeholder = Buffer.from(`<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg"><style>@font-face{font-family:FlyerSans;src:url(data:font/ttf;base64,${sansFont}) format('truetype');font-weight:100 900}</style><rect width="100%" height="100%" fill="#13253f"/><circle cx="${width / 2}" cy="${height / 2}" r="${Math.min(width, height) * .2}" fill="#a88a4a" opacity=".25"/><text x="50%" y="52%" text-anchor="middle" font-family="FlyerSans" font-weight="700" font-size="${Math.min(width, height) * .16}" fill="#f7f2e8">${esc(initials)}</text></svg>`);
   return `data:image/svg+xml;base64,${placeholder.toString("base64")}`;
 }
 
@@ -44,9 +49,12 @@ async function createNomineeFlyer({ db, uploadDirectory, publicDirectory, baseUr
   const logoPath = path.join(publicDirectory, "assets", "ucc-wise-src-logo.jpg");
   if (!fs.existsSync(logoPath)) { const error = new Error("The official logo asset is unavailable."); error.status = 503; throw error; }
   const logo = `data:image/jpeg;base64,${fs.readFileSync(logoPath).toString("base64")}`;
+  const sansFont = fontData(publicDirectory, "Montserrat-Variable.ttf");
+  const serifFont = fontData(publicDirectory, "PlayfairDisplay-Variable.ttf");
+  const fontCss = `@font-face{font-family:FlyerSans;src:url(data:font/ttf;base64,${sansFont}) format('truetype');font-weight:100 900}@font-face{font-family:FlyerSerif;src:url(data:font/ttf;base64,${serifFont}) format('truetype');font-weight:400 900}`;
   const uploads = createUploadStore(uploadDirectory);
   const portraitHeight = format === "status" ? 900 : 430;
-  const portrait = await portraitData(item, uploads, 900, portraitHeight);
+  const portrait = await portraitData(item, uploads, 900, portraitHeight, sansFont);
   const nameLines = wrap(item.name, format === "status" ? 24 : 29).slice(0, format === "status" ? 3 : 2);
   const categoryLines = wrap(item.category, format === "status" ? 33 : 46).slice(0, format === "status" ? 3 : 2);
   const state = settings.votingState;
@@ -64,16 +72,16 @@ async function createNomineeFlyer({ db, uploadDirectory, publicDirectory, baseUr
   const programmeY=categoryY + categoryLines.length * (categorySize + (isStatus ? 10 : 6)) + (isStatus ? 48 : 25);
   const headlineLines=isStatus?[headline]:wrap(headline,34).slice(0,2),headlineY=isStatus?height-220:895,instructionY=isStatus?height-165:965;
   const svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
-    <defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#06182f"/><stop offset=".67" stop-color="#102a49"/><stop offset="1" stop-color="#741f2a"/></linearGradient><clipPath id="photo"><rect x="90" y="${photoY}" width="900" height="${photoH}" rx="28"/></clipPath></defs>
+    <defs><style>${fontCss}</style><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#06182f"/><stop offset=".67" stop-color="#102a49"/><stop offset="1" stop-color="#741f2a"/></linearGradient><clipPath id="photo"><rect x="90" y="${photoY}" width="900" height="${photoH}" rx="28"/></clipPath></defs>
     <rect width="100%" height="100%" fill="url(#bg)"/><rect x="32" y="32" width="1016" height="${height - 64}" rx="34" fill="none" stroke="#b99a59" stroke-width="3"/>
-    <image href="${logo}" x="76" y="65" width="112" height="112" preserveAspectRatio="xMidYMid meet"/><text x="215" y="108" font-family="Arial" font-size="25" font-weight="700" letter-spacing="3" fill="#d3b46d">UCC SANDWICH–WISE CAMPUS</text><text x="215" y="151" font-family="Georgia" font-size="34" font-weight="700" fill="#fff">${esc(settings.awardsTitle || "SRC Awards 2026")}</text>
-    <text x="${isStatus?90:215}" y="${isStatus ? photoY - 55 : 185}" font-family="Arial" font-size="28" font-weight="700" letter-spacing="5" fill="#d3b46d">${esc(groupFor(item.category).toUpperCase())} AWARDS</text>
+    <image href="${logo}" x="76" y="65" width="112" height="112" preserveAspectRatio="xMidYMid meet"/><text x="215" y="108" font-family="FlyerSans" font-size="25" font-weight="700" letter-spacing="3" fill="#d3b46d">UCC SANDWICH–WISE CAMPUS</text><text x="215" y="151" font-family="FlyerSerif" font-size="34" font-weight="700" fill="#fff">${esc(settings.awardsTitle || "SRC Awards 2026")}</text>
+    <text x="${isStatus?90:215}" y="${isStatus ? photoY - 55 : 185}" font-family="FlyerSans" font-size="28" font-weight="700" letter-spacing="5" fill="#d3b46d">${esc(groupFor(item.category).toUpperCase())} AWARDS</text>
     <image href="${portrait}" x="90" y="${photoY}" width="900" height="${photoH}" preserveAspectRatio="xMidYMid slice" clip-path="url(#photo)"/><rect x="90" y="${photoY}" width="900" height="${photoH}" rx="28" fill="none" stroke="#d3b46d" stroke-width="3"/>
-    ${textLines(nameLines, 90, detailsY, nameSize, nameSize + 7, 'font-family="Georgia" font-weight="700" fill="#fff"')}
-    ${textLines(categoryLines, 90, categoryY, categorySize, categorySize + (isStatus ? 10 : 6), 'font-family="Arial" font-weight="700" fill="#d3b46d"')}
-    ${programmeDisplay ? `<text x="90" y="${programmeY}" font-family="Arial" font-size="${isStatus?26:19}" fill="#f4efe5">${esc(programmeDisplay)}</text>` : ""}
-    ${textLines(headlineLines,90,headlineY,isStatus?30:22,isStatus?36:27,'font-family="Arial" font-weight="700" letter-spacing="3" fill="#fff"')}<text x="90" y="${instructionY}" font-family="Arial" font-size="${isStatus?24:20}" fill="#f4efe5">${esc(instruction)}</text>
-    <text x="90" y="${height - (isStatus?90:62)}" font-family="Arial" font-size="${isStatus?28:23}" font-weight="700" fill="#d3b46d">uccwisesrc.com</text><image href="${qr}" x="${qrX}" y="${qrY}" width="${qrSize}" height="${qrSize}"/>
+    ${textLines(nameLines, 90, detailsY, nameSize, nameSize + 7, 'font-family="FlyerSerif" font-weight="700" fill="#fff"')}
+    ${textLines(categoryLines, 90, categoryY, categorySize, categorySize + (isStatus ? 10 : 6), 'font-family="FlyerSans" font-weight="700" fill="#d3b46d"')}
+    ${programmeDisplay ? `<text x="90" y="${programmeY}" font-family="FlyerSans" font-size="${isStatus?26:19}" fill="#f4efe5">${esc(programmeDisplay)}</text>` : ""}
+    ${textLines(headlineLines,90,headlineY,isStatus?30:22,isStatus?36:27,'font-family="FlyerSans" font-weight="700" letter-spacing="3" fill="#fff"')}<text x="90" y="${instructionY}" font-family="FlyerSans" font-size="${isStatus?24:20}" fill="#f4efe5">${esc(instruction)}</text>
+    <text x="90" y="${height - (isStatus?90:62)}" font-family="FlyerSans" font-size="${isStatus?28:23}" font-weight="700" fill="#d3b46d">uccwisesrc.com</text><image href="${qr}" x="${qrX}" y="${qrY}" width="${qrSize}" height="${qrSize}"/>
   </svg>`;
   const buffer = await sharp(Buffer.from(svg)).png({ compressionLevel: 9 }).toBuffer();
   return { buffer, item, targetUrl, filename: `${cleanFilename(item.name)}-${cleanFilename(item.category)}-${format}.png`, width, height };

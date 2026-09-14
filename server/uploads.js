@@ -8,7 +8,7 @@ function uploadError(message) { const error = new Error(message); error.status =
 function createUploadStore(directory) {
   fs.mkdirSync(directory, { recursive: true });
   const rules = {
-    image: { max: 2 * 1024 * 1024, types: { "image/jpeg": ["jpg", "jpeg"], "image/png": ["png"], "image/webp": ["webp"] } },
+    image: { max: 5 * 1024 * 1024, types: { "image/jpeg": ["jpg", "jpeg"], "image/png": ["png"], "image/webp": ["webp"] } },
     document: { max: 1024 * 1024, types: { "application/pdf": ["pdf"], "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ["docx"], "text/plain": ["txt"] } }
   };
   function save(upload, kind) {
@@ -38,7 +38,7 @@ function createUploadStore(directory) {
     if (!/^[A-Za-z0-9][A-Za-z0-9._ -]{0,119}$/.test(name) || name.includes("..")) throw uploadError("Invalid file name.");
     const input = Buffer.isBuffer(file.buffer) ? file.buffer : file.path;
     const inputSize = Number(file.size || file.buffer?.length || 0);
-    if (!input || !inputSize || inputSize > rule.max) throw uploadError("Image must be smaller than 2 MB.");
+    if (!input || !inputSize || inputSize > rule.max) throw uploadError(`Image must be smaller than ${rule.max / 1024 / 1024} MB.`);
     const metadata = await sharp(input, { failOn: "warning", limitInputPixels: 40_000_000 }).metadata().catch(() => null);
     if (!metadata || !["jpeg", "png", "webp"].includes(metadata.format)) throw uploadError("The uploaded file is not a valid supported image.");
     const basename = crypto.randomBytes(16).toString("hex");

@@ -179,6 +179,9 @@ function createApp(options = {}) {
   app.use("/api/nominations/admin", requireSameOrigin);
   app.use("/api/nominations", createNominationRouter({ repository: nominations, uploadDirectory, requireAwardsAdmin: auth.requireAwardsAdmin, submissionLimit: nominationSubmissionLimit, audit: content.audit }));
   app.use("/api/nominee-photos",createNomineePhotoRouter(nomineePhotos,auth.requireAwardsAdmin,rateLimit({windowMs:900000,max:8})));
+  // Awards nominee photos are Base64 JSON and must reach their scoped 8 MB
+  // parser before the small default parser used by ordinary API requests.
+  app.use("/api/admin/awards", requireSameOrigin, createAwardsAdminRouter({ db, uploadDirectory, requireAwardsAdmin: auth.requireAwardsAdmin, audit: content.audit }));
   app.use(express.json({ limit: "32kb" }));
 
   app.post("/api/moolre/callback", async (req,res,next)=>{
@@ -345,7 +348,6 @@ function createApp(options = {}) {
     try { const before=awards.settings(db); const updated=awards.updateSettings(db,req.body||{}); content.audit(req.admin,"awards.settings_updated","awards","settings",`Awards configuration changed from ${before.voting_state} to ${updated.voting_state}`); res.json({ok:true,settings:updated}); }
     catch(error){next(error);}
   });
-  app.use("/api/admin/awards", createAwardsAdminRouter({ db, uploadDirectory, requireAwardsAdmin: auth.requireAwardsAdmin, audit: content.audit }));
   app.post("/api/admin/awards/transactions/:reference/adjustment",auth.requireAdmin,(req,res,next)=>{
     try{
       if(req.body?.externalConfirmed!==true||req.body?.confirmReference!==req.params.reference)return res.status(400).json({ok:false,message:"External provider confirmation and exact transaction reference are required."});
@@ -465,7 +467,8 @@ function createApp(options = {}) {
   app.use(express.static(publicDirectory, { dotfiles: "deny", index: false }));
   app.use("/api", (req, res) => res.status(404).json({ ok: false, message: "API endpoint not found." }));
   app.use((error, req, res, next) => {
-    if (error?.code === "LIMIT_FILE_SIZE") error = Object.assign(new Error(req.path.startsWith("/api/academics/") ? "PDF must be smaller than 15 MB." : "Image must be smaller than 2 MB."), { status: 400 });
+    if (error?.code === "LIMIT_FILE_SIZE") error = Object.assign(new Error(req.path.startsWith("/api/academics/") ? "PDF must be smaller than 15 MB." : "Image must be smaller than 5 MB."), { status: 400 });
+    else if (error?.type === "entity.too.large" || error?.status === 413) error = Object.assign(new Error("The upload request is too large. Choose images smaller than 5 MB each."), { status: 413 });
     else if (String(error?.code || "").startsWith("LIMIT_")) error = Object.assign(new Error("The upload could not be accepted."), { status: 400 });
     if (!error.status || error.status >= 500) console.error("Request failed:", error.message);
     if (res.headersSent) return next(error);

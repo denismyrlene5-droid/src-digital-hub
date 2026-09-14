@@ -7,7 +7,9 @@ const { createUploadStore } = require("./uploads");
 function createServicesRouter({ repository, uploadDirectory, requireAnyAdmin, requireFeedbackAdmin, requireLostFoundAdmin, requireBusinessAdmin, audit = () => {} }) {
   const router = express.Router();
   const uploads = createUploadStore(uploadDirectory);
-  const uploadJson = express.json({ limit: "3mb" });
+  // Base64 adds roughly one third to an image's size, so a 5 MB image needs
+  // more than 5 MB of JSON request capacity.
+  const uploadJson = express.json({ limit: "8mb" });
   const smallJson = express.json({ limit: "32kb" });
   const publicSubmitLimit = rateLimit({ windowMs: 10 * 60_000, max: 8 });
   const statusLimit = rateLimit({ windowMs: 10 * 60_000, max: 30 });

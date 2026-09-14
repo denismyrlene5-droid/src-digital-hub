@@ -10,7 +10,7 @@ function createPublicityRouter({ repository, uploadDirectory, requirePublicityAd
   const handle = fn => async (req, res, next) => { try { await fn(req, res, next); } catch (error) { next(error); } };
   const imageUpload = multer({
     storage: multer.diskStorage({ destination: uploadDirectory, filename: (req, file, callback) => callback(null, `${crypto.randomBytes(16).toString("hex")}.upload`) }),
-    limits: { fileSize: 2 * 1024 * 1024, files: 1, fields: 2 },
+    limits: { fileSize: 5 * 1024 * 1024, files: 1, fields: 2 },
     fileFilter: (req, file, callback) => callback(null, ["image/jpeg", "image/png", "image/webp"].includes(file.mimetype))
   });
   const uploadToken = value => String(value || "").match(/^\/api\/publicity\/files\/([a-f0-9]{32}\.[a-z0-9]{2,5})$/)?.[1] || null;
@@ -78,7 +78,7 @@ function createPublicityRouter({ repository, uploadDirectory, requirePublicityAd
     res.json({ ok: true });
   }));
   router.use("/publicity/admin/announcements", express.json({ limit: "28mb" }));
-  router.use("/publicity/admin/events", express.json({ limit: "3mb" }));
+  router.use("/publicity/admin/events", express.json({ limit: "8mb" }));
   router.use(express.json({ limit: "32kb" }));
   router.get("/publicity/admin/files/:token", handle((req, res) => {
     const token = repository.adminAnnouncementFile(req.params.token);

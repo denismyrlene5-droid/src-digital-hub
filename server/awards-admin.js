@@ -20,7 +20,7 @@ function createAwardsAdminRouter({ db, uploadDirectory, requireAwardsAdmin, audi
   const uploads = createUploadStore(uploadDirectory);
   const handle = fn => async (req, res, next) => { try { await fn(req, res, next); } catch (error) { next(error); } };
   router.use(requireAwardsAdmin);
-  router.use(express.json({ limit: "4mb" }));
+  router.use(express.json({ limit: "8mb" }));
 
   const category = categoryId => db.prepare("SELECT id,name,sort_order AS sortOrder,active FROM categories WHERE id=?").get(id(categoryId));
   const nominee = nomineeId => db.prepare(`SELECT n.id,n.name,n.program,n.level,n.short_message AS shortMessage,n.publication_status AS publicationStatus,n.profile_slug AS profileSlug,n.person_id AS personId,n.code,n.category_id AS categoryId,n.active,n.photo_token AS photoToken,c.name AS category

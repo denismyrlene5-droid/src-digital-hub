@@ -13,7 +13,8 @@ function createContentRouter({ repository, uploadDirectory, requireAnyAdmin, req
   router.get("/executives/:slug", handle((req,res)=>{const executive=repository.getExecutivePublic(req.params.slug);if(!executive)return res.status(404).json({ok:false,message:"Executive not found."});res.json({executive});}));
   router.get("/files/:token", handle((req,res)=>{const token=repository.publicFile(req.params.token);if(!token)return res.sendStatus(404);res.setHeader("Cache-Control","public, max-age=3600");res.sendFile(uploads.absolute(token));}));
 
-  router.use("/admin", requireAnyAdmin, express.json({ limit: "16mb" }));
+  // Media batches may contain up to six Base64-encoded 5 MB images.
+  router.use("/admin", requireAnyAdmin, express.json({ limit: "42mb" }));
 
   router.get("/admin/config",requireAnyAdmin,(req,res)=>res.json({role:req.admin.role,categories:repository.categories,statuses:repository.statuses}));
   router.get("/admin/dashboard",requireAnyAdmin,(req,res)=>res.json({role:req.admin.role,...repository.dashboard()}));

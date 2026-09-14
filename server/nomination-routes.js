@@ -6,7 +6,7 @@ function createNominationRouter({ repository, uploadDirectory, requireAwardsAdmi
   const router = express.Router();
   const uploads = createUploadStore(uploadDirectory);
   const handle = fn => async (req, res, next) => { try { await fn(req, res); } catch (error) { next(error); } };
-  const imageUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 2 * 1024 * 1024, files: 1, fields: 2 }, fileFilter: (req, file, callback) => callback(null, ["image/jpeg", "image/png", "image/webp"].includes(file.mimetype)) });
+  const imageUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024, files: 1, fields: 2 }, fileFilter: (req, file, callback) => callback(null, ["image/jpeg", "image/png", "image/webp"].includes(file.mimetype)) });
   const tokenFromUrl = value => String(value || "").match(/^\/api\/nominations\/(?:admin\/)?files\/([a-f0-9]{32}\.[a-z0-9]{2,5})$/)?.[1] || null;
   const log = (req, action, type, id, summary) => audit(req.admin, action, type, id, summary);
 

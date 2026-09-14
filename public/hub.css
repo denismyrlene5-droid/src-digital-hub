@@ -417,3 +417,44 @@ body[data-page^="announcements/"] .detail-actions,body[data-page^="events/"] .de
 @media(max-width:900px){body[data-page^="announcements/"] .detail-layout,body[data-page^="events/"] .detail-layout{grid-template-columns:1fr;gap:28px}}
 @media(max-width:768px){body[data-page="announcements"] .page-hero>.hub-container,body[data-page="events"] .page-hero>.hub-container,body[data-page^="announcements/"] .detail-header>.hub-container,body[data-page^="events/"] .detail-header>.hub-container{padding-left:18px}body[data-page="announcements"] .publicity-filters{margin-top:-72px}body[data-page="announcements"] .page-hero h1,body[data-page="events"] .page-hero h1{font-size:clamp(48px,13vw,66px)}body[data-page^="announcements/"] .detail-header h1,body[data-page^="events/"] .detail-header h1{font-size:clamp(42px,11vw,58px)}}
 @media(max-width:480px){body[data-page="announcements"] .publicity-filters{margin-top:-55px;padding:18px;border-radius:4px 18px 4px 4px}body[data-page="announcements"] .publicity-card,body[data-page="events"] .publicity-card{border-radius:4px 20px 4px 4px}body[data-page^="announcements/"] .detail-content,body[data-page^="events/"] .detail-content{font-size:17px;line-height:1.78}}
+
+/* Business and Academics concept: practical campus tools with editorial polish. */
+body[data-page="businesses"],body[data-page^="businesses/"],body[data-page="academics"],body[data-page="academics/course-structure"]{--utility-paper:#fffdf7;--utility-cream:#f3eddf;background:var(--utility-cream)}
+body[data-page="businesses"] .page-hero,body[data-page^="businesses/"] .page-hero,body[data-page="academics"] .page-hero,body[data-page="academics/course-structure"] .page-hero{position:relative;overflow:hidden;background:radial-gradient(circle at 83% 15%,rgba(220,181,91,.19),transparent 26%),linear-gradient(120deg,#031f17,#07432f 72%,#0b5239)}
+body[data-page="businesses"] .page-hero:after,body[data-page="academics"] .page-hero:after,body[data-page="academics/course-structure"] .page-hero:after{position:absolute;right:-18px;bottom:-57px;color:rgba(255,255,255,.045);font-family:"Playfair Display",serif;font-size:clamp(95px,16vw,220px);line-height:1;pointer-events:none}
+body[data-page="businesses"] .page-hero:after{content:"LOCAL"}
+body[data-page="academics"] .page-hero:after,body[data-page="academics/course-structure"] .page-hero:after{content:"LEARN"}
+body[data-page="businesses"] .page-hero>.hub-container,body[data-page^="businesses/"] .page-hero>.hub-container,body[data-page="academics"] .page-hero>.hub-container,body[data-page="academics/course-structure"] .page-hero>.hub-container{position:relative;z-index:1;padding-left:25px;border-left:3px solid var(--hub-gold)}
+body[data-page="businesses"] .page-hero h1,body[data-page^="businesses/"] .page-hero h1,body[data-page="academics"] .page-hero h1,body[data-page="academics/course-structure"] .page-hero h1{max-width:900px;font-size:clamp(53px,7vw,86px);line-height:.93;letter-spacing:-.045em}
+body[data-page="businesses"] .business-directory{padding-block:clamp(65px,8vw,100px);background:var(--utility-cream)}
+body[data-page="businesses"] .business-directory-toolbar{padding-bottom:24px;border-bottom:1px solid rgba(19,42,32,.16)}
+body[data-page="businesses"] .business-directory-toolbar h2{font-size:clamp(38px,4.5vw,58px);line-height:1;color:#063c2b;letter-spacing:-.03em}
+body[data-page="businesses"] .business-search{padding:20px;border:0;border-radius:5px 22px 5px 5px;background:var(--utility-paper);box-shadow:0 18px 45px rgba(8,43,30,.11)}
+body[data-page="businesses"] .publicity-results-heading{margin-top:50px;padding-bottom:20px;border-bottom:1px solid rgba(19,42,32,.16)}
+body[data-page="businesses"] .publicity-results-heading h2{font-size:clamp(36px,4vw,52px);color:#063c2b}
+body[data-page="businesses"] .business-grid{gap:24px}
+body[data-page="businesses"] .business-directory-card{border:0;border-radius:5px 25px 5px 5px;background:var(--utility-paper);box-shadow:0 13px 35px rgba(36,43,35,.08)}
+body[data-page="businesses"] .business-directory-card.is-featured{border-top:4px solid var(--hub-gold)}
+body[data-page="businesses"] .business-directory-card .service-card-image{aspect-ratio:16/10;max-height:none}
+body[data-page="businesses"] .business-directory-card h3{font-size:26px;line-height:1.08}
+body[data-page="businesses"] .business-view{border-radius:4px}
+body[data-page^="businesses/"] .business-profile{gap:55px}
+body[data-page^="businesses/"] .business-profile>div>.service-card-image{max-width:none;border-radius:5px 28px 5px 5px;box-shadow:0 18px 45px rgba(23,41,31,.12)}
+body[data-page^="businesses/"] .business-profile>div h2{font-size:clamp(28px,3vw,38px);color:#063c2b}
+body[data-page^="businesses/"] .business-profile>div p{font-size:16px;line-height:1.85}
+body[data-page^="businesses/"] .detail-actions{border:0;border-top:4px solid var(--hub-gold);border-radius:4px 20px 4px 4px;background:var(--utility-paper);box-shadow:0 15px 38px rgba(31,43,35,.09)}
+body[data-page="academics"] .hub-section,body[data-page="academics/course-structure"] .hub-section{padding-block:clamp(65px,8vw,100px)}
+body[data-page="academics"] .academics-feature{border:0;border-top:4px solid var(--hub-gold);border-radius:5px 25px 5px 5px;background:var(--utility-paper);box-shadow:0 18px 45px rgba(8,43,30,.1)}
+body[data-page="academics/course-structure"] .academics-toolbar{border:0;border-radius:5px 24px 5px 5px;background:var(--utility-paper);box-shadow:0 18px 45px rgba(8,43,30,.1)}
+body[data-page="academics/course-structure"] .academics-toolbar h2{font-family:"Playfair Display",serif;font-size:clamp(32px,4vw,45px);line-height:1}
+body[data-page="academics/course-structure"] .semester-tabs{gap:1px;padding:1px;border:1px solid #cfc7b6;background:#cfc7b6}
+body[data-page="academics/course-structure"] .semester-tabs button{border:0;border-radius:0;background:var(--utility-paper)}
+body[data-page="academics/course-structure"] .semester-tabs button[aria-selected="true"]{background:#063c2b;color:#fff}
+body[data-page="academics/course-structure"] .academic-results-head{padding-bottom:20px;border-bottom:1px solid rgba(19,42,32,.16)}
+body[data-page="academics/course-structure"] .academic-results-head h2{font-family:"Playfair Display",serif;font-size:clamp(28px,3.6vw,42px);line-height:1.08}
+body[data-page="academics/course-structure"] .academic-table-wrap{border:0;border-radius:5px 20px 5px 5px;box-shadow:0 13px 34px rgba(36,43,35,.08)}
+body[data-page="academics/course-structure"] .academic-table th{padding-block:17px;background:#063c2b}
+body[data-page="academics/course-structure"] .academic-table tbody tr:nth-child(even){background:#f6f2e8}
+body[data-page="academics/course-structure"] .academic-source{border:0;border-top:4px solid var(--hub-gold);border-radius:4px 18px 4px 4px;background:var(--utility-paper)}
+@media(max-width:768px){body[data-page="businesses"] .page-hero>.hub-container,body[data-page^="businesses/"] .page-hero>.hub-container,body[data-page="academics"] .page-hero>.hub-container,body[data-page="academics/course-structure"] .page-hero>.hub-container{padding-left:18px}body[data-page="businesses"] .page-hero h1,body[data-page^="businesses/"] .page-hero h1,body[data-page="academics"] .page-hero h1,body[data-page="academics/course-structure"] .page-hero h1{font-size:clamp(45px,12vw,64px)}body[data-page="businesses"] .business-directory-card{border-radius:4px 20px 4px 4px}body[data-page^="businesses/"] .business-profile{gap:30px}}
+@media(max-width:680px){body[data-page="academics/course-structure"] .semester-tabs{border:0;background:transparent;gap:8px}body[data-page="academics/course-structure"] .semester-tabs button{border:1px solid #cfc7b6;border-radius:4px}body[data-page="academics/course-structure"] .academic-table tr{border:0;border-radius:4px 18px 4px 4px;box-shadow:0 8px 24px rgba(36,43,35,.07)}}

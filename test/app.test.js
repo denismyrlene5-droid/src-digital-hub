@@ -1245,9 +1245,10 @@ test("Awards CMS creates and edits records while protecting historical nominees"
     const categoryResponse = await fetch(`${app.base}/api/admin/awards/categories`, { method: "POST", headers: { "Content-Type": "application/json", Cookie: cookie }, body: JSON.stringify({ name: "Campus Impact", sortOrder: 99, active: true }) });
     assert.equal(categoryResponse.status, 201);
     const category = (await categoryResponse.json()).category;
-    const nomineeResponse = await fetch(`${app.base}/api/admin/awards/nominees`, { method: "POST", headers: { "Content-Type": "application/json", Cookie: cookie }, body: JSON.stringify({ name: "CMS Test Nominee", program: "Development Studies", code: "CMS01", categoryId: category.id, active: true, publicationStatus: "published", photo: pngUpload }) });
+    const nomineeResponse = await fetch(`${app.base}/api/admin/awards/nominees`, { method: "POST", headers: { "Content-Type": "application/json", Cookie: cookie }, body: JSON.stringify({ name: "CMS Test Nominee", program: "Development Studies", code: "CMS01", categoryId: category.id, active: false, publicationStatus: "published", photo: pngUpload }) });
     assert.equal(nomineeResponse.status, 201);
     const nominee = (await nomineeResponse.json()).nominee;
+    assert.equal(Boolean(nominee.active), true);
     const publicAwards = await (await fetch(`${app.base}/api/awards`)).json();
     assert.match(publicAwards.nominees.find(item => item.id === nominee.id).imageUrl, /^\/api\/awards\/files\//);
     assert.equal((await fetch(`${app.base}/api/admin/awards/nominees/1`, { method: "DELETE", headers: { Cookie: cookie } })).status, 409);

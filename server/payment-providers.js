@@ -181,6 +181,45 @@ function createMoolreProvider({
         providerReference: String(result?.data?.reference || "")
       };
     },
+    async collectMobileMoney(transaction, { payer, channel, sessionId } = {}) {
+      if (!enabled) return { ok: false, status: "failed", message: "Moolre payments are not configured." };
+      const normalizedPayer = String(payer || "").replace(/\D/g, "");
+      const localPayer = normalizedPayer.startsWith("233") && normalizedPayer.length === 12
+        ? `0${normalizedPayer.slice(3)}`
+        : normalizedPayer;
+      const network = String(channel || "").toUpperCase();
+      if (!/^0\d{9}$/.test(localPayer) || !new Set(["MTN", "TELECEL", "AT"]).has(network)) {
+        return { ok: false, status: "failed", message: "The USSD payment details are invalid." };
+      }
+      let response;
+      let result;
+      try {
+        response = await request("/open/transact/payment", {
+          type: 1,
+          channel: network,
+          currency: transaction.currency,
+          payer: localPayer,
+          amount: (Number(transaction.expectedAmount) / 100).toFixed(2),
+          externalref: transaction.reference,
+          reference: "SRC Awards vote",
+          sessionid: String(sessionId || "").slice(0, 128),
+          accountnumber: credentials.accountNumber
+        });
+        result = await response.json();
+      } catch {
+        return { ok: false, uncertain: true, status: "pending", message: "The payment prompt status is uncertain." };
+      }
+      if (!response.ok || Number(result?.status) !== 1) {
+        const uncertain = Number(response.status) >= 500 || Number(response.status) === 429;
+        return { ok: false, uncertain, status: uncertain ? "pending" : "failed", message: "Moolre could not start the payment prompt." };
+      }
+      return {
+        ok: true,
+        status: "pending",
+        providerReference: typeof result?.data === "string" ? result.data.slice(0, 160) : "",
+        requiresOtp: String(result?.code || "").toUpperCase() === "TP14"
+      };
+    },
     async verify(reference, transaction = {}) {
       if (!enabled) return { status: "pending", reason: "provider_unavailable" };
       let response;

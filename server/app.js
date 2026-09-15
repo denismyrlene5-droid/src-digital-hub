@@ -22,6 +22,7 @@ const { createNominationRepository } = require("./nominations");
 const { createNominationRouter } = require("./nomination-routes");
 const { createNomineeFlyer } = require("./award-flyers");
 const { createRepository: createNomineePhotoRepository, createRouter: createNomineePhotoRouter } = require("./nominee-photo-submissions");
+const { createMoolreUssdRouter } = require("./moolre-ussd");
 
 function parseAdminUsers(value) {
   if (!String(value || "").trim()) return [];
@@ -88,6 +89,7 @@ function createApp(options = {}) {
     businessEmail: options.moolreBusinessEmail ?? process.env.MOOLRE_BUSINESS_EMAIL ?? "",
     expirationMinutes: options.moolreExpirationMinutes ?? process.env.MOOLRE_LINK_EXPIRATION_MINUTES ?? 15
   };
+  const moolreUssdCallbackToken = options.moolreUssdCallbackToken ?? process.env.MOOLRE_USSD_CALLBACK_TOKEN ?? "";
   const adminPassword = options.adminPassword ?? process.env.ADMIN_PASSWORD ?? "";
   const publicityAdminPassword = options.publicityAdminPassword ?? process.env.PUBLICITY_ADMIN_PASSWORD ?? "";
   const studentAffairsAdminPassword = options.studentAffairsAdminPassword ?? process.env.STUDENT_AFFAIRS_ADMIN_PASSWORD ?? "";
@@ -137,6 +139,13 @@ function createApp(options = {}) {
   app.set("productionMode",production);
   if (production || staging) app.set("trust proxy", 1);
   app.use(securityHeaders);
+  app.use("/api/moolre/ussd", createMoolreUssdRouter({
+    db,
+    awards,
+    provider: moolreProvider,
+    enabled: paymentProvider.startsWith("moolre_") && moolreProvider.enabled && String(moolreUssdCallbackToken).length >= 24,
+    callbackToken: moolreUssdCallbackToken
+  }));
   app.post("/api/paystack/webhook", express.raw({ type: "application/json", limit: "200kb" }), async (req, res, next) => {
     try {
     if (!paystackProvider.enabled) return res.sendStatus(503);

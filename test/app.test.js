@@ -449,6 +449,51 @@ test("Moolre hosted checkout uses documented headers, major-unit amount, and ret
   assert.equal(request.body.callback,"https://uccwisesrc.com/api/moolre/callback");assert.equal(request.body.redirect,`https://uccwisesrc.com/awards/payment/${transaction.reference}`);
 });
 
+test("Moolre USSD Action API uses server-owned voting data and only credits after verified callback",async()=>{
+  const token="ussd-callback-token-at-least-24-characters";
+  let paymentRequest;
+  const fetchImpl=async(url,options)=>{
+    const body=JSON.parse(options.body);
+    if(String(url).endsWith("/open/transact/payment")){
+      paymentRequest={url:String(url),headers:options.headers,body};
+      return {ok:true,status:200,json:async()=>({status:1,code:"TR099",data:"MLR-USSD-PROMPT"})};
+    }
+    if(String(url).endsWith("/open/transact/status"))return {ok:true,status:200,json:async()=>({status:1,data:{txstatus:1,externalref:body.id,accountnumber:"100000001",amount:"2.00",transactionid:"MLR-USSD-PROMPT",currency:"GHS"}})};
+    throw new Error(`Unexpected Moolre request: ${url}`);
+  };
+  const app=await fixture({paymentProvider:"moolre_sandbox",moolreApiUser:"merchant-user",moolrePublicKey:"public-key",moolreAccountNumber:"100000001",moolreBusinessEmail:"payments@example.edu",moolreUssdCallbackToken:token,fetchImpl});
+  const callback=(body,headers={})=>fetch(`${app.base}/api/moolre/ussd?token=${encodeURIComponent(token)}`,{method:"POST",headers:{"Content-Type":"application/json",...headers},body:JSON.stringify({sessionId:"3-17074657982460137",msisdn:"233241235993",network:3,extension:"109",data:"",...body})});
+  try{
+    const preflight=await fetch(`${app.base}/api/moolre/ussd?token=${encodeURIComponent(token)}`,{method:"OPTIONS",headers:{Origin:"https://docs.moolre.com","Access-Control-Request-Method":"POST"}});
+    assert.equal(preflight.status,204);assert.equal(preflight.headers.get("access-control-allow-origin"),"https://docs.moolre.com");
+    assert.equal((await callback({new:true,message:""},{Origin:"https://evil.example"})).status,403);
+    assert.equal((await fetch(`${app.base}/api/moolre/ussd?token=wrong`,{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"})).status,401);
+
+    let response=await callback({new:true,message:""});assert.equal(response.status,200);assert.equal((await response.json()).reply,true);
+    response=await callback({new:false,message:"1"});assert.equal((await response.json()).reply,true);
+    response=await callback({new:false,message:"1"});assert.match((await response.json()).message,/quantity/i);
+    response=await callback({new:false,message:"2"});const confirmation=await response.json();assert.equal(confirmation.reply,true);assert.match(confirmation.message,/GHS 2\.00/);
+    response=await callback({new:false,message:"1"});assert.equal((await response.json()).reply,false);
+    await new Promise(resolve=>setTimeout(resolve,30));
+    assert.equal(paymentRequest.url,"https://sandbox.moolre.com/open/transact/payment");
+    assert.equal(paymentRequest.body.channel,"MTN");assert.equal(paymentRequest.body.payer,"0241235993");assert.equal(paymentRequest.body.amount,"2.00");
+    assert.match(paymentRequest.body.externalref,/^SRCVOTE-/);assert.equal(paymentRequest.body.accountnumber,"100000001");
+    const transaction=app.db.prepare("SELECT nominee_id nomineeId FROM payments WHERE reference=?").get(paymentRequest.body.externalref);
+    const before=app.db.prepare("SELECT vote_total total FROM nominees WHERE id=?").get(transaction.nomineeId).total;
+    const paid=await fetch(`${app.base}/api/moolre/callback`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({status:1,data:{externalref:paymentRequest.body.externalref}})});
+    assert.equal(paid.status,200);assert.equal(app.db.prepare("SELECT vote_total total FROM nominees WHERE id=?").get(transaction.nomineeId).total,before+2);
+    assert.equal(app.db.prepare("SELECT COUNT(*) count FROM vote_transactions WHERE reference=?").get(paymentRequest.body.externalref).count,1);
+  }finally{await app.close();}
+});
+
+test("Moolre USSD callback stays unavailable without its separate callback token",async()=>{
+  const app=await fixture({paymentProvider:"moolre_sandbox",moolreApiUser:"merchant-user",moolrePublicKey:"public-key",moolreAccountNumber:"100000001",moolreBusinessEmail:"payments@example.edu",moolreUssdCallbackToken:""});
+  try{
+    const response=await fetch(`${app.base}/api/moolre/ussd`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:"session-1",new:true,msisdn:"233241235993",network:3,message:""})});
+    assert.equal(response.status,503);assert.equal((await response.json()).reply,false);
+  }finally{await app.close();}
+});
+
 test("Moolre initialization timeouts remain pending instead of becoming confirmed failures",async()=>{
   const provider=createMoolreProvider({apiUser:"merchant-user",publicKey:"public-key",accountNumber:"100000001",businessEmail:"payments@example.edu",fetchImpl:async()=>{throw new TypeError("network timeout");}});
   const result=await provider.initialize({reference:"SRCVOTE-test-reference-123456",currency:"GHS",expectedAmount:300,votes:3,nominee:{id:1}});

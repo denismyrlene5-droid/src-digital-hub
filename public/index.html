@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles.css?v=15" />
+  <link rel="stylesheet" href="/styles.css?v=16" />
   <link rel="stylesheet" href="/hub.css?v=16" />
 </head>
 <body class="awards-page">
@@ -89,7 +89,7 @@
       <nav class="category-tabs awards-group-tabs" id="categoryTabs" aria-label="Award groups"></nav>
       <label class="awards-category-picker"><span>Award category</span><select id="awardCategoryFilter"><option value="All">All categories</option></select></label>
       <div class="nominee-browse-summary"><p id="nomineeResultCount" role="status" aria-live="polite"></p><button class="secondary-btn" id="resetNomineeFilters" type="button" hidden>Reset filters</button></div>
-      <div class="nominee-grid" id="nomineeGrid"></div>
+      <div class="nominee-grid" id="nomineeGrid" aria-busy="true"><div class="empty-state" role="status">Checking published nominees…</div></div>
     </section>
 
     <section class="section leaderboard-section awards-live-section" id="leaderboard" hidden>
@@ -150,7 +150,7 @@
 
   <!-- Vote Modal -->
   <div class="modal-backdrop" id="voteModal" aria-hidden="true">
-    <div class="modal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalNominee" tabindex="-1">
       <button class="modal-close" id="closeVoteModal" aria-label="Close">×</button>
       <div class="modal-badge">CAST YOUR VOTE</div>
       <div class="modal-nominee">
@@ -221,7 +221,7 @@
 
   <script src="/hub-data.js?v=10"></script>
   <script src="/hub-shell.js?v=13"></script>
-  <script src="/app.js?v=18"></script>
+  <script src="/app.js?v=19"></script>
   <script>if("serviceWorker" in navigator)addEventListener("load",()=>navigator.serviceWorker.register("/sw.js"));</script>
 </body>
 </html>

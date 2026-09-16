@@ -35,6 +35,39 @@ async function loginAsAdmin(page) {
   }
 }
 
+test("Awards modal stays usable on short screens and loading failures offer retry", async ({ page }) => {
+  const errors = []; page.on("pageerror", error => errors.push(error.message));
+  await page.route("**/api/awards", async route => {
+    const response = await route.fetch(), data = await response.json();
+    data.categories = ["Campus Icon of the Year"];
+    data.nominees = [{ id: 1, rank: 1, name: "Test Student", category: data.categories[0], program: "Education", code: "TEST", profileUrl: "/awards/nominees/test" }];
+    data.publicResultsVisible = false; data.voting = { open: true, state: "open", message: "Open" };
+    await route.fulfill({ json: data });
+  });
+  await page.setViewportSize({ width: 375, height: 420 });
+  await page.goto("/awards");
+  await page.locator(".nominee-card .vote-btn").click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible();
+  expect(errors).toEqual([]);
+  await expect(page.getByRole("button", { name: "Close", exact: true })).toBeFocused();
+  await page.locator("#customVotes").fill("12");
+  await expect(page.locator("#summaryVotes")).toHaveText("12");
+  await page.locator("#confirmDemoVote").scrollIntoViewIfNeeded();
+  const metrics = await dialog.evaluate(element => ({ height: element.getBoundingClientRect().height, viewport: document.documentElement.clientHeight, overflow: element.scrollHeight > element.clientHeight }));
+  expect(metrics.height).toBeLessThanOrEqual(metrics.viewport);
+  expect(metrics.overflow).toBe(true);
+  await page.keyboard.press("Escape");
+  await expect(dialog).not.toBeVisible();
+  await expect(page.locator(".nominee-card .vote-btn")).toBeFocused();
+  expect(errors).toEqual([]);
+  await page.unroute("**/api/awards");
+  await page.route("**/api/awards", route => route.fulfill({ status: 503, json: { message: "Internal test failure" } }));
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Try again", exact: true })).toBeVisible();
+  await expect(page.locator("#nomineeGrid")).not.toContainText("Internal test failure");
+});
+
 test("nominee portraits, alphabetical order and search reset work responsively", async ({ page }) => {
   await page.route("**/api/awards", async route => {
     const response = await route.fetch(), data = await response.json();

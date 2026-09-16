@@ -2,6 +2,7 @@ let categories = ["All"];
 let nominees = [];
 let activeCategory = "All";
 let activeAwardGroup = "All";
+let voteReturnFocus = null;
 let searchTerm = "";
 let activeProgramme = "All programmes";
 let selectedNominee = null;
@@ -114,6 +115,7 @@ function filteredNominees() {
 
 function renderNominees() {
   const grid = byId("nomineeGrid");
+  grid.setAttribute("aria-busy", "false");
   const list = filteredNominees().sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name, "en", { sensitivity: "base" }) || a.id - b.id);
   const filtered = searchTerm.trim() || activeAwardGroup !== "All" || activeCategory !== "All" || activeProgramme !== "All programmes";
   byId("resetNomineeFilters").hidden = !filtered;
@@ -168,6 +170,7 @@ function openVoteModal(id) {
   if (!voting.open) return showToast("Voting unavailable", voting.message);
   selectedNominee = nominees.find(n => n.id === id);
   if (!selectedNominee) return;
+  voteReturnFocus = document.activeElement;
   byId("modalAvatar").textContent = initials(selectedNominee.name);
   byId("modalCategory").textContent = selectedNominee.category;
   byId("modalNominee").textContent = selectedNominee.name;
@@ -177,12 +180,14 @@ function openVoteModal(id) {
   byId("confirmDemoVote").textContent = paymentConfigured ? "Continue to Secure Payment" : "Simulate Test Payment";
   updateVoteSummary();
   byId("voteModal").classList.add("open"); byId("voteModal").setAttribute("aria-hidden", "false"); document.body.classList.add("modal-open");
+  setTimeout(() => { if (byId("voteModal").classList.contains("open")) byId("closeVoteModal").focus(); }, 220);
 }
 
 function closeVoteModal() {
   if (paymentPollingTimer) clearTimeout(paymentPollingTimer);
   paymentPollingTimer = null; byId("voteModal").classList.remove("open");
   byId("voteModal").setAttribute("aria-hidden", "true"); document.body.classList.remove("modal-open");
+  if (voteReturnFocus?.isConnected) voteReturnFocus.focus();
 }
 
 function updateVoteSummary() {
@@ -259,6 +264,14 @@ async function startMomoPayment() {
 }
 
 function setupVoting() {
+  byId("voteModal").addEventListener("keydown", event => {
+    if (event.key === "Escape") { event.stopPropagation(); closeVoteModal(); return; }
+    if (event.key !== "Tab") return;
+    const controls = [...byId("voteModal").querySelectorAll('button:not(:disabled),input:not(:disabled),select:not(:disabled),a[href]')].filter(control => control.getClientRects().length);
+    const first = controls[0], last = controls[controls.length - 1];
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+  });
   byId("closeVoteModal").addEventListener("click", closeVoteModal);
   byId("voteModal").addEventListener("click", event => { if (event.target.id === "voteModal") closeVoteModal(); });
   document.querySelectorAll(".vote-packs button").forEach(button => button.addEventListener("click", () => {
@@ -272,4 +285,8 @@ function setupVoting() {
 byId("searchInput").addEventListener("input", event => { searchTerm = event.target.value; renderNominees(); });
 byId("resetNomineeFilters").addEventListener("click", () => { searchTerm = ""; activeCategory = "All"; activeAwardGroup = "All"; activeProgramme = "All programmes"; byId("searchInput").value = ""; renderTabs(); renderNominees(); byId("searchInput").focus(); });
 setupVoting();
-Promise.all([loadAwards(), detectPaymentMode()]).then(loadReceiptPage).catch(error => showToast("Unable to load awards", error.message));
+Promise.all([loadAwards(), detectPaymentMode()]).then(loadReceiptPage).catch(() => {
+  const grid = byId("nomineeGrid"); grid.setAttribute("aria-busy", "false");
+  grid.innerHTML = '<div class="empty-state"><p>Awards information is temporarily unavailable.</p><button class="secondary-btn" type="button" id="retryAwardsLoad">Try again</button></div>';
+  byId("retryAwardsLoad").addEventListener("click", () => location.reload());
+});

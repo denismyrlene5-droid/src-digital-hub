@@ -23,6 +23,9 @@ function createNominationRouter({ repository, uploadDirectory, requireAwardsAdmi
   router.use("/admin", requireAwardsAdmin);
   router.use("/admin", express.json({ limit: "100kb" }));
   router.get("/admin/dashboard", handle((req, res) => res.json(repository.dashboard())));
+  router.get("/admin/reopening", handle((req, res) => res.json(repository.reopeningPreview())));
+  router.post("/admin/reopening", handle((req, res) => res.json(repository.startReopening(req.body, req.admin))));
+  router.delete("/admin/reopening", handle((req, res) => res.json(repository.stopReopening(req.admin))));
   router.get("/admin/categories", handle((req, res) => res.json({ categories: repository.categories() })));
   router.put("/admin/categories/:id", handle((req, res) => { const category = repository.updateCategory(req.params.id, req.body, req.admin); log(req, "nominations.category_updated", "nomination_category", category.id, `${category.name} nomination settings updated`); res.json({ category }); }));
   router.put("/admin/settings", handle((req, res) => { const settings = repository.updateSettings(req.body, req.admin); log(req, "nominations.settings_updated", "nomination_settings", 1, "Nomination settings updated"); res.json({ settings }); }));

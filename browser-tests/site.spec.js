@@ -35,6 +35,27 @@ async function loginAsAdmin(page) {
   }
 }
 
+test("selective nomination reopening admin works without mobile overflow", async ({ page }) => {
+  database.exec("UPDATE nomination_phases SET status='closed'");
+  await loginAsAdmin(page);
+  await page.getByRole("button", { name: "Nominations", exact: true }).click();
+  await page.getByRole("button", { name: "24-hour reopening", exact: true }).click();
+  const form = page.locator("#reopeningForm");
+  await expect(form).toBeVisible();
+  await expect(form.locator('input[type="checkbox"]')).toHaveCount(18);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+  page.once("dialog", dialog => dialog.accept());
+  await form.getByRole("button", { name: "Start 24-hour reopening" }).click();
+  await expect(page.getByText("Reopening active", { exact: true })).toBeVisible();
+  const data = await (await page.request.get("/api/nominations")).json();
+  expect(data.nominations.phase.accepting).toBe(true);
+  expect(data.nominations.groups.flatMap(group => group.categories)).toHaveLength(18);
+  page.once("dialog", dialog => dialog.accept());
+  await page.getByRole("button", { name: "Stop reopening now" }).click();
+  await expect(form).toBeVisible();
+  expect((await (await page.request.get("/api/nominations")).json()).nominations.phase.accepting).toBe(false);
+});
+
 const publicRoutes = ["/", "/announcements", "/events", "/academics", "/academics/course-structure", "/awards", "/nominations", "/businesses", "/lost-found", "/feedback", "/media", "/executives", "/contact"];
 
 for (const route of publicRoutes) {

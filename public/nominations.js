@@ -83,11 +83,32 @@
 
   async function adminApi(url,options={}) { return api(url, options); }
   function adminTabs(active){return `<div class="nomination-admin-tabs">${[["overview","Overview"],["settings","Phase & homepage"],["categories","Categories"],["submissions","Submissions"],["duplicates","Duplicates"],["nominees","Nominees & shortlist"],["audit","Audit"]].map(([id,label])=>`<button class="${active===id?"is-active":""}" data-nomination-tab="${id}" type="button">${label}</button>`).join("")}</div>`;}
+  async function renderReopening(host) {
+    const data = await adminApi("/api/nominations/admin/reopening");
+    host.innerHTML = `<section class="hub-card nomination-admin-card"><h3>Reopen selected categories for 24 hours</h3><p>Only categories with fewer than four nominees in the provisional PDF are eligible. Other categories remain closed. Existing nominations and one-nomination-per-category rules are preserved.</p>${data.active ? `<p><strong>Reopening active</strong><br>Closes ${esc(formatAccra(data.active.closesAt))} · Ghana</p><button type="button" class="hub-btn hub-btn-quiet" data-stop-reopening>Stop reopening now</button>` : `<form id="reopeningForm"><p>The timer starts when you confirm, not when this page loads.</p>${data.eligible.map(category => `<label class="check-field"><input type="checkbox" name="categoryIds" value="${category.id}" checked><span>${esc(category.name)} — ${category.pdfCount} in PDF</span></label>`).join("")}<div class="editor-actions"><button class="hub-btn hub-btn-primary" ${data.phase.status !== "closed" ? "disabled" : ""}>Start 24-hour reopening</button></div>${data.phase.status !== "closed" ? '<p>Close the current nomination phase before starting a selective reopening.</p>' : ""}</form>`}<p class="form-message" role="status" aria-live="polite"></p></section>`;
+    const message = host.querySelector(".form-message");
+    host.querySelector("#reopeningForm")?.addEventListener("submit", async event => {
+      event.preventDefault();
+      const form = event.currentTarget, ids = new FormData(form).getAll("categoryIds").map(Number);
+      if (!ids.length) { message.textContent = "Select at least one category."; return; }
+      if (!confirm(`Reopen ${ids.length} selected categories now for exactly 24 hours?`)) return;
+      const button = form.querySelector("button"); button.disabled = true;
+      try { await adminApi("/api/nominations/admin/reopening", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ categoryIds: ids, confirm: true }) }); await renderReopening(host); }
+      catch (error) { message.textContent = error.message; button.disabled = false; }
+    });
+    host.querySelector("[data-stop-reopening]")?.addEventListener("click", async event => {
+      if (!confirm("Stop the selective reopening immediately?")) return;
+      const button = event.currentTarget; button.disabled = true;
+      try { await adminApi("/api/nominations/admin/reopening", { method: "DELETE" }); await renderReopening(host); }
+      catch (error) { message.textContent = error.message; button.disabled = false; }
+    });
+  }
   async function loadAdminModule(view="overview") {
     const module=document.getElementById("adminModule");module.innerHTML='<div class="publicity-loading">Loading Awards nominations…</div>';const dashboard=await adminApi("/api/nominations/admin/dashboard");
     module.innerHTML=`<div class="admin-module-head"><div><span class="hub-eyebrow">AWARDS → NOMINATIONS</span><h2>Nomination & shortlisting</h2><p>Collect free nominations privately, review evidence, shortlist eligible candidates and prepare a future ballot.</p></div><span class="status-badge">${esc(dashboard.phase.status)}</span></div>${adminTabs(view)}<div id="nominationAdminView"></div>`;
     module.querySelectorAll("[data-nomination-tab]").forEach(button=>button.addEventListener("click",()=>loadAdminModule(button.dataset.nominationTab).catch(showAdminError))); const host=module.querySelector("#nominationAdminView");
-    if(view==="overview")renderOverview(host,dashboard);if(view==="settings")renderSettings(host,dashboard);if(view==="categories")await renderCategories(host);if(view==="submissions")await renderSubmissions(host);if(view==="duplicates")await renderDuplicates(host);if(view==="nominees")await renderNominees(host);if(view==="audit")await renderAudit(host);
+    const reopeningButton = document.createElement("button"); reopeningButton.type = "button"; reopeningButton.textContent = "24-hour reopening"; reopeningButton.className = view === "reopening" ? "is-active" : ""; reopeningButton.addEventListener("click", () => loadAdminModule("reopening")); module.querySelector(".nomination-admin-tabs").append(reopeningButton);
+    if(view==="reopening")await renderReopening(host);if(view==="overview")renderOverview(host,dashboard);if(view==="settings")renderSettings(host,dashboard);if(view==="categories")await renderCategories(host);if(view==="submissions")await renderSubmissions(host);if(view==="duplicates")await renderDuplicates(host);if(view==="nominees")await renderNominees(host);if(view==="audit")await renderAudit(host);
   }
   function showAdminError(error){const host=document.getElementById("nominationAdminView")||document.getElementById("adminModule");host.innerHTML=`<div class="publicity-empty"><strong>Action could not be completed</strong><span>${esc(error.message)}</span></div>`;}
   function renderOverview(host,data){host.innerHTML=`<div class="publicity-metrics nomination-metrics">${[[data.metrics.total,"All submissions"],[data.metrics.valid,"Valid"],[data.metrics.uniqueNominators,"Unique nominators"],[data.metrics.uniqueNominees,"Nominee records"],[data.metrics.flagged,"Flagged"],[data.metrics.shortlisted,"Shortlisted"]].map(item=>`<article><strong>${Number(item[0]).toLocaleString()}</strong><span>${item[1]}</span></article>`).join("")}</div><div class="dashboard-preview-grid"><section class="hub-card"><h3>Totals by award group</h3><ul>${data.groups.map(group=>`<li><span>${esc(group.name)}</span><b>${Number(group.total)}</b></li>`).join("")}</ul></section><section class="hub-card"><h3>Recently received</h3>${data.recent.length?`<ul>${data.recent.map(item=>`<li><span>${esc(item.category)}</span><b>${esc(item.status.replaceAll("_"," "))}</b></li>`).join("")}</ul>`:"<p>No nominations received yet.</p>"}</section></div><section class="hub-card nomination-category-totals"><h3>Totals by category</h3><div>${data.categoryTotals.map(item=>`<p><span>${esc(item.name)}</span><b>${Number(item.total)}</b></p>`).join("")}</div></section>`;}

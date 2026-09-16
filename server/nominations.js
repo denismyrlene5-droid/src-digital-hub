@@ -1,4 +1,5 @@
 const crypto = require("node:crypto");
+const { approvedNominees } = require("./approved-nominees");
 
 const PHASE_STATUSES = ["draft", "scheduled", "open", "paused", "closed", "archived"];
 const SUBMISSION_STATUSES = ["pending_review", "valid", "invalid", "flagged"];
@@ -131,6 +132,7 @@ function createNominationRepository(db, options = {}) {
       rules_text TEXT NOT NULL, hero_original_token TEXT, hero_webp_token TEXT, hero_avif_token TEXT, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
     CREATE TABLE IF NOT EXISTS nomination_audit (id INTEGER PRIMARY KEY AUTOINCREMENT, action TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, admin_role TEXT, admin_username TEXT, summary TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+    CREATE TABLE IF NOT EXISTS nomination_reopenings (id INTEGER PRIMARY KEY AUTOINCREMENT, phase_id INTEGER NOT NULL REFERENCES nomination_phases(id), category_ids TEXT NOT NULL, opens_at TEXT NOT NULL, closes_at TEXT NOT NULL, cancelled_at TEXT);
   `);
   const insertGroup = db.prepare("INSERT OR IGNORE INTO nomination_award_groups(slug,name,sort_order) VALUES(?,?,?)");
   GROUPS.forEach(group => insertGroup.run(group.slug, group.name, group.order));
@@ -161,10 +163,45 @@ function createNominationRepository(db, options = {}) {
   function settings() { const row = db.prepare("SELECT * FROM nomination_settings WHERE id=1").get(); return { featuredHome: Boolean(row.featured_home), hidden: Boolean(row.hidden), homepagePosition: row.homepage_position, headline: row.headline, supportingText: row.supporting_text, showCountdown: Boolean(row.show_countdown), showPublicTotal: Boolean(row.show_public_total), selfNominationAllowed: Boolean(row.self_nomination_allowed), rules: row.rules_text, hero: { original: row.hero_original_token ? `/api/nominations/files/${row.hero_original_token}` : null, webp: row.hero_webp_token ? `/api/nominations/files/${row.hero_webp_token}` : null, avif: row.hero_avif_token ? `/api/nominations/files/${row.hero_avif_token}` : null } }; }
   function publicData() {
     const phase = effectivePhase(); const site = settings();
+    const reopening = activeReopening(phase);
+    if (reopening) { phase.status = "open"; phase.opens_at = reopening.opensAt; phase.closes_at = reopening.closesAt; }
     const groups = db.prepare(`SELECT g.slug,g.name,c.id,c.slug categorySlug,c.name categoryName,c.description,c.eligibility_instructions eligibility,c.category_type type FROM nomination_award_groups g JOIN nomination_categories c ON c.group_id=g.id WHERE c.active=1 AND c.public_nominations=1 ORDER BY g.sort_order,c.sort_order`).all();
-    const grouped = GROUPS.map(group => ({ slug: group.slug, name: group.name, categories: groups.filter(row => row.slug === group.slug).map(row => ({ id: row.id, slug: row.categorySlug, name: row.categoryName, description: row.description, eligibility: row.eligibility, type: row.type })) }));
+    const grouped = GROUPS.map(group => ({ slug: group.slug, name: group.name, categories: groups.filter(row => row.slug === group.slug && (!reopening || reopening.categoryIds.includes(row.id))).map(row => ({ id: row.id, slug: row.categorySlug, name: row.categoryName, description: row.description, eligibility: row.eligibility, type: row.type })) })).filter(group => group.categories.length);
     const validTotal = phase ? Number(db.prepare("SELECT COUNT(*) count FROM nomination_submissions WHERE phase_id=? AND status='valid'").get(phase.id).count) : 0;
     return { visible: site.featuredHome && !site.hidden, settings: { headline: site.headline, supportingText: site.supportingText, homepagePosition: site.homepagePosition, showCountdown: site.showCountdown, rules: site.rules, hero: site.hero }, phase: phase ? { status: phase.status, title: phase.title, opensAt: phase.opens_at, closesAt: phase.closes_at, accepting: phase.status === "open" && (!phase.opens_at || Date.parse(nowIso(clock)) >= Date.parse(phase.opens_at)) && (!phase.closes_at || Date.parse(nowIso(clock)) < Date.parse(phase.closes_at)), validTotal: site.showPublicTotal ? validTotal : null } : { status: "draft", accepting: false, validTotal: site.showPublicTotal ? 0 : null }, groups: grouped };
+  }
+  function activeReopening(phase = effectivePhase()) {
+    if (!phase || phase.status !== "closed") return null;
+    const now = nowIso(clock);
+    const row = db.prepare("SELECT * FROM nomination_reopenings WHERE phase_id=? AND cancelled_at IS NULL AND opens_at<=? AND closes_at>? ORDER BY id DESC LIMIT 1").get(phase.id, now, now);
+    return row ? { id: row.id, categoryIds: JSON.parse(row.category_ids), opensAt: row.opens_at, closesAt: row.closes_at } : null;
+  }
+  function reopeningPreview() {
+    const counts = new Map();
+    for (const entry of approvedNominees) counts.set(entry.category, (counts.get(entry.category) || 0) + 1);
+    const eligible = categories().filter(category => category.active && category.publicNominations && counts.has(category.name) && counts.get(category.name) < 4).map(category => ({ id: category.id, name: category.name, pdfCount: counts.get(category.name) }));
+    return { phase: { id: effectivePhase().id, status: effectivePhase().status }, eligible, active: activeReopening(), source: "Provisional nominee PDF" };
+  }
+  function startReopening(input, admin) {
+    if (input.confirm !== true) throw httpError("Explicit confirmation is required.");
+    if (!Array.isArray(input.categoryIds) || !input.categoryIds.length) throw httpError("Select at least one category.");
+    const ids = [...new Set(input.categoryIds.map(value => numericId(value, "category")))];
+    return transaction(db, () => {
+      const preview = reopeningPreview();
+      if (preview.phase.status !== "closed") throw httpError("Only a closed nomination phase can be reopened.", 409);
+      if (preview.active) throw httpError("A reopening is already active. Stop it before starting another.", 409);
+      if (ids.some(id => !preview.eligible.some(category => category.id === id))) throw httpError("Select only active public categories with fewer than four nominees in the provisional PDF.");
+      const opensAt = nowIso(clock), closesAt = new Date(Date.parse(opensAt) + 24 * 60 * 60 * 1000).toISOString();
+      db.prepare("INSERT INTO nomination_reopenings(phase_id,category_ids,opens_at,closes_at) VALUES(?,?,?,?)").run(preview.phase.id, JSON.stringify(ids), opensAt, closesAt);
+      audit(admin, "categories_reopened", "phase", preview.phase.id, `${ids.length} selected categories reopened for 24 hours; closes ${closesAt}`);
+      return reopeningPreview();
+    });
+  }
+  function stopReopening(admin) {
+    const phase = effectivePhase();
+    db.prepare("UPDATE nomination_reopenings SET cancelled_at=? WHERE phase_id=? AND cancelled_at IS NULL").run(nowIso(clock), phase.id);
+    audit(admin, "reopening_stopped", "phase", phase.id, "Selective nomination reopening stopped");
+    return reopeningPreview();
   }
   function candidateInput(category, body) {
     if (category.category_type === "pair") { const first = clean(body.firstPersonName, "First person's name", { required: true, min: 2, max: 140 }), second = clean(body.secondPersonName, "Second person's name", { required: true, min: 2, max: 140 }); if (normalizeName(first) === normalizeName(second)) throw httpError("Best Friends nominations require two different people."); const firstLevel=clean(body.firstPersonLevel,"First person's level",{required:true,min:1,max:60}),firstProgramme=clean(body.firstPersonProgramme,"First person's programme",{required:true,min:2,max:160}),secondLevel=clean(body.secondPersonLevel,"Second person's level",{required:true,min:1,max:60}),secondProgramme=clean(body.secondPersonProgramme,"Second person's programme",{required:true,min:2,max:160});const key = pairKey(first, second); return { type: "pair", name: `${first} & ${second}`, key, level:`${firstLevel} / ${secondLevel}`, programme:`${firstProgramme} / ${secondProgramme}`, phone: normalizeGhanaPhone(body.nomineePhone, false), first, second, details: { firstPersonName: first, firstPersonLevel:firstLevel, firstPersonProgramme:firstProgramme, secondPersonName: second, secondPersonLevel:secondLevel, secondPersonProgramme:secondProgramme } }; }
@@ -174,7 +211,12 @@ function createNominationRepository(db, options = {}) {
     const name = clean(body.nomineeName, "Nominee name", { required: true, min: 2, max: 140 }); return { type: "individual", name, key: `person|${normalizeName(name)}|${normalizeName(level)}|${normalizeName(programme)}`, level, programme, phone: normalizeGhanaPhone(body.nomineePhone, false), details: { name, level, programme } };
   }
   function submit(input) {
-    const phase = effectivePhase(); if (!phase || phase.status !== "open") throw httpError(phase?.status === "paused" ? "Nominations are temporarily paused." : phase?.status === "closed" ? "This nomination phase is closed." : "Nominations are not open yet.", 409);
+    const phase = effectivePhase(); const reopening = activeReopening(phase);
+    if (reopening) {
+      if (!reopening.categoryIds.includes(numericId(input.categoryId, "category"))) throw httpError("This category has not been reopened for nominations.", 409);
+      phase.status = "open"; phase.opens_at = reopening.opensAt; phase.closes_at = reopening.closesAt;
+    }
+    if (!phase || phase.status !== "open") throw httpError(phase?.status === "paused" ? "Nominations are temporarily paused." : phase?.status === "closed" ? "This nomination phase is closed." : "Nominations are not open yet.", 409);
     const now = nowIso(clock); if ((phase.opens_at && Date.parse(now) < Date.parse(phase.opens_at)) || (phase.closes_at && Date.parse(now) >= Date.parse(phase.closes_at))) throw httpError("The nomination window is not currently open.", 409);
     const categoryId = numericId(input.categoryId, "category"); const category = db.prepare("SELECT * FROM nomination_categories WHERE id=? AND active=1 AND public_nominations=1").get(categoryId); if (!category) throw httpError("This category is not accepting public nominations.", 404);
     const candidate = candidateInput(category, input); const nominatorName = clean(input.nominatorName, "Nominator name", { required: true, min: 2, max: 140 });
@@ -216,7 +258,7 @@ function createNominationRepository(db, options = {}) {
   function auditHistory(){return db.prepare("SELECT id,action,entity_type entityType,entity_id entityId,admin_role adminRole,admin_username adminUsername,summary,created_at createdAt FROM nomination_audit ORDER BY id DESC LIMIT 300").all();}
   function heroTokens(){const row=db.prepare("SELECT hero_original_token original,hero_webp_token webp,hero_avif_token avif FROM nomination_settings WHERE id=1").get();return new Set(Object.values(row||{}).filter(Boolean));}
   function managedFile(token){return heroTokens().has(token)||Boolean(db.prepare("SELECT 1 FROM nomination_nominees WHERE photo_token=?").get(token));}
-  return { publicData,submit,dashboard,settings,updateSettings,setHero,updatePhase,createPhase,categories,updateCategory,listSubmissions,updateSubmissionStatus,listNominees,updateNominee,setNomineePhoto,merge,unmerge,merges,shortlist,shortlistDetail,markReady,exportCsv,auditHistory,managedFile,effectivePhase };
+  return { reopeningPreview,startReopening,stopReopening,publicData,submit,dashboard,settings,updateSettings,setHero,updatePhase,createPhase,categories,updateCategory,listSubmissions,updateSubmissionStatus,listNominees,updateNominee,setNomineePhoto,merge,unmerge,merges,shortlist,shortlistDetail,markReady,exportCsv,auditHistory,managedFile,effectivePhase };
 }
 
 module.exports = { createNominationRepository, PHASE_STATUSES, SUBMISSION_STATUSES, NOMINEE_STATUSES, DEFAULT_RULES, normalizeStudentId, normalizeGhanaPhone, pairKey, csvCell, httpError };

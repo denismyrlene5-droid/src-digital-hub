@@ -352,6 +352,8 @@ test("Awards overview counts active categories including those without published
     assert.equal(data.activeCategoryCount,app.db.prepare("SELECT COUNT(*) AS count FROM categories WHERE active=1").get().count);
     const html=await (await fetch(`${app.base}/awards`)).text();
     assert.match(html,/AWARDS OVERVIEW/);
+    assert.match(html,/id="heroCategoryCount"/);
+    assert.doesNotMatch(html,/<b>12<\/b><span>Categories|<span>Vote Counts<\/span>|id="votingStateBadge">OPEN/);
     assert.match(html,/Rankings show percentages only\. Exact vote totals remain private\./);
     assert.doesNotMatch(html,/Result freeze ready|In production, public rankings/);
   }finally{await app.close();}

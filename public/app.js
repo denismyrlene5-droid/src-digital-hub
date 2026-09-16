@@ -47,6 +47,7 @@ async function loadAwards() {
   nominationsOpen = nominationData?.nominations?.phase?.accepting === true;
   categories = ["All", "Level 300", "Level 350", "General", ...data.categories];
   publicCategoryCount = data.activeCategoryCount ?? new Set(data.categories).size;
+  byId("heroCategoryCount").textContent = publicCategoryCount;
   nominees = data.nominees;
   ussdDisplay = data.ussd || { enabled: false, dialCode: "" };
   activeProfileSlug=location.pathname.match(/^\/awards\/nominees\/([a-z0-9-]+)$/)?.[1]||"";

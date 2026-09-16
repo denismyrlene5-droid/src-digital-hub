@@ -256,6 +256,7 @@ function publicData(db) {
     return visible ? {...publicRow,percentage:totals.get(row.category)?votes/totals.get(row.category)*100:0,rank:ranks.get(row.id)} : publicRow;
   });
   return { title: config.awards_title, ussd: { enabled: Boolean(config.ussd_display_enabled && config.ussd_dial_code), dialCode: config.ussd_display_enabled ? config.ussd_dial_code : "" }, campaignStage:config.campaign_stage, categories: [...new Set(rows.map(r=>r.category))], nominees, pricePerVote: config.price_per_vote,
+    activeCategoryCount: db.prepare("SELECT COUNT(*) AS count FROM categories WHERE active=1").get().count,
     currency: config.currency, publicResultsVisible: visible, voting, opensAt: config.opens_at, countdownTarget: config.opens_at || "2026-09-15T00:00:00.000Z", closesAt: config.closes_at, maxVotes: config.max_votes };
 }
 

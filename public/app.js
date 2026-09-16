@@ -1,4 +1,5 @@
 let categories = ["All"];
+let publicCategoryCount = 0;
 let nominees = [];
 let activeCategory = "All";
 let activeAwardGroup = "All";
@@ -45,6 +46,7 @@ async function loadAwards() {
   ]);
   nominationsOpen = nominationData?.nominations?.phase?.accepting === true;
   categories = ["All", "Level 300", "Level 350", "General", ...data.categories];
+  publicCategoryCount = data.activeCategoryCount ?? new Set(data.categories).size;
   nominees = data.nominees;
   ussdDisplay = data.ussd || { enabled: false, dialCode: "" };
   activeProfileSlug=location.pathname.match(/^\/awards\/nominees\/([a-z0-9-]+)$/)?.[1]||"";
@@ -175,6 +177,8 @@ function populateLeaderboardFilter() {
 }
 
 function renderLeaderboard() {
+  byId("uniqueNominees").textContent = nominees.length;
+  byId("categoryCount").textContent = publicCategoryCount;
   const select = byId("leaderboardFilter");
   const filter = select.value || categories.find(c => c !== "All" && nominees.some(n => n.category === c));
   if (!filter) return;
@@ -187,8 +191,6 @@ function renderLeaderboard() {
     <div class="leader-votes"><b>${Number(n.percentage).toFixed(1)}%</b><span>category share</span></div>
     <div class="leader-percentage">${percentageBar(n)}</div>
   </div>`).join("") : `<div class="empty-state">Public results are hidden by the Awards administrator.</div>`;
-  byId("uniqueNominees").textContent = nominees.length;
-  byId("categoryCount").textContent = new Set(nominees.map(n => n.category)).size;
 }
 
 function percentageBar(nominee) {

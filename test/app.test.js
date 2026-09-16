@@ -343,6 +343,20 @@ test("amount mismatch is rejected and cannot be recovered by a later fake succes
   }finally{await app.close();}
 });
 
+test("Awards overview counts active categories including those without published nominees",async()=>{
+  const app=await fixture();
+  try{
+    app.db.prepare("INSERT INTO categories(name,sort_order,active) VALUES('Overview empty category',999,1)").run();
+    app.db.prepare("INSERT INTO categories(name,sort_order,active) VALUES('Overview inactive category',1000,0)").run();
+    const data=await (await fetch(`${app.base}/api/awards`)).json();
+    assert.equal(data.activeCategoryCount,app.db.prepare("SELECT COUNT(*) AS count FROM categories WHERE active=1").get().count);
+    const html=await (await fetch(`${app.base}/awards`)).text();
+    assert.match(html,/AWARDS OVERVIEW/);
+    assert.match(html,/Rankings show percentages only\. Exact vote totals remain private\./);
+    assert.doesNotMatch(html,/Result freeze ready|In production, public rankings/);
+  }finally{await app.close();}
+});
+
 test("public result hiding removes rankings and percentages from the API",async()=>{
   const app=await fixture();
   try{

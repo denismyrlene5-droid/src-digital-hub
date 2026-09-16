@@ -159,7 +159,6 @@ function renderNominees() {
     <div class="nominee-meta"><span>${escapeHtml([n.program,n.level].filter(Boolean).join(" · "))}</span>${publicResultsVisible?`<span class="percent-pill">${n.percentage.toFixed(1)}%</span>`:""}</div>${n.shortMessage?`<p class="nominee-message">“${escapeHtml(n.shortMessage)}”</p>`:""}
     ${publicResultsVisible ? percentageBar(n) : ""}
     ${ussdDisplay.enabled && voting.open ? `<p class="nominee-ussd-instructions">Dial <strong>${escapeHtml(ussdDisplay.dialCode)}</strong> · enter code <strong>${escapeHtml(n.votingCode)}</strong></p>` : ""}
-    <div class="public-hidden" style="margin:-5px 0 13px">${publicResultsVisible?`Category standing: #${escapeHtml(n.rank)} • exact votes hidden`:"Public results are currently hidden"}</div>
     <button class="vote-btn" data-id="${n.id}" ${voting.open?"":"disabled"}>${voting.open?"Vote":voting.state==="closed"?"Voting closed":"Voting opens soon"}</button><div class="nominee-share-actions"><a href="https://wa.me/?text=${encodeURIComponent(`Meet ${n.name}, nominated for ${n.category}: ${location.origin}${n.profileUrl}`)}" target="_blank" rel="noopener noreferrer">Share on WhatsApp</a><button type="button" data-copy="${escapeHtml(location.origin+n.profileUrl)}">Copy link</button></div>
   </article>`).join("");
   grid.querySelectorAll(".vote-btn").forEach(button => button.addEventListener("click", () => openVoteModal(Number(button.dataset.id))));

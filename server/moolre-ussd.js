@@ -1,5 +1,6 @@
 const crypto = require("crypto");
 const express = require("express");
+const { nomineeIdFromCode } = require("./nominee-codes");
 
 const ALLOWED_SIMULATOR_ORIGINS = new Set(["https://docs.moolre.com", "https://app.moolre.com"]);
 const PAGE_SIZE = 4;
@@ -121,8 +122,8 @@ function createMoolreUssdRouter({ db, awards, provider, enabled, callbackToken, 
     if (isNew) {
       const categoryPage = page(categories(), 0);
       if (!categoryPage.rows.length) return { response: { message: "No voting categories are available.", reply: false } };
-      saveSession(sessionId, phoneHash, "category", { page: 0 });
-      return { response: { message: menu("UCC WISE SRC Awards", categoryPage.rows, 0, categoryPage.hasMore), reply: true } };
+      saveSession(sessionId, phoneHash, "start", {});
+      return { response: { message: "UCC WISE SRC Awards\n1. Vote using nominee code\n2. Browse categories\n0. Exit", reply: true } };
     }
 
     const row = db.prepare("SELECT * FROM moolre_ussd_sessions WHERE session_id=? AND expires_at>=?").get(sessionId, Date.now());
@@ -131,6 +132,32 @@ function createMoolreUssdRouter({ db, awards, provider, enabled, callbackToken, 
     try { state = JSON.parse(row.state_json); } catch { return endSession(sessionId, "Session could not continue. Please dial again."); }
     const count = row.request_count + 1;
     if (message === "0") return endSession(sessionId, "Thank you for using UCC WISE SRC Awards.");
+
+    if (row.stage === "start") {
+      if (message === "1") {
+        saveSession(sessionId, phoneHash, "code", {}, count);
+        return { response: { message: "Enter nominee voting code:\n0. Exit", reply: true } };
+      }
+      if (message === "2") {
+        const current = page(categories(), 0);
+        saveSession(sessionId, phoneHash, "category", { page: 0 }, count);
+        return { response: { message: menu("Choose category", current.rows, 0, current.hasMore), reply: true } };
+      }
+      return { response: { message: "1. Vote using nominee code\n2. Browse categories\n0. Exit", reply: true } };
+    }
+    if (row.stage === "code") {
+      const id = nomineeIdFromCode(message);
+      const nominee = id && db.prepare(`SELECT n.id,n.name,n.category_id categoryId,c.name category FROM nominees n JOIN categories c ON c.id=n.category_id WHERE n.id=? AND n.active=1 AND n.publication_status='published' AND c.active=1`).get(id);
+      if (!nominee) { saveSession(sessionId, phoneHash, "code", {}, count); return { response: { message: "Code unavailable. Check the code and try again:\n0. Exit", reply: true } }; }
+      saveSession(sessionId, phoneHash, "code_confirm", { nomineeId: nominee.id, categoryId: nominee.categoryId }, count);
+      return { response: { message: `${compact(nominee.name, 45)}\n${compact(nominee.category, 65)}\n1. Continue\n2. Change code\n0. Exit`, reply: true } };
+    }
+    if (row.stage === "code_confirm") {
+      if (message === "2") { saveSession(sessionId, phoneHash, "code", {}, count); return { response: { message: "Enter nominee voting code:", reply: true } }; }
+      if (message !== "1") return { response: { message: "1. Continue\n2. Change code\n0. Exit", reply: true } };
+      saveSession(sessionId, phoneHash, "quantity", state, count);
+      return { response: { message: `Enter vote quantity (1-${awards.settings(db).max_votes}):`, reply: true } };
+    }
 
     if (row.stage === "category") {
       const items = categories();

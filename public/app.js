@@ -20,6 +20,7 @@ let countdownTarget = "2026-09-15T00:00:00.000Z";
 let nominationsOpen = false;
 let campaignStage = "verification";
 let activeProfileSlug = "";
+let ussdDisplay = { enabled: false, dialCode: "" };
 const awardGroup = category => category.startsWith("Level 300 ") ? "Level 300" : category.startsWith("Level 350 ") ? "Level 350" : "General";
 
 const byId = id => document.getElementById(id);
@@ -45,6 +46,7 @@ async function loadAwards() {
   nominationsOpen = nominationData?.nominations?.phase?.accepting === true;
   categories = ["All", "Level 300", "Level 350", "General", ...data.categories];
   nominees = data.nominees;
+  ussdDisplay = data.ussd || { enabled: false, dialCode: "" };
   activeProfileSlug=location.pathname.match(/^\/awards\/nominees\/([a-z0-9-]+)$/)?.[1]||"";
   if(activeProfileSlug){const profile=nominees.find(item=>item.profileSlug===activeProfileSlug);nominees=profile?[profile]:[];document.title=profile?`${profile.name} | SRC Awards`:`Nominee unavailable | SRC Awards`;}
   pricePerVote = data.pricePerVote; awardsCurrency = data.currency; maxVotes = data.maxVotes;
@@ -151,9 +153,10 @@ function renderNominees() {
   if (!list.length) { grid.innerHTML = `<div class="empty-state">${nominees.length ? "No nominees match your filters. Try another name or reset the filters above." : "Published nominees will appear here when the Awards team releases them."}</div>`; return; }
   grid.innerHTML = list.map(n => `<article class="nominee-card">
     <div class="card-top"><div class="avatar nominee-portrait">${n.imageUrl?`<img src="${escapeHtml(n.imageUrl)}" alt="Portrait of ${escapeHtml(n.name)}" loading="lazy" width="480" height="600">`:`<span aria-label="Photo unavailable">${escapeHtml(initials(n.name))}</span>`}</div><span class="rank-badge">${escapeHtml(awardGroup(n.category))}</span></div>
-    <h3><a href="${escapeHtml(n.profileUrl)}">${escapeHtml(n.name)}</a></h3><div class="nominee-category">${escapeHtml(n.category)}</div>
+    <h3><a href="${escapeHtml(n.profileUrl)}">${escapeHtml(n.name)}</a></h3><div class="nominee-category">${escapeHtml(n.category)}</div>${n.votingCode ? `<p class="nominee-voting-code">Nominee code <strong>${escapeHtml(n.votingCode)}</strong></p>` : ""}
     <div class="nominee-meta"><span>${escapeHtml([n.program,n.level].filter(Boolean).join(" · "))}</span>${publicResultsVisible?`<span class="percent-pill">${n.percentage.toFixed(1)}%</span>`:""}</div>${n.shortMessage?`<p class="nominee-message">“${escapeHtml(n.shortMessage)}”</p>`:""}
     ${publicResultsVisible ? percentageBar(n) : ""}
+    ${ussdDisplay.enabled && voting.open ? `<p class="nominee-ussd-instructions">Dial <strong>${escapeHtml(ussdDisplay.dialCode)}</strong> · enter code <strong>${escapeHtml(n.votingCode)}</strong></p>` : ""}
     <div class="public-hidden" style="margin:-5px 0 13px">${publicResultsVisible?`Category standing: #${escapeHtml(n.rank)} • exact votes hidden`:"Public results are currently hidden"}</div>
     <button class="vote-btn" data-id="${n.id}" ${voting.open?"":"disabled"}>${voting.open?"Vote":voting.state==="closed"?"Voting closed":"Voting opens soon"}</button><div class="nominee-share-actions"><a href="https://wa.me/?text=${encodeURIComponent(`Meet ${n.name}, nominated for ${n.category}: ${location.origin}${n.profileUrl}`)}" target="_blank" rel="noopener noreferrer">Share on WhatsApp</a><button type="button" data-copy="${escapeHtml(location.origin+n.profileUrl)}">Copy link</button></div>
   </article>`).join("");

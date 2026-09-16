@@ -470,6 +470,7 @@ test("Moolre USSD Action API uses server-owned voting data and only credits afte
     assert.equal((await fetch(`${app.base}/api/moolre/ussd?token=wrong`,{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"})).status,401);
 
     let response=await callback({new:true,message:""});assert.equal(response.status,200);assert.equal((await response.json()).reply,true);
+    response=await callback({new:false,message:"2"});assert.match((await response.json()).message,/category/i);
     response=await callback({new:false,message:"1"});assert.equal((await response.json()).reply,true);
     response=await callback({new:false,message:"1"});assert.match((await response.json()).message,/quantity/i);
     response=await callback({new:false,message:"2"});const confirmation=await response.json();assert.equal(confirmation.reply,true);assert.match(confirmation.message,/GHS 2\.00/);
@@ -492,6 +493,43 @@ test("Moolre USSD callback stays unavailable without its separate callback token
     const response=await fetch(`${app.base}/api/moolre/ussd`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:"session-1",new:true,msisdn:"233241235993",network:3,message:""})});
     assert.equal(response.status,503);assert.equal((await response.json()).reply,false);
   }finally{await app.close();}
+});
+
+test("USSD nominee codes confirm the category, reject private entries and preserve vote totals", async () => {
+  const token = "test-ussd-code-token-at-least-24-characters";
+  const app = await fixture({ paymentProvider: "moolre_sandbox", moolreApiUser: "merchant-user", moolrePublicKey: "public-key", moolreAccountNumber: "100000001", moolreBusinessEmail: "payments@example.edu", moolreUssdCallbackToken: token });
+  const send = async message => (await fetch(`${app.base}/api/moolre/ussd?token=${token}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId: "code-test-session", msisdn: "233241235993", network: 6, new: message === null, message: message || "" }) })).json();
+  try {
+    const data = awards.publicData(app.db), entry = data.nominees[0];
+    assert.ok(entry);
+    assert.equal(new Set(data.nominees.map(item => item.votingCode)).size, data.nominees.length);
+    const before = app.db.prepare("SELECT SUM(vote_total) total FROM nominees").get().total;
+    assert.match((await send(null)).message, /Vote using nominee code/);
+    assert.match((await send("1")).message, /Enter nominee/);
+    assert.match((await send("99999999")).message, /unavailable/);
+    const confirmation = await send(entry.votingCode);
+    assert.ok(confirmation.message.includes(entry.name.slice(0, 20)));
+    assert.match(confirmation.message, /Continue/);
+    assert.match((await send("2")).message, /Enter nominee/);
+    app.db.prepare("UPDATE nominees SET publication_status='draft' WHERE id=?").run(entry.id);
+    assert.match((await send(entry.votingCode)).message, /unavailable/);
+    app.db.prepare("UPDATE nominees SET publication_status='published' WHERE id=?").run(entry.id);
+    await send(entry.votingCode);
+    assert.match((await send("1")).message, /quantity/);
+    assert.match((await send("2")).message, /GHS 2\.00/);
+    assert.match((await send("2")).message, /cancelled/);
+    assert.equal(app.db.prepare("SELECT SUM(vote_total) total FROM nominees").get().total, before);
+    assert.equal(app.db.prepare("SELECT COUNT(*) total FROM payments").get().total, 0);
+    assert.equal(awards.publicData(app.db).ussd.enabled, false);
+    assert.throws(() => awards.updateSettings(app.db, { ussdDisplayEnabled: true }), /valid approved USSD/);
+    assert.throws(() => awards.updateSettings(app.db, { ussdDialCode: "<script>" }), /valid approved USSD/);
+    awards.updateSettings(app.db, { ussdDialCode: "*123*456#", ussdDisplayEnabled: true });
+    assert.deepEqual(awards.publicData(app.db).ussd, { enabled: true, dialCode: "*123*456#" });
+    awards.updateSettings(app.db, { awardsTitle: "SRC Awards Updated" });
+    assert.equal(awards.settings(app.db).ussd_dial_code, "*123*456#");
+    awards.updateSettings(app.db, { ussdDisplayEnabled: false });
+    assert.deepEqual(awards.publicData(app.db).ussd, { enabled: false, dialCode: "" });
+  } finally { await app.close(); }
 });
 
 test("Moolre initialization timeouts remain pending instead of becoming confirmed failures",async()=>{

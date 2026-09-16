@@ -171,6 +171,8 @@ button{cursor:pointer}
 .avatar img{width:100%;height:100%;object-fit:cover;border-radius:inherit}
 .nominee-browse-summary{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:20px}
 .nominee-browse-summary p{margin:0;font-size:.85rem}
+.nominee-voting-code{font-size:.85rem;margin:12px 0 0;color:#063323}.nominee-voting-code strong{letter-spacing:.08em;padding-left:6px}
+.nominee-ussd-instructions{font-size:.85rem;line-height:1.6;overflow-wrap:anywhere;padding:10px;border:1px solid #d8c490;border-radius:8px}
 .nominee-browse-summary button{min-height:44px}
 .awards-page .nominee-card{display:flex;flex-direction:column;min-width:0}
 .awards-page .nominee-card .card-top{display:block;position:relative}

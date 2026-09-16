@@ -35,8 +35,25 @@ async function loginAsAdmin(page) {
   }
 }
 
+test("admin saves shared USSD instructions without changing voting state", async ({ page }) => {
+  await loginAsAdmin(page);
+  await page.getByRole("button", { name: "Awards & Voting", exact: true }).click();
+  const form = page.locator("#awardsUssdDisplay");
+  await expect(form).toBeVisible();
+  await form.getByLabel("USSD dial code", { exact: true }).fill("*123*456#");
+  await form.getByLabel("Enable USSD display").check();
+  await form.getByRole("button", { name: "Save USSD instructions" }).click();
+  await expect(form.locator(".form-message")).toContainText("USSD instructions saved");
+  const data = await (await page.request.get("/api/awards")).json();
+  expect(data.ussd).toEqual({ enabled: true, dialCode: "*123*456#" });
+  expect(data.voting.state).toBe("not_started");
+  await form.getByLabel("Enable USSD display").uncheck();
+  await form.getByRole("button", { name: "Save USSD instructions" }).click();
+  await expect.poll(async () => (await (await page.request.get("/api/awards")).json()).ussd.enabled).toBe(false);
+});
+
 test("nominee profile has direct sharing and campaign navigation without listing filters", async ({ page }) => {
-  const nominee = { id: 1, name: "Example Nominee", category: "Campus Icon of the Year", program: "Education", level: "300", profileSlug: "example-nominee", profileUrl: "/awards/nominees/example-nominee" };
+  const nominee = { id: 1, votingCode: "1001", name: "Example Nominee", category: "Campus Icon of the Year", program: "Education", level: "300", profileSlug: "example-nominee", profileUrl: "/awards/nominees/example-nominee" };
   await page.route("**/api/awards", async route => {
     const response = await route.fetch(), data = await response.json();
     data.nominees = [nominee]; data.categories = [nominee.category]; data.publicResultsVisible = false;
@@ -45,6 +62,7 @@ test("nominee profile has direct sharing and campaign navigation without listing
   await page.route("**/api/awards/nominees/example-nominee", route => route.fulfill({ json: { nominee, nominations: [nominee] } }));
   await page.goto(nominee.profileUrl);
   await expect(page.locator("h1")).toHaveText(nominee.name);
+  await expect(page.locator(".nominee-voting-code")).toContainText("1001");
   await expect(page.getByRole("link", { name: "Browse all nominees" })).toHaveAttribute("href", "/awards#categories");
   await expect(page.getByRole("link", { name: "Download campaign flyer" })).toHaveAttribute("href", "#flyerStudioTitle");
   const share = new URL(await page.getByRole("link", { name: "Share profile", exact: true }).getAttribute("href"));

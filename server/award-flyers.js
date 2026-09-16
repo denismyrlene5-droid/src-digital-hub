@@ -1,4 +1,5 @@
 const fs = require("fs");
+const { votingCode } = require("./nominee-codes");
 const path = require("path");
 const QRCode = require("qrcode");
 const opentype = require("opentype.js");
@@ -67,7 +68,7 @@ async function createNomineeFlyer({ db, uploadDirectory, publicDirectory, baseUr
   const designNames=Object.keys(designs),designName=design||designNames[(Number(item.id)-1)%designNames.length];
   if(!designs[designName]){const error=new Error("Choose a valid flyer design.");error.status=400;throw error;}
   const theme=designs[designName];
-  const settings = db.prepare("SELECT voting_state AS votingState,awards_title AS awardsTitle FROM awards_settings WHERE id=1").get();
+  const settings = db.prepare("SELECT voting_state AS votingState,awards_title AS awardsTitle,ussd_dial_code AS dialCode,ussd_display_enabled AS ussdEnabled FROM awards_settings WHERE id=1").get();
   const origin = String(baseUrl || "https://uccwisesrc.com").replace(/\/$/, "");
   const targetUrl = `${origin}/awards/nominees/${encodeURIComponent(item.profileSlug)}`;
   const qr = await QRCode.toDataURL(targetUrl, { errorCorrectionLevel: "M", margin: 1, width: 260, color: { dark: "#06182fff", light: "#ffffffff" } });
@@ -84,7 +85,7 @@ async function createNomineeFlyer({ db, uploadDirectory, publicDirectory, baseUr
   const categoryLines = wrap(item.category, format === "status" ? 33 : 46).slice(0, format === "status" ? 3 : 2);
   const state = settings.votingState;
   const headline = state === "open" ? `VOTE FOR ${item.name.toUpperCase()}` : "OFFICIAL NOMINEE";
-  const instruction = state === "open" ? "Scan the QR code or visit the website to vote." : state === "closed" ? "Voting closed." : "Voting opens soon.";
+  const instruction = settings.ussdEnabled && settings.dialCode && state === "open" ? `Dial ${settings.dialCode} · Code ${votingCode(item.id)}` : `Nominee code: ${votingCode(item.id)} · ${state === "open" ? "Scan to vote." : state === "closed" ? "Voting closed." : "Voting opens soon."}`;
   const isStatus = format === "status"; const { width, height } = size;
   const photoY = isStatus ? 310 : 210, photoH = portraitHeight;
   const detailsY = photoY + photoH + (isStatus ? 75 : 60);

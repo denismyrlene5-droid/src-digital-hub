@@ -1,4 +1,5 @@
 const crypto = require("crypto");
+const { votingCode } = require("./nominee-codes");
 const { approvedNominees } = require("./approved-nominees");
 
 const PAYMENT_STATUSES = new Set(["pending", "successful", "failed", "cancelled", "expired", "reversed", "refunded"]);
@@ -60,6 +61,8 @@ function migrateAwards(db) {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_nominees_profile_slug ON nominees(profile_slug) WHERE profile_slug IS NOT NULL;
     CREATE UNIQUE INDEX IF NOT EXISTS idx_nominees_person_category ON nominees(person_id,category_id) WHERE person_id IS NOT NULL;
   `);
+  addColumn(db, "awards_settings", "ussd_dial_code TEXT NOT NULL DEFAULT ''");
+  addColumn(db, "awards_settings", "ussd_display_enabled INTEGER NOT NULL DEFAULT 0");
   const insertPerson=db.prepare("INSERT OR IGNORE INTO award_people(display_name,normalized_name,programme,level,photo_token) VALUES(?,?,?,?,?)");
   const attachPerson=db.prepare("UPDATE nominees SET person_id=?,profile_slug=COALESCE(profile_slug,?) WHERE id=?");
   for(const item of db.prepare("SELECT id,name,program,category_id AS categoryId,photo_token AS photoToken FROM nominees").all()){
@@ -249,10 +252,10 @@ function publicData(db) {
   const ranks = new Map();
   if (visible) [...new Set(rows.map(r=>r.category))].forEach(category => rows.filter(r=>r.category===category).sort((a,b)=>b.votes-a.votes||a.id-b.id).forEach((r,i)=>ranks.set(r.id,i+1)));
   const nominees = rows.map(({votes,photoToken,...row}) => {
-    const publicRow = {...row,imageUrl:photoToken?`/api/awards/files/${photoToken}`:null,profileUrl:`/awards/nominees/${row.profileSlug}`};
+    const publicRow = {...row,votingCode:votingCode(row.id),imageUrl:photoToken?`/api/awards/files/${photoToken}`:null,profileUrl:`/awards/nominees/${row.profileSlug}`};
     return visible ? {...publicRow,percentage:totals.get(row.category)?votes/totals.get(row.category)*100:0,rank:ranks.get(row.id)} : publicRow;
   });
-  return { title: config.awards_title, campaignStage:config.campaign_stage, categories: [...new Set(rows.map(r=>r.category))], nominees, pricePerVote: config.price_per_vote,
+  return { title: config.awards_title, ussd: { enabled: Boolean(config.ussd_display_enabled && config.ussd_dial_code), dialCode: config.ussd_display_enabled ? config.ussd_dial_code : "" }, campaignStage:config.campaign_stage, categories: [...new Set(rows.map(r=>r.category))], nominees, pricePerVote: config.price_per_vote,
     currency: config.currency, publicResultsVisible: visible, voting, opensAt: config.opens_at, countdownTarget: config.opens_at || "2026-09-15T00:00:00.000Z", closesAt: config.closes_at, maxVotes: config.max_votes };
 }
 
@@ -283,6 +286,9 @@ function applyApprovedImport(db,admin={}){
 
 function updateSettings(db, input) {
   const current = settings(db);
+  const dialCode = "ussdDialCode" in input ? String(input.ussdDialCode || "").trim() : current.ussd_dial_code;
+  const displayEnabled = "ussdDisplayEnabled" in input ? input.ussdDisplayEnabled : Boolean(current.ussd_display_enabled);
+  if ((dialCode && !/^\*[0-9]{1,12}(?:\*[0-9]{1,12}){0,5}#$/.test(dialCode)) || typeof displayEnabled !== "boolean" || (displayEnabled && !dialCode)) { const error = new Error("Enter a valid approved USSD dial code before enabling display."); error.status = 400; throw error; }
   if("votingState" in input&&!VOTING_STATES.has(input.votingState)){const e=new Error("Invalid voting state.");e.status=400;throw e;}
   if("campaignStage" in input&&!CAMPAIGN_STAGES.has(input.campaignStage)){const e=new Error("Invalid campaign stage.");e.status=400;throw e;}
   if("pricePerVote" in input&&(!Number.isSafeInteger(Number(input.pricePerVote))||Number(input.pricePerVote)<1||Number(input.pricePerVote)>1000000)){const e=new Error("Price per vote must be a valid positive integer in minor currency units.");e.status=400;throw e;}
@@ -302,8 +308,8 @@ function updateSettings(db, input) {
     max_votes: Number.isSafeInteger(Number(input.maxVotes)) && Number(input.maxVotes)>=1 && Number(input.maxVotes)<=100000 ? Number(input.maxVotes) : current.max_votes
   };
   if (next.opens_at && next.closes_at && Date.parse(next.closes_at)<=Date.parse(next.opens_at)) { const e=new Error("Closing time must be after opening time."); e.status=400; throw e; }
-  db.prepare(`UPDATE awards_settings SET awards_title=?,event_active=?,voting_state=?,campaign_stage=?,opens_at=?,closes_at=?,price_per_vote=?,currency=?,public_results_visible=?,max_votes=?,updated_at=? WHERE id=1`)
-    .run(next.awards_title,next.event_active,next.voting_state,next.campaign_stage,next.opens_at,next.closes_at,next.price_per_vote,next.currency,next.public_results_visible,next.max_votes,now());
+  db.prepare(`UPDATE awards_settings SET awards_title=?,event_active=?,voting_state=?,campaign_stage=?,opens_at=?,closes_at=?,price_per_vote=?,currency=?,public_results_visible=?,max_votes=?,ussd_dial_code=?,ussd_display_enabled=?,updated_at=? WHERE id=1`)
+    .run(next.awards_title,next.event_active,next.voting_state,next.campaign_stage,next.opens_at,next.closes_at,next.price_per_vote,next.currency,next.public_results_visible,next.max_votes,dialCode,Number(displayEnabled),now());
   return settings(db);
 }
 

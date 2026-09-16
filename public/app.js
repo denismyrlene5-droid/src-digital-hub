@@ -55,23 +55,51 @@ async function loadAwards() {
   applyVotingPresentation();
   renderTabs();
   renderNominees();
-  if(activeProfileSlug) setupFlyerStudio();
+  if(activeProfileSlug) { renderProfilePresentation(); await setupFlyerStudio(); }
   populateLeaderboardFilter();
   renderLeaderboard();
+}
+
+function renderProfilePresentation() {
+  const nominee = nominees[0];
+  document.body.classList.add("awards-profile-page");
+  byId("awardsHeroEyebrow").textContent = nominee ? "OFFICIAL NOMINEE PROFILE" : "SRC AWARDS";
+  byId("awardsHeroTitle").textContent = nominee?.name || "Nominee unavailable";
+  byId("awardsHeroIntro").textContent = nominee ? `${nominee.category} · ${[nominee.program, nominee.level].filter(Boolean).join(" · ")}` : "This nominee is not currently published. Browse the official nominee list instead.";
+  byId("awardsPrelaunch").hidden = true;
+  byId("awardsLiveActions").hidden = true;
+  byId("awardsLiveTrust").hidden = true;
+  byId("awardsNominationCta").hidden = true;
+  let actions = byId("nomineeProfileActions");
+  if (!actions) { actions = document.createElement("div"); actions.id = "nomineeProfileActions"; actions.className = "hero-actions"; byId("awardsHeroIntro").insertAdjacentElement("afterend", actions); }
+  actions.innerHTML = `<a class="btn btn-outline" href="/awards#categories">Browse all nominees</a>${nominee ? `<a class="btn btn-gold" href="#flyerStudioTitle">Download campaign flyer</a><a class="btn btn-outline" target="_blank" rel="noopener noreferrer" href="https://wa.me/?text=${encodeURIComponent(`Meet ${nominee.name}, nominated for ${nominee.category}: ${location.origin}${nominee.profileUrl}`)}">Share profile</a>` : ""}`;
+  byId("categoryTabs").hidden = true;
+  byId("awardCategoryFilter").closest("label").hidden = true;
+  byId("programmeFilter").hidden = true;
+  byId("searchInput").closest(".search-wrap").hidden = true;
+  byId("categories").querySelector("h2").textContent = "Nominee details";
+  byId("categories").querySelector(".section-heading p").textContent = "One official category nomination. Voting availability is controlled by the Awards team.";
+  byId("leaderboard").hidden = true;
+}
+
+async function copyNomineeLink(url) {
+  try { await navigator.clipboard.writeText(url); showToast("Link copied", "The nominee profile link is ready to share."); }
+  catch { window.prompt("Copy this nominee link:", url); }
 }
 
 async function setupFlyerStudio(){
   const grid=byId("nomineeGrid");
   let profile;try{profile=await api(`/api/awards/nominees/${encodeURIComponent(activeProfileSlug)}`);}catch{return;}
   const studio=document.createElement("section");studio.className="flyer-studio";studio.setAttribute("aria-labelledby","flyerStudioTitle");
+  document.querySelector(".flyer-studio")?.remove();
   studio.innerHTML=`<div><span class="section-kicker">CAMPAIGN TOOLKIT</span><h3 id="flyerStudioTitle">Download Campaign Flyer</h3><p>Preview and save an official flyer for one published category nomination.</p></div><label><span>Category nomination</span><select data-flyer-nomination>${profile.nominations.map(item=>`<option value="${escapeHtml(item.profileSlug)}" ${item.profileSlug===activeProfileSlug?"selected":""}>${escapeHtml(item.category)}</option>`).join("")}</select></label><label><span>Design style</span><select data-flyer-design><option value="">Automatic variety</option><option value="emerald">Emerald Prestige</option><option value="midnight">Midnight Gold</option><option value="burgundy">Burgundy Excellence</option><option value="ivory">Ivory Editorial</option><option value="royal">Royal Blue</option></select></label><div class="flyer-format-actions"><button type="button" class="secondary-btn" data-flyer-format="status">WhatsApp Status</button><button type="button" class="secondary-btn" data-flyer-format="square">Square post</button></div><div class="flyer-preview-wrap"><img data-flyer-preview alt="Campaign flyer preview" width="540" height="960"><p data-flyer-loading>Choose a format to create the preview.</p></div><div class="flyer-download-actions" hidden><a class="vote-btn" data-flyer-download download>Download PNG</a><button type="button" class="secondary-btn" data-flyer-share>Share Flyer</button><button type="button" class="secondary-btn" data-flyer-copy>Copy nominee link</button></div><p class="flyer-note">On supported phones, Share Flyer opens the device share sheet. It cannot post automatically to WhatsApp Status.</p>`;
   grid.insertAdjacentElement("afterend",studio);
   const select=studio.querySelector("[data-flyer-nomination]"),design=studio.querySelector("[data-flyer-design]"),preview=studio.querySelector("[data-flyer-preview]"),loading=studio.querySelector("[data-flyer-loading]"),actions=studio.querySelector(".flyer-download-actions"),download=studio.querySelector("[data-flyer-download]"),share=studio.querySelector("[data-flyer-share]");let currentBlob,currentFormat="status",currentFilename="src-awards-flyer.png",objectUrl;
   const flyerUrl=(format,downloadFile=false)=>{const query=new URLSearchParams({format});if(design.value)query.set("design",design.value);if(downloadFile)query.set("download","1");return`/api/awards/nominees/${encodeURIComponent(select.value)}/flyer?${query}`;};
   const render=async format=>{currentFormat=format;loading.textContent="Generating secure preview…";loading.hidden=false;actions.hidden=true;preview.removeAttribute("src");if(objectUrl)URL.revokeObjectURL(objectUrl);try{const response=await fetch(flyerUrl(format));if(!response.ok)throw new Error("Flyer preview is unavailable.");currentFilename=response.headers.get("content-disposition")?.match(/filename="([^"]+)"/)?.[1]||`src-awards-${format}.png`;currentBlob=await response.blob();objectUrl=URL.createObjectURL(currentBlob);preview.src=objectUrl;preview.width=540;preview.height=format==="status"?960:540;loading.hidden=true;actions.hidden=false;download.href=flyerUrl(format,true);}catch(error){loading.textContent=error.message;}};
   studio.querySelectorAll("[data-flyer-format]").forEach(button=>button.addEventListener("click",()=>render(button.dataset.flyerFormat)));select.addEventListener("change",()=>render(currentFormat));design.addEventListener("change",()=>render(currentFormat));
-  share.addEventListener("click",async()=>{if(!currentBlob)return;const file=new window.File([currentBlob],currentFilename,{type:"image/png"});if(navigator.canShare?.({files:[file]}))await navigator.share({files:[file],title:"SRC Awards campaign flyer"});else{download.click();showToast("Flyer downloaded","Use your phone's share menu to send the PNG.");}});
-  studio.querySelector("[data-flyer-copy]").addEventListener("click",async()=>{const url=`${location.origin}/awards/nominees/${select.value}`;await navigator.clipboard.writeText(url);showToast("Link copied","The exact nominee/category link is ready to share.");});
+  share.addEventListener("click",async()=>{if(!currentBlob)return;try{const file=new window.File([currentBlob],currentFilename,{type:"image/png"});if(navigator.canShare?.({files:[file]}))await navigator.share({files:[file],title:"SRC Awards campaign flyer"});else{download.click();showToast("Flyer downloaded","Use your phone's share menu to send the PNG.");}}catch(error){if(error.name!=="AbortError")showToast("Share unavailable","Download the flyer and share it from your photo library.");}});
+  studio.querySelector("[data-flyer-copy]").addEventListener("click",()=>copyNomineeLink(`${location.origin}/awards/nominees/${select.value}`));
 }
 
 function applyVotingPresentation(){
@@ -131,7 +159,7 @@ function renderNominees() {
   </article>`).join("");
   grid.querySelectorAll(".vote-btn").forEach(button => button.addEventListener("click", () => openVoteModal(Number(button.dataset.id))));
   grid.querySelectorAll(".nominee-portrait img").forEach(image => image.addEventListener("error", () => { const fallback = document.createElement("span"); fallback.textContent = initials(image.alt.replace(/^Portrait of /, "")); fallback.setAttribute("aria-label", "Photo unavailable"); image.replaceWith(fallback); }, { once: true }));
-  grid.querySelectorAll("[data-copy]").forEach(button=>button.addEventListener("click",async()=>{await navigator.clipboard.writeText(button.dataset.copy);showToast("Link copied","The nominee profile link is ready to share.");}));
+  grid.querySelectorAll("[data-copy]").forEach(button=>button.addEventListener("click",()=>copyNomineeLink(button.dataset.copy)));
 }
 
 function populateLeaderboardFilter() {

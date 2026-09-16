@@ -35,6 +35,28 @@ async function loginAsAdmin(page) {
   }
 }
 
+test("nominee profile has direct sharing and campaign navigation without listing filters", async ({ page }) => {
+  const nominee = { id: 1, name: "Example Nominee", category: "Campus Icon of the Year", program: "Education", level: "300", profileSlug: "example-nominee", profileUrl: "/awards/nominees/example-nominee" };
+  await page.route("**/api/awards", async route => {
+    const response = await route.fetch(), data = await response.json();
+    data.nominees = [nominee]; data.categories = [nominee.category]; data.publicResultsVisible = false;
+    await route.fulfill({ json: data });
+  });
+  await page.route("**/api/awards/nominees/example-nominee", route => route.fulfill({ json: { nominee, nominations: [nominee] } }));
+  await page.goto(nominee.profileUrl);
+  await expect(page.locator("h1")).toHaveText(nominee.name);
+  await expect(page.getByRole("link", { name: "Browse all nominees" })).toHaveAttribute("href", "/awards#categories");
+  await expect(page.getByRole("link", { name: "Download campaign flyer" })).toHaveAttribute("href", "#flyerStudioTitle");
+  const share = new URL(await page.getByRole("link", { name: "Share profile", exact: true }).getAttribute("href"));
+  expect(share.searchParams.get("text")).toContain(nominee.profileUrl);
+  await expect(page.locator("#awardCategoryFilter")).not.toBeVisible();
+  await expect(page.locator(".flyer-studio")).toHaveCount(1);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+  await page.goto("/awards/nominees/unpublished-example");
+  await expect(page.locator("h1")).toHaveText("Nominee unavailable");
+  await expect(page.getByRole("link", { name: "Share profile", exact: true })).toHaveCount(0);
+});
+
 test("Awards modal stays usable on short screens and loading failures offer retry", async ({ page }) => {
   const errors = []; page.on("pageerror", error => errors.push(error.message));
   await page.route("**/api/awards", async route => {

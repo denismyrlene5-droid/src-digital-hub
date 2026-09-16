@@ -218,6 +218,12 @@ button{cursor:pointer}
 .awards-percentage-track>span{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#a78135,#d7ad54)}
 .leader-percentage{grid-column:2 / -1;min-width:0}
 .leader-percentage .awards-percentage-track{margin:0}
+.awards-profile-page .hero{grid-template-columns:1fr;min-height:0;padding-bottom:40px}
+.awards-profile-page .hero-card-wrap{display:none}
+.awards-profile-page .hero h1{font-size:clamp(36px,6vw,64px);overflow-wrap:anywhere}
+.awards-profile-page .nominee-grid{grid-template-columns:minmax(0,420px);justify-content:center}
+.awards-profile-page .hero-actions{flex-wrap:wrap}
+.awards-profile-page .flyer-studio button,.awards-profile-page .flyer-studio a{min-height:44px}
 .leader-name,.leader-name>div{min-width:0}
 .leader-name b{overflow-wrap:anywhere}
 .big-stat{padding:26px 0 22px;border-bottom:1px solid var(--line)}

@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles.css?v=13" />
+  <link rel="stylesheet" href="/styles.css?v=14" />
   <link rel="stylesheet" href="/hub.css?v=16" />
 </head>
 <body class="awards-page">
@@ -85,7 +85,9 @@
         </div>
       </div>
 
-      <div class="category-tabs" id="categoryTabs"></div>
+      <div class="awards-campaign-status" id="awardsCampaignStatus" role="status" hidden></div>
+      <nav class="category-tabs awards-group-tabs" id="categoryTabs" aria-label="Award groups"></nav>
+      <label class="awards-category-picker"><span>Award category</span><select id="awardCategoryFilter"><option value="All">All categories</option></select></label>
       <div class="nominee-grid" id="nomineeGrid"></div>
     </section>
 
@@ -96,7 +98,7 @@
           <h2>Leaderboard</h2>
           <p>Public rankings show percentages only. Exact vote counts remain private to administrators.</p>
         </div>
-        <div class="live-pill"><span></span> Live demo</div>
+        <div class="live-pill">Category standings</div>
       </div>
 
       <div class="leaderboard-layout">
@@ -218,7 +220,7 @@
 
   <script src="/hub-data.js?v=10"></script>
   <script src="/hub-shell.js?v=13"></script>
-  <script src="/app.js?v=16"></script>
+  <script src="/app.js?v=17"></script>
   <script>if("serviceWorker" in navigator)addEventListener("load",()=>navigator.serviceWorker.register("/sw.js"));</script>
 </body>
 </html>

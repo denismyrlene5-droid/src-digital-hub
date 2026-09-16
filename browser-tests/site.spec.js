@@ -35,6 +35,41 @@ async function loginAsAdmin(page) {
   }
 }
 
+test("category percentage design respects public results permission", async ({ page }) => {
+  let visible = true;
+  await page.route("**/api/awards", async route => {
+    const response = await route.fetch();
+    const data = await response.json();
+    data.categories = ["Campus Icon of the Year"];
+    data.nominees = [{ id: 1, rank: 1, percentage: 42.5, name: "Test Nominee", category: data.categories[0], program: "Education", code: "TEST", profileUrl: "/awards/nominees/test", level: "300" }];
+    data.publicResultsVisible = visible;
+    data.voting = { state: "open", open: true, message: "Voting open" };
+    await route.fulfill({ json: data });
+  });
+  await page.goto("/awards");
+  await expect(page.getByRole("meter")).toHaveCount(2);
+  await expect(page.getByRole("meter").first()).toHaveAttribute("aria-valuenow", "42.5");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+  visible = false;
+  await page.reload();
+  await expect(page.locator("#leaderboardList")).toContainText("Public results are hidden");
+  await expect(page.getByRole("meter")).toHaveCount(0);
+});
+
+test("Awards group navigation scopes categories and preserves server voting state", async ({ page }) => {
+  await page.goto("/awards");
+  const navigation = page.getByRole("navigation", { name: "Award groups" });
+  await expect(navigation.getByRole("button")).toHaveCount(4);
+  await expect(page.locator("#awardsCampaignStatus")).toContainText("Voting has not started");
+  await navigation.getByRole("button", { name: "Level 350", exact: true }).click();
+  await expect(navigation.getByRole("button", { name: "Level 350", exact: true })).toHaveAttribute("aria-pressed", "true");
+  const names = await page.locator("#awardCategoryFilter option").allTextContents();
+  expect(names.every(name => name.includes("Level 350"))).toBe(true);
+  await navigation.getByRole("button", { name: "General", exact: true }).click();
+  expect((await page.locator("#awardCategoryFilter option").allTextContents()).some(name => name.startsWith("Level 350"))).toBe(false);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+});
+
 test("selective nomination reopening admin works without mobile overflow", async ({ page }) => {
   database.exec("UPDATE nomination_phases SET status='closed'");
   await loginAsAdmin(page);

@@ -1,6 +1,7 @@
 let categories = ["All"];
 let nominees = [];
 let activeCategory = "All";
+let activeAwardGroup = "All";
 let searchTerm = "";
 let activeProgramme = "All programmes";
 let selectedNominee = null;
@@ -73,6 +74,9 @@ async function setupFlyerStudio(){
 }
 
 function applyVotingPresentation(){
+  const status = byId("awardsCampaignStatus");
+  status.hidden = false;
+  status.textContent = voting.open ? "VOTING OPEN · Choose an award group, then a category to support a nominee." : voting.state === "paused" ? "VOTING PAUSED · You can browse published nominees. Voting is temporarily unavailable." : voting.state === "closed" ? "VOTING CLOSED · Thank you for supporting the SRC Awards." : nominationsOpen ? "NOMINATIONS OPEN · Free nominations are not votes. Voting has not started." : campaignStage === "verification" ? "NOMINEE VERIFICATION · Only published nominees appear here. Voting has not started." : "NOMINEE REVEAL · Browse published nominees. Voting has not started.";
   const prelaunch=voting.state==="not_started";
   const nominationStage=prelaunch&&nominationsOpen;
   byId("awardsPrelaunch").hidden=!prelaunch;
@@ -90,17 +94,21 @@ function applyVotingPresentation(){
 
 function renderTabs() {
   const el = byId("categoryTabs");
-  el.innerHTML = categories.map(category => `<button class="category-tab ${category === activeCategory ? "active" : ""}" data-category="${category}">${category}</button>`).join("");
+  el.innerHTML = ["All", "Level 300", "Level 350", "General"].map(group => `<button type="button" class="category-tab ${group === activeAwardGroup ? "active" : ""}" aria-pressed="${group === activeAwardGroup}" data-category="${group}">${group === "All" ? "All Awards" : escapeHtml(group)}</button>`).join("");
+  const categorySelect = byId("awardCategoryFilter");
+  const available = categories.filter(category => !["All", "Level 300", "Level 350", "General"].includes(category) && (activeAwardGroup === "All" || awardGroup(category) === activeAwardGroup));
+  categorySelect.innerHTML = `<option value="All">All categories${activeAwardGroup === "All" ? "" : ` · ${escapeHtml(activeAwardGroup)}`}</option>${available.map(category => `<option value="${escapeHtml(category)}" ${category === activeCategory ? "selected" : ""}>${escapeHtml(category)}</option>`).join("")}`;
+  categorySelect.onchange = () => { activeCategory = categorySelect.value; renderNominees(); };
   let programme=document.getElementById("programmeFilter");if(!programme){programme=document.createElement("select");programme.id="programmeFilter";programme.className="nominee-programme-filter";programme.setAttribute("aria-label","Filter nominees by programme");el.insertAdjacentElement("afterend",programme);programme.addEventListener("change",()=>{activeProgramme=programme.value;renderNominees();});}const programmes=["All programmes",...new Set(nominees.map(item=>item.program).filter(Boolean))];programme.innerHTML=programmes.map(value=>`<option ${value===activeProgramme?"selected":""}>${escapeHtml(value)}</option>`).join("");
   el.querySelectorAll(".category-tab").forEach(button => button.addEventListener("click", () => {
-    activeCategory = button.dataset.category;
+    activeAwardGroup = button.dataset.category; activeCategory = "All";
     renderTabs(); renderNominees();
   }));
 }
 
 function filteredNominees() {
   const query = searchTerm.trim().toLowerCase();
-  return nominees.filter(n => (activeCategory === "All" || n.category === activeCategory || awardGroup(n.category)===activeCategory) && (activeProgramme==="All programmes"||n.program===activeProgramme) &&
+  return nominees.filter(n => (activeAwardGroup === "All" || awardGroup(n.category) === activeAwardGroup) && (activeCategory === "All" || n.category === activeCategory) && (activeProgramme==="All programmes"||n.program===activeProgramme) &&
     (!query || [n.name, n.category, n.program, n.code].some(value => value.toLowerCase().includes(query))));
 }
 
@@ -112,7 +120,8 @@ function renderNominees() {
     <div class="card-top"><div class="avatar">${n.imageUrl?`<img src="${escapeHtml(n.imageUrl)}" alt="Portrait of ${escapeHtml(n.name)}" loading="lazy">`:initials(n.name)}</div><span class="rank-badge">${escapeHtml(awardGroup(n.category))}</span></div>
     <h3><a href="${escapeHtml(n.profileUrl)}">${escapeHtml(n.name)}</a></h3><div class="nominee-category">${escapeHtml(n.category)}</div>
     <div class="nominee-meta"><span>${escapeHtml([n.program,n.level].filter(Boolean).join(" · "))}</span>${publicResultsVisible?`<span class="percent-pill">${n.percentage.toFixed(1)}%</span>`:""}</div>${n.shortMessage?`<p class="nominee-message">“${escapeHtml(n.shortMessage)}”</p>`:""}
-    <div class="public-hidden" style="margin:-5px 0 13px">${publicResultsVisible?`Public standing: #${n.rank} • exact votes hidden`:"Public results are currently hidden"}</div>
+    ${publicResultsVisible ? percentageBar(n) : ""}
+    <div class="public-hidden" style="margin:-5px 0 13px">${publicResultsVisible?`Category standing: #${escapeHtml(n.rank)} • exact votes hidden`:"Public results are currently hidden"}</div>
     <button class="vote-btn" data-id="${n.id}" ${voting.open?"":"disabled"}>${voting.open?"Vote":voting.state==="closed"?"Voting closed":"Voting opens soon"}</button><div class="nominee-share-actions"><a href="https://wa.me/?text=${encodeURIComponent(`Meet ${n.name}, nominated for ${n.category}: ${location.origin}${n.profileUrl}`)}" target="_blank" rel="noopener noreferrer">Share on WhatsApp</a><button type="button" data-copy="${escapeHtml(location.origin+n.profileUrl)}">Copy link</button></div>
   </article>`).join("");
   grid.querySelectorAll(".vote-btn").forEach(button => button.addEventListener("click", () => openVoteModal(Number(button.dataset.id))));
@@ -137,11 +146,18 @@ function renderLeaderboard() {
   byId("leaderboardTitle").textContent = filter;
   byId("leaderboardList").innerHTML = publicResultsVisible ? list.map(n => `<div class="leader-row">
     <div class="leader-pos">${n.rank}</div><div class="leader-name"><div class="avatar">${initials(n.name)}</div>
-    <div><b>${n.name}</b><span>${n.program}</span></div></div>
-    <div class="leader-votes"><b>${n.percentage.toFixed(1)}%</b><span>public share</span></div>
+    <div><b>${escapeHtml(n.name)}</b><span>${escapeHtml(n.program)}</span></div></div>
+    <div class="leader-votes"><b>${Number(n.percentage).toFixed(1)}%</b><span>category share</span></div>
+    <div class="leader-percentage">${percentageBar(n)}</div>
   </div>`).join("") : `<div class="empty-state">Public results are hidden by the Awards administrator.</div>`;
   byId("uniqueNominees").textContent = nominees.length;
   byId("categoryCount").textContent = new Set(nominees.map(n => n.category)).size;
+}
+
+function percentageBar(nominee) {
+  const value = Number(nominee.percentage);
+  if (!Number.isFinite(value) || value < 0 || value > 100) return "";
+  return `<div class="awards-percentage-track" role="meter" aria-label="${escapeHtml(nominee.name)}: share within category" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${value}" aria-valuetext="${value.toFixed(1)} percent within this category"><span style="width:${value}%"></span></div>`;
 }
 
 function openVoteModal(id) {

@@ -109,15 +109,18 @@ function renderTabs() {
 function filteredNominees() {
   const query = searchTerm.trim().toLowerCase();
   return nominees.filter(n => (activeAwardGroup === "All" || awardGroup(n.category) === activeAwardGroup) && (activeCategory === "All" || n.category === activeCategory) && (activeProgramme==="All programmes"||n.program===activeProgramme) &&
-    (!query || [n.name, n.category, n.program, n.code].some(value => value.toLowerCase().includes(query))));
+    (!query || [n.name, n.category, n.program, n.code].some(value => String(value || "").toLowerCase().includes(query))));
 }
 
 function renderNominees() {
   const grid = byId("nomineeGrid");
-  const list = filteredNominees().sort((a, b) => a.category.localeCompare(b.category) || (a.rank||a.id) - (b.rank||b.id));
-  if (!list.length) { grid.innerHTML = `<div class="empty-state">No published nominees match this selection yet.</div>`; return; }
+  const list = filteredNominees().sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name, "en", { sensitivity: "base" }) || a.id - b.id);
+  const filtered = searchTerm.trim() || activeAwardGroup !== "All" || activeCategory !== "All" || activeProgramme !== "All programmes";
+  byId("resetNomineeFilters").hidden = !filtered;
+  byId("nomineeResultCount").textContent = `${list.length} published ${list.length === 1 ? "nominee" : "nominees"} · A–Z within each category`;
+  if (!list.length) { grid.innerHTML = `<div class="empty-state">${nominees.length ? "No nominees match your filters. Try another name or reset the filters above." : "Published nominees will appear here when the Awards team releases them."}</div>`; return; }
   grid.innerHTML = list.map(n => `<article class="nominee-card">
-    <div class="card-top"><div class="avatar">${n.imageUrl?`<img src="${escapeHtml(n.imageUrl)}" alt="Portrait of ${escapeHtml(n.name)}" loading="lazy">`:initials(n.name)}</div><span class="rank-badge">${escapeHtml(awardGroup(n.category))}</span></div>
+    <div class="card-top"><div class="avatar nominee-portrait">${n.imageUrl?`<img src="${escapeHtml(n.imageUrl)}" alt="Portrait of ${escapeHtml(n.name)}" loading="lazy" width="480" height="600">`:`<span aria-label="Photo unavailable">${escapeHtml(initials(n.name))}</span>`}</div><span class="rank-badge">${escapeHtml(awardGroup(n.category))}</span></div>
     <h3><a href="${escapeHtml(n.profileUrl)}">${escapeHtml(n.name)}</a></h3><div class="nominee-category">${escapeHtml(n.category)}</div>
     <div class="nominee-meta"><span>${escapeHtml([n.program,n.level].filter(Boolean).join(" · "))}</span>${publicResultsVisible?`<span class="percent-pill">${n.percentage.toFixed(1)}%</span>`:""}</div>${n.shortMessage?`<p class="nominee-message">“${escapeHtml(n.shortMessage)}”</p>`:""}
     ${publicResultsVisible ? percentageBar(n) : ""}
@@ -125,6 +128,7 @@ function renderNominees() {
     <button class="vote-btn" data-id="${n.id}" ${voting.open?"":"disabled"}>${voting.open?"Vote":voting.state==="closed"?"Voting closed":"Voting opens soon"}</button><div class="nominee-share-actions"><a href="https://wa.me/?text=${encodeURIComponent(`Meet ${n.name}, nominated for ${n.category}: ${location.origin}${n.profileUrl}`)}" target="_blank" rel="noopener noreferrer">Share on WhatsApp</a><button type="button" data-copy="${escapeHtml(location.origin+n.profileUrl)}">Copy link</button></div>
   </article>`).join("");
   grid.querySelectorAll(".vote-btn").forEach(button => button.addEventListener("click", () => openVoteModal(Number(button.dataset.id))));
+  grid.querySelectorAll(".nominee-portrait img").forEach(image => image.addEventListener("error", () => { const fallback = document.createElement("span"); fallback.textContent = initials(image.alt.replace(/^Portrait of /, "")); fallback.setAttribute("aria-label", "Photo unavailable"); image.replaceWith(fallback); }, { once: true }));
   grid.querySelectorAll("[data-copy]").forEach(button=>button.addEventListener("click",async()=>{await navigator.clipboard.writeText(button.dataset.copy);showToast("Link copied","The nominee profile link is ready to share.");}));
 }
 
@@ -266,5 +270,6 @@ function setupVoting() {
 }
 
 byId("searchInput").addEventListener("input", event => { searchTerm = event.target.value; renderNominees(); });
+byId("resetNomineeFilters").addEventListener("click", () => { searchTerm = ""; activeCategory = "All"; activeAwardGroup = "All"; activeProgramme = "All programmes"; byId("searchInput").value = ""; renderTabs(); renderNominees(); byId("searchInput").focus(); });
 setupVoting();
 Promise.all([loadAwards(), detectPaymentMode()]).then(loadReceiptPage).catch(error => showToast("Unable to load awards", error.message));

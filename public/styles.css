@@ -169,6 +169,18 @@ button{cursor:pointer}
 }
 .avatar-large{width:76px;height:76px;border-radius:22px;font-size:25px}
 .avatar img{width:100%;height:100%;object-fit:cover;border-radius:inherit}
+.nominee-browse-summary{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:20px}
+.nominee-browse-summary p{margin:0;font-size:.85rem}
+.nominee-browse-summary button{min-height:44px}
+.awards-page .nominee-card{display:flex;flex-direction:column;min-width:0}
+.awards-page .nominee-card .card-top{display:block;position:relative}
+.awards-page .nominee-card .nominee-portrait{width:100%;height:auto;aspect-ratio:4/5;overflow:hidden;font-size:36px}
+.nominee-portrait img{object-position:center 25%;display:block}
+.awards-page .nominee-card .rank-badge{position:absolute;bottom:10px;left:10px;background:#063323;color:#fff;border:0}
+.nominee-card h3,.nominee-category,.nominee-meta{overflow-wrap:anywhere}
+.nominee-card .nominee-meta{gap:8px;flex-wrap:wrap;align-items:flex-start}
+.nominee-card .vote-btn{margin-top:auto;min-height:44px}
+@media(min-width:360px) and (max-width:600px){.awards-page .nominee-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.awards-page .nominee-card{padding:12px}.awards-page .nominee-card h3{font-size:16px;line-height:1.35;margin-top:14px}.awards-page .nominee-card .rank-badge{font-size:10px;left:6px;bottom:6px}.nominee-card .nominee-share-actions{flex-wrap:wrap}.nominee-card .nominee-share-actions>*{min-height:44px;max-width:100%;overflow-wrap:anywhere}}
 .rank-badge{font-size:10px;color:#8490a7;border:1px solid var(--line);padding:6px 8px;border-radius:999px}
 .nominee-card h3{margin:20px 0 5px;font-size:19px}
 .nominee-card h3 a{color:inherit;text-decoration:none}.nominee-card h3 a:hover{color:var(--gold2)}

@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles.css?v=14" />
+  <link rel="stylesheet" href="/styles.css?v=15" />
   <link rel="stylesheet" href="/hub.css?v=16" />
 </head>
 <body class="awards-page">
@@ -81,13 +81,14 @@
 
         <div class="search-wrap">
           <span>⌕</span>
-          <input id="searchInput" type="search" placeholder="Search nominee or category..." />
+          <input id="searchInput" type="search" aria-label="Search nominees by name, category, programme or code" placeholder="Search nominee, category or programme..." />
         </div>
       </div>
 
       <div class="awards-campaign-status" id="awardsCampaignStatus" role="status" hidden></div>
       <nav class="category-tabs awards-group-tabs" id="categoryTabs" aria-label="Award groups"></nav>
       <label class="awards-category-picker"><span>Award category</span><select id="awardCategoryFilter"><option value="All">All categories</option></select></label>
+      <div class="nominee-browse-summary"><p id="nomineeResultCount" role="status" aria-live="polite"></p><button class="secondary-btn" id="resetNomineeFilters" type="button" hidden>Reset filters</button></div>
       <div class="nominee-grid" id="nomineeGrid"></div>
     </section>
 
@@ -220,7 +221,7 @@
 
   <script src="/hub-data.js?v=10"></script>
   <script src="/hub-shell.js?v=13"></script>
-  <script src="/app.js?v=17"></script>
+  <script src="/app.js?v=18"></script>
   <script>if("serviceWorker" in navigator)addEventListener("load",()=>navigator.serviceWorker.register("/sw.js"));</script>
 </body>
 </html>

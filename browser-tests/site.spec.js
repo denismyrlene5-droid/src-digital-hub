@@ -35,6 +35,30 @@ async function loginAsAdmin(page) {
   }
 }
 
+test("nominee portraits, alphabetical order and search reset work responsively", async ({ page }) => {
+  await page.route("**/api/awards", async route => {
+    const response = await route.fetch(), data = await response.json();
+    data.categories = ["Campus Icon of the Year"];
+    data.nominees = ["Zara Student", "Ama Student"].map((name, index) => ({ id: index + 1, rank: index + 1, name, category: data.categories[0], program: "Education", profileUrl: "/awards/nominees/test", imageUrl: index ? "/missing-test-image.jpg" : null, level: "300" }));
+    data.publicResultsVisible = false;
+    await route.fulfill({ json: data });
+  });
+  await page.goto("/awards");
+  await expect(page.locator(".nominee-card h3").first()).toHaveText("Ama Student");
+  await expect(page.locator(".nominee-portrait img")).toHaveCount(0);
+  const search = page.getByRole("searchbox");
+  await search.fill("zara");
+  await expect(page.locator(".nominee-card")).toHaveCount(1);
+  await search.fill("unmatched");
+  await expect(page.locator("#nomineeGrid")).toContainText("No nominees match your filters");
+  await page.getByRole("button", { name: "Reset filters", exact: true }).click();
+  await expect(page.locator(".nominee-card")).toHaveCount(2);
+  for (const width of [320, 375, 430, 768, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+  }
+});
+
 test("category percentage design respects public results permission", async ({ page }) => {
   let visible = true;
   await page.route("**/api/awards", async route => {

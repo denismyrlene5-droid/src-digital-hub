@@ -567,6 +567,48 @@ test("legacy USSD prompt reference failures recover only after verified payment 
   } finally { await app.close(); }
 });
 
+test("admin USSD recheck is protected, paginated, verification-only and idempotent",async()=>{
+  const outcomes=new Map(),requested=[];
+  const fetchImpl=async(url,options)=>{
+    assert.ok(String(url).endsWith('/open/transact/status'),'Recheck must not initiate charges');
+    const body=JSON.parse(options.body);requested.push(body.id);
+    const outcome=outcomes.get(body.id);
+    if(outcome==='network')throw new Error('Network unavailable');
+    return {ok:true,status:200,json:async()=>({status:1,data:{txstatus:outcome==='pending'?0:outcome==='failed'?2:1,externalref:body.id,accountnumber:'100000001',amount:outcome==='mismatch'?'9.00':'10.00',transactionid:`FINAL-${body.id}`,currency:'GHS'}})};
+  };
+  const app=await fixture({paymentProvider:'moolre_sandbox',moolreApiUser:'merchant-user',moolrePublicKey:'public-key',moolreAccountNumber:'100000001',moolreBusinessEmail:'payments@example.edu',fetchImpl});
+  const endpoint=`${app.base}/api/admin/awards/transactions/recheck-ussd`;
+  try {
+    const post=(cookie,body)=>fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json',...(cookie?{Cookie:cookie}:{})},body:JSON.stringify(body)});
+    assert.equal((await post('',{confirm:true})).status,401);
+    const cookie=await adminCookie(app);
+    assert.equal((await post(cookie,{confirm:false})).status,400);
+    assert.equal((await post(cookie,{confirm:true,afterId:-1})).status,400);
+    const before=app.db.prepare('SELECT vote_total AS votes FROM nominees WHERE id=1').get().votes;
+    for(const outcome of ['success','pending','failed','mismatch','network','success']){
+      const created=awards.createTransaction(app.db,{nomineeId:1,votes:10,provider:'moolre_sandbox',providerReference:`PROMPT-${outcomes.size}`,metadata:{source:'ussd',recipientAccount:'100000001'}});
+      outcomes.set(created.reference,outcome);
+    }
+    const excluded=[];
+    for(const kind of ['web','refunded','credited']){
+      const created=awards.createTransaction(app.db,{nomineeId:1,votes:10,provider:'moolre_sandbox',metadata:{source:kind==='web'?'web':'ussd',recipientAccount:'100000001'}});
+      excluded.push(created.reference);
+      if(kind==='refunded')app.db.prepare("UPDATE payments SET payment_status='refunded' WHERE reference=?").run(created.reference);
+      if(kind==='credited')app.db.prepare("UPDATE payments SET vote_credit_status='credited' WHERE reference=?").run(created.reference);
+    }
+    const first=await (await post(cookie,{confirm:true})).json();
+    assert.equal(first.counts.checked,5);assert.equal(first.hasMore,true);assert.equal(first.counts.credited,1);
+    assert.equal(first.counts.pending,2);assert.equal(first.counts.failed,2);
+    const second=await (await post(cookie,{confirm:true,afterId:first.nextCursor})).json();
+    assert.equal(second.counts.checked,1);assert.equal(second.counts.credited,1);assert.equal(second.hasMore,false);
+    assert.equal(app.db.prepare('SELECT vote_total AS votes FROM nominees WHERE id=1').get().votes,before+20);
+    const repeated=await (await post(cookie,{confirm:true})).json();
+    assert.equal(repeated.counts.credited,0);
+    assert.equal(app.db.prepare('SELECT vote_total AS votes FROM nominees WHERE id=1').get().votes,before+20);
+    excluded.forEach(reference=>assert.equal(requested.includes(reference),false));
+  } finally { await app.close(); }
+});
+
 test("Moolre USSD callback stays unavailable without its separate callback token",async()=>{
   const app=await fixture({paymentProvider:"moolre_sandbox",moolreApiUser:"merchant-user",moolrePublicKey:"public-key",moolreAccountNumber:"100000001",moolreBusinessEmail:"payments@example.edu",moolreUssdCallbackToken:""});
   try{

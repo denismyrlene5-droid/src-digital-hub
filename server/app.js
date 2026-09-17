@@ -351,6 +351,38 @@ function createApp(options = {}) {
     categories:db.prepare("SELECT c.id,c.name,c.sort_order AS sortOrder,c.active FROM categories c WHERE NOT(c.active=0 AND EXISTS(SELECT 1 FROM nominees d WHERE d.category_id=c.id AND d.source='demo') AND NOT EXISTS(SELECT 1 FROM nominees genuine WHERE genuine.category_id=c.id AND genuine.source<>'demo')) ORDER BY c.sort_order").all(),
     nominees:db.prepare("SELECT n.id,n.name,n.program,n.level,n.short_message AS shortMessage,n.publication_status AS publicationStatus,n.profile_slug AS profileSlug,n.source,n.code,n.active,n.photo_token AS photoToken,n.vote_total AS voteTotal,n.category_id AS categoryId,n.person_id AS personId,c.name AS category FROM nominees n JOIN categories c ON c.id=n.category_id WHERE n.source<>'demo' ORDER BY c.sort_order,n.name").all()
   }));
+  let ussdRecheckRunning = false;
+  app.post("/api/admin/awards/transactions/recheck-ussd", auth.requireAwardsAdmin, rateLimit({windowMs:60000,max:60}), async(req,res,next)=>{
+    if(req.body?.confirm!==true)return res.status(400).json({ok:false,message:"Confirm the existing USSD payment recheck."});
+    const afterId=Number(req.body.afterId ?? 0);
+    if(!Number.isSafeInteger(afterId)||afterId<0)return res.status(400).json({ok:false,message:"Invalid recheck cursor."});
+    if(ussdRecheckRunning)return res.status(409).json({ok:false,message:"A USSD payment recheck is already running. Try again shortly."});
+    ussdRecheckRunning=true;
+    try {
+      const rows=db.prepare(`SELECT rowid AS cursor,reference FROM payments WHERE rowid>? AND provider IN ('moolre_live','moolre_sandbox')
+        AND json_extract(CASE WHEN json_valid(metadata_json) THEN metadata_json ELSE '{}' END,'$.source')='ussd'
+        AND vote_credit_status='not_credited' AND payment_status NOT IN ('refunded','reversed') ORDER BY rowid LIMIT 6`).all(afterId);
+      const batch=rows.slice(0,5),counts={checked:0,credited:0,alreadyCredited:0,pending:0,failed:0,unavailable:0,errors:0};
+      for(const row of batch){
+        counts.checked++;
+        try {
+          const item=awards.transaction(db,row.reference,true);
+          if(item.voteCreditStatus==='credited'){counts.alreadyCredited++;continue;}
+          if(['refunded','reversed'].includes(item.paymentStatus)||item.voteCreditStatus==='reversed'){counts.failed++;continue;}
+          const provider=providerForTransaction(item);
+          if(!provider){counts.unavailable++;continue;}
+          const result=await provider.verify(item.reference,item);
+          if(result.status==='successful'){
+            const credited=awards.verifyAndCredit(db,item.reference,result,'admin_ussd_recheck');
+            counts[!credited.ok?'failed':credited.credited?'credited':'alreadyCredited']++;
+          } else if(result.status==='pending'){counts.pending++;}
+          else {awards.markStatus(db,item.reference,result.status,result.reason);counts.failed++;}
+        }catch(error){counts.errors++;console.warn(`[moolre-ussd] recheck_error reference=${row.reference} type=${error?.name||'Error'}`);}
+      }
+      content.audit(req.admin,'awards.ussd_rechecked','payments','ussd',`USSD recheck: ${counts.checked} checked, ${counts.credited} newly credited, ${counts.pending} pending, ${counts.failed} failed, ${counts.errors} errors`);
+      res.json({ok:true,counts,hasMore:rows.length>5,nextCursor:batch.at(-1)?.cursor ?? afterId});
+    }catch(error){next(error);}finally{ussdRecheckRunning=false;}
+  });
   app.get("/api/admin/awards/import-preview",auth.requireAwardsAdmin,(req,res)=>res.json(awards.importPreview(db)));
   app.post("/api/admin/awards/import",auth.requireAwardsAdmin,(req,res,next)=>{try{if(req.body?.confirm!==true)return res.status(400).json({ok:false,message:"Review and explicitly confirm the import first."});res.status(201).json(awards.applyApprovedImport(db,req.admin));}catch(error){next(error);}});
   app.get("/api/admin/awards/nominees/:id/flyer",auth.requireAwardsAdmin,async(req,res,next)=>{try{const base=publicBaseUrl||`${req.protocol}://${req.get("host")}`;const flyer=await createNomineeFlyer({db,uploadDirectory,publicDirectory,baseUrl:base,selector:{id:Number(req.params.id)},format:req.query.format||"status",design:req.query.design,allowDraft:true});res.setHeader("Content-Type","image/png");res.setHeader("Content-Disposition","inline");res.setHeader("Cache-Control","private, no-store");res.send(flyer.buffer);}catch(error){next(error);}});

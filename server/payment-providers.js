@@ -216,7 +216,8 @@ function createMoolreProvider({
       return {
         ok: true,
         status: "pending",
-        providerReference: typeof result?.data === "string" ? result.data.slice(0, 160) : "",
+        // The collection response ID is not the final status transactionid.
+        promptReference: typeof result?.data === "string" ? result.data.slice(0, 160) : "",
         requiresOtp: String(result?.code || "").toUpperCase() === "TP14"
       };
     },
@@ -237,6 +238,7 @@ function createMoolreProvider({
       if (data.currency && String(data.currency).toUpperCase() !== String(transaction.currency || "GHS").toUpperCase()) return { status: "failed", reason: "currency_mismatch" };
       const status = moolreStatus(data.txstatus);
       if (status === "successful") {
+        if (!String(data.transactionid || "").trim()) return { status: "pending", reason: "missing_provider_transaction_id" };
         const majorAmount = Number(data.amount);
         if (!Number.isFinite(majorAmount) || majorAmount < 0) return { status: "failed", reason: "invalid_provider_amount" };
         return {

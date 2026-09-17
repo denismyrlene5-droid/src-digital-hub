@@ -219,7 +219,10 @@ function createMoolreUssdRouter({ db, awards, provider, enabled, callbackToken, 
       channel: payment.network,
       sessionId: payment.sessionId
     });
-    if (result.providerReference) db.prepare("UPDATE payments SET provider_reference=?,updated_at=CURRENT_TIMESTAMP WHERE reference=? AND provider_reference IS NULL").run(result.providerReference, payment.created.reference);
+    if (result.promptReference) {
+      const metadata = { ...payment.created.metadata, recipientAccount: provider.accountNumber, source: "ussd", channel: payment.network, moolrePromptReference: result.promptReference };
+      db.prepare("UPDATE payments SET metadata_json=?,updated_at=CURRENT_TIMESTAMP WHERE reference=?").run(JSON.stringify(metadata), payment.created.reference);
+    }
     if (!result.ok && !result.uncertain) awards.markStatus(db, payment.created.reference, "failed", "ussd_initialization_failed");
     logger.info?.(`[moolre-ussd] payment_prompt_${result.ok ? "requested" : result.uncertain ? "uncertain" : "failed"} reference=${payment.created.reference} channel=${payment.network}`);
   }

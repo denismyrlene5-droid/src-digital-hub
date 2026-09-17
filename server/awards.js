@@ -184,10 +184,16 @@ function verifyAndCredit(db, reference, result, source = "provider_verify") {
     return rejectVerification(db, existing.reference, result?.reason || "payment_not_successful", status);
   }
   if(result.reference&&String(result.reference)!==existing.reference)return rejectVerification(db,existing.reference,"transaction_reference_mismatch");
+  const moolreUssd = existing.provider.startsWith("moolre_") && existing.metadata?.source === "ussd";
+  if(moolreUssd && String(result.reference||"")!==existing.reference)return rejectVerification(db,existing.reference,"transaction_reference_mismatch");
   if (Number(result.amount) !== Number(existing.expectedAmount) || String(result.currency).toUpperCase() !== existing.currency) return rejectVerification(db, existing.reference, "amount_or_currency_mismatch");
   if(existing.provider.startsWith("moolre_")&&existing.metadata?.recipientAccount&&String(result.recipientAccount||"")!==String(existing.metadata.recipientAccount))return rejectVerification(db,existing.reference,"recipient_account_mismatch");
   if(result.metadata && (Number(result.metadata.nominee_id)!==existing.nomineeId || Number(result.metadata.votes)!==existing.votes)) return rejectVerification(db,existing.reference,"transaction_metadata_mismatch");
-  if (result.providerReference && existing.providerReference && result.providerReference !== existing.providerReference) return rejectVerification(db, existing.reference, "provider_reference_mismatch");
+  // Older USSD records stored the prompt ID in the final transaction-ID field.
+  // Recover only after authenticated server verification of the exact externalref,
+  // amount, currency and recipient above; canonical IDs still remain unique.
+  const legacyUssdPrompt = moolreUssd && existing.metadata?.moolreReferenceKind !== "transaction";
+  if (result.providerReference && existing.providerReference && result.providerReference !== existing.providerReference && !legacyUssdPrompt) return rejectVerification(db, existing.reference, "provider_reference_mismatch");
   if (result.providerReference) {
     const duplicate=db.prepare("SELECT reference FROM payments WHERE provider_reference=? AND reference<>?").get(result.providerReference,existing.reference);
     if(duplicate) return rejectVerification(db,existing.reference,"duplicate_provider_reference");
@@ -197,7 +203,12 @@ function verifyAndCredit(db, reference, result, source = "provider_verify") {
   try {
     const current = db.prepare("SELECT vote_credit_status FROM payments WHERE reference=?").get(existing.reference);
     if (current.vote_credit_status === "credited") { db.exec("COMMIT"); return { ok: true, credited: false, transaction: transaction(db, reference) }; }
-    if (result.providerReference) db.prepare("UPDATE payments SET provider_reference=? WHERE reference=? AND provider_reference IS NULL").run(result.providerReference, existing.reference);
+    if (result.providerReference) {
+      if(legacyUssdPrompt) {
+        const metadata={...existing.metadata,moolreReferenceKind:"transaction",moolrePromptReference:existing.metadata.moolrePromptReference||existing.providerReference||""};
+        db.prepare("UPDATE payments SET provider_reference=?,metadata_json=? WHERE reference=?").run(result.providerReference,JSON.stringify(metadata),existing.reference);
+      } else db.prepare("UPDATE payments SET provider_reference=? WHERE reference=? AND provider_reference IS NULL").run(result.providerReference, existing.reference);
+    }
     const inserted = db.prepare(`INSERT OR IGNORE INTO vote_transactions(reference,nominee_id,votes,source,created_at) VALUES(?,?,?,?,?)`)
       .run(existing.reference, existing.nomineeId, existing.votes, source, stamp);
     if (inserted.changes !== 1) {

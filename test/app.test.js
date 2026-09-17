@@ -509,7 +509,7 @@ test("Moolre USSD Action API uses server-owned voting data and only credits afte
       paymentRequest={url:String(url),headers:options.headers,body};
       return {ok:true,status:200,json:async()=>({status:1,code:"TR099",data:"MLR-USSD-PROMPT"})};
     }
-    if(String(url).endsWith("/open/transact/status"))return {ok:true,status:200,json:async()=>({status:1,data:{txstatus:1,externalref:body.id,accountnumber:"100000001",amount:"2.00",transactionid:"MLR-USSD-PROMPT",currency:"GHS"}})};
+    if(String(url).endsWith("/open/transact/status"))return {ok:true,status:200,json:async()=>({status:1,data:{txstatus:1,externalref:body.id,accountnumber:"100000001",amount:"2.00",transactionid:"MLR-USSD-FINAL",currency:"GHS"}})};
     throw new Error(`Unexpected Moolre request: ${url}`);
   };
   const app=await fixture({paymentProvider:"moolre_sandbox",moolreApiUser:"merchant-user",moolrePublicKey:"public-key",moolreAccountNumber:"100000001",moolreBusinessEmail:"payments@example.edu",moolreUssdCallbackToken:token,fetchImpl});
@@ -536,6 +536,35 @@ test("Moolre USSD Action API uses server-owned voting data and only credits afte
     assert.equal(paid.status,200);assert.equal(app.db.prepare("SELECT vote_total total FROM nominees WHERE id=?").get(transaction.nomineeId).total,before+2);
     assert.equal(app.db.prepare("SELECT COUNT(*) count FROM vote_transactions WHERE reference=?").get(paymentRequest.body.externalref).count,1);
   }finally{await app.close();}
+});
+
+test("legacy USSD prompt reference failures recover only after verified payment and credit once",async()=>{
+  const fetchImpl=async(url,options)=>{
+    assert.ok(String(url).endsWith("/open/transact/status"),"Recovery must never initiate a charge");
+    const body=JSON.parse(options.body);
+    return {ok:true,status:200,json:async()=>({status:1,data:{txstatus:1,externalref:body.id,accountnumber:"100000001",amount:"10.00",transactionid:"MLR-RECOVERED-FINAL",currency:"GHS"}})};
+  };
+  const app=await fixture({paymentProvider:"moolre_sandbox",moolreApiUser:"merchant-user",moolrePublicKey:"public-key",moolreAccountNumber:"100000001",moolreBusinessEmail:"payments@example.edu",fetchImpl});
+  try {
+    const created=awards.createTransaction(app.db,{nomineeId:1,votes:10,provider:"moolre_sandbox",providerReference:"OLD-PROMPT-ID",metadata:{source:"ussd",recipientAccount:"100000001"}});
+    app.db.prepare("UPDATE payments SET payment_status='failed',verification_status='rejected',failure_reason='provider_reference_mismatch' WHERE reference=?").run(created.reference);
+    const before=app.db.prepare("SELECT vote_total AS votes FROM nominees WHERE id=1").get().votes;
+    const result={status:"successful",reference:created.reference,amount:1000,currency:"GHS",recipientAccount:"100000001",providerReference:"MLR-RECOVERED-FINAL"};
+    assert.equal(awards.verifyAndCredit(app.db,created.reference,{...result,reference:"wrong"}).reason,"transaction_reference_mismatch");
+    assert.equal(awards.verifyAndCredit(app.db,created.reference,{...result,amount:999}).reason,"amount_or_currency_mismatch");
+    assert.equal(awards.verifyAndCredit(app.db,created.reference,{...result,recipientAccount:"wrong"}).reason,"recipient_account_mismatch");
+    const callback=()=>fetch(`${app.base}/api/moolre/callback`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({data:{externalref:created.reference}})});
+    const responses=await Promise.all([callback(),callback(),callback()]);
+    responses.forEach(response=>assert.equal(response.status,200));
+    const recovered=awards.transaction(app.db,created.reference,true);
+    assert.equal(recovered.voteCreditStatus,"credited");
+    assert.equal(recovered.providerReference,"MLR-RECOVERED-FINAL");
+    assert.equal(recovered.metadata.moolrePromptReference,"OLD-PROMPT-ID");
+    assert.equal(recovered.metadata.moolreReferenceKind,"transaction");
+    assert.equal(app.db.prepare("SELECT vote_total AS votes FROM nominees WHERE id=1").get().votes,before+10);
+    const duplicate=awards.createTransaction(app.db,{nomineeId:1,votes:10,provider:"moolre_sandbox",metadata:{source:"ussd",recipientAccount:"100000001"}});
+    assert.equal(awards.verifyAndCredit(app.db,duplicate.reference,{...result,reference:duplicate.reference}).reason,"duplicate_provider_reference");
+  } finally { await app.close(); }
 });
 
 test("Moolre USSD callback stays unavailable without its separate callback token",async()=>{

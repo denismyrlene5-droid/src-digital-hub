@@ -52,6 +52,30 @@ test("admin saves shared USSD instructions without changing voting state", async
   await expect.poll(async () => (await (await page.request.get("/api/awards")).json()).ussd.enabled).toBe(false);
 });
 
+test("private vote overview is searchable and usable on desktop and mobile",async({page})=>{
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));
+  await page.route('**/api/admin/awards',async route=>{
+    const response=await route.fetch(),data=await response.json();
+    data.voteOverview={totalVotes:15,verifiedLiveVotes:13,websiteVotes:3,ussdVotes:10,otherVotes:2,pendingPayments:1,rejectedPayments:1,
+      categories:[{id:1,name:'Campus Icon',nominees:2,votes:15,websiteVotes:3,ussdVotes:10}],
+      nominees:[{id:1,name:'DDT Example',category:'Campus Icon',publicationStatus:'published',votes:10,websiteVotes:0,ussdVotes:10,otherVotes:0},
+        {id:2,name:'Another Nominee',category:'Campus Icon',publicationStatus:'draft',votes:5,websiteVotes:3,ussdVotes:0,otherVotes:2}]};
+    await route.fulfill({json:data});
+  });
+  await loginAsAdmin(page);
+  await page.getByRole('button',{name:'Awards & Voting',exact:true}).click();
+  const overview=page.locator('.cms-admin-section').filter({has:page.getByRole('heading',{name:'Private vote overview',exact:true})});
+  await expect(overview).toBeVisible();
+  await expect(overview.locator('.publicity-metrics')).toContainText('Verified live votes');
+  await overview.getByPlaceholder('Name or category').fill('DDT');
+  await expect(overview.locator('table').last().locator('tbody tr:visible')).toHaveCount(1);
+  await expect(overview.locator('table').last()).toContainText('DDT Example');
+  await overview.getByRole('button',{name:'Refresh vote totals'}).click();
+  await expect(overview.locator('table').last().locator('tbody tr:visible')).toHaveCount(2);
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth-document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+  expect(errors).toEqual([]);
+});
+
 test("nominee profile has direct sharing and campaign navigation without listing filters", async ({ page }) => {
   const nominee = { id: 1, votingCode: "1001", name: "Example Nominee", category: "Campus Icon of the Year", program: "Education", level: "300", profileSlug: "example-nominee", profileUrl: "/awards/nominees/example-nominee" };
   await page.route("**/api/awards", async route => {

@@ -609,6 +609,34 @@ test("admin USSD recheck is protected, paginated, verification-only and idempote
   } finally { await app.close(); }
 });
 
+test("private vote overview reports exact net totals and separates live channels from historical votes",async()=>{
+  const app=await fixture();
+  try {
+    app.db.prepare("UPDATE nominees SET source='manual',vote_total=0 WHERE id=1").run();
+    const create=(votes,source)=>awards.createTransaction(app.db,{nomineeId:1,votes,provider:'moolre_live',metadata:{source,recipientAccount:'100000001'}});
+    const credit=created=>awards.verifyAndCredit(app.db,created.reference,{status:'successful',reference:created.reference,amount:created.expectedAmount,currency:'GHS',recipientAccount:'100000001',providerReference:`FINAL-${created.reference}`});
+    credit(create(3,'web'));credit(create(10,'ussd'));
+    const refunded=create(4,'ussd');credit(refunded);
+    assert.equal(awards.recordAdjustment(app.db,{reference:refunded.reference,action:'refunded',reason:'Confirmed full refund for regression testing.',providerReference:'REFUND-OVERVIEW',adminRole:'super_admin'}).ok,true);
+    create(5,'ussd');
+    const rejected=create(6,'ussd');
+    awards.verifyAndCredit(app.db,rejected.reference,{status:'successful',reference:rejected.reference,amount:1,currency:'GHS',recipientAccount:'100000001',providerReference:'REJECTED-OVERVIEW'});
+    app.db.prepare('UPDATE nominees SET vote_total=vote_total+2 WHERE id=1').run();
+    assert.equal((await fetch(`${app.base}/api/admin/awards`)).status,401);
+    const cookie=await adminCookie(app);
+    const data=await (await fetch(`${app.base}/api/admin/awards`,{headers:{Cookie:cookie}})).json();
+    const overview=data.voteOverview,nominee=overview.nominees.find(item=>item.id===1);
+    assert.equal(nominee.votes,15);assert.equal(nominee.websiteVotes,3);assert.equal(nominee.ussdVotes,10);assert.equal(nominee.otherVotes,2);
+    assert.equal(overview.verifiedLiveVotes,13);
+    assert.equal(overview.pendingPayments,1);assert.equal(overview.rejectedPayments,1);
+    assert.equal(overview.categories.find(item=>item.id===nominee.categoryId).votes,15);
+    assert.equal(overview.categories.reduce((total,item)=>total+item.votes,0),overview.totalVotes);
+    const publicData=await (await fetch(`${app.base}/api/awards`)).json();
+    assert.equal('voteOverview' in publicData,false);
+    publicData.nominees.forEach(item=>{assert.equal('votes' in item,false);assert.equal('voteTotal' in item,false);assert.equal('ussdVotes' in item,false);});
+  } finally { await app.close(); }
+});
+
 test("Moolre USSD callback stays unavailable without its separate callback token",async()=>{
   const app=await fixture({paymentProvider:"moolre_sandbox",moolreApiUser:"merchant-user",moolrePublicKey:"public-key",moolreAccountNumber:"100000001",moolreBusinessEmail:"payments@example.edu",moolreUssdCallbackToken:""});
   try{

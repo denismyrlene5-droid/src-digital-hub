@@ -146,7 +146,7 @@ function createMoolreUssdRouter({ db, awards, provider, enabled, callbackToken, 
       return { response: { message: "1. Vote using nominee code\n2. Browse categories\n0. Exit", reply: true } };
     }
     if (row.stage === "code") {
-      const id = nomineeIdFromCode(message);
+      const id = nomineeIdFromCode(message, db);
       const nominee = id && db.prepare(`SELECT n.id,n.name,n.category_id categoryId,c.name category FROM nominees n JOIN categories c ON c.id=n.category_id WHERE n.id=? AND n.active=1 AND n.publication_status='published' AND c.active=1`).get(id);
       if (!nominee) { saveSession(sessionId, phoneHash, "code", {}, count); return { response: { message: "Code unavailable. Check the code and try again:\n0. Exit", reply: true } }; }
       saveSession(sessionId, phoneHash, "code_confirm", { nomineeId: nominee.id, categoryId: nominee.categoryId }, count);

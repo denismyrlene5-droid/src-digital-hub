@@ -69,9 +69,11 @@ async function createNomineeFlyer({ db, uploadDirectory, publicDirectory, baseUr
   const portraitHeight = 1200;
   const portrait = await portraitData(item, uploads, 900, portraitHeight, sansBold);
   const state = settings.votingState;
-  const instruction = settings.ussdEnabled && settings.dialCode && state === "open" ? `Dial ${settings.dialCode} · Code ${votingCode(item.id)}` : `Nominee code: ${votingCode(item.id)} · ${state === "open" ? "Scan to vote." : state === "closed" ? "Voting closed." : "Voting opens soon."}`;
+  const nomineeCode = votingCode(item.id, db);
+  const dialCode = settings.ussdEnabled && state === "open" ? settings.dialCode : "";
+  const instruction = `Nominee code: ${nomineeCode} · ${state === "open" ? "Scan to vote." : state === "closed" ? "Voting closed." : "Voting opens soon."}`;
   const { width, height } = size;
-  const svg = composeFlyer({ design: designName, theme, width, height, item, logo, portrait, qr, title: settings.awardsTitle || "SRC Awards 2026", state, instruction, sans, sansBold, serif, textPath });
+  const svg = composeFlyer({ design: designName, theme, width, height, item, logo, portrait, qr, title: settings.awardsTitle || "SRC Awards 2026", state, instruction, dialCode, nomineeCode, sans, sansBold, serif, textPath });
   const buffer = await sharp(Buffer.from(svg)).png({ compressionLevel: 9 }).toBuffer();
   return { buffer, item, targetUrl, design:designName, filename: `${cleanFilename(item.name)}-${cleanFilename(item.category)}-${designName}-${format}.png`, width, height };
 }

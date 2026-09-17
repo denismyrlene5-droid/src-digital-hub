@@ -14,6 +14,24 @@ const { createPaystackProvider, createMoolreProvider } = require("../server/paym
 const { createCampusPulseRepository, normalizeGhanaPhone } = require("../server/campus-pulse");
 const { createNominationRepository, pairKey, csvCell } = require("../server/nominations");
 const { createNomineeFlyer } = require("../server/award-flyers");
+const { votingCode, nomineeIdFromCode, ensureVotingCodes } = require("../server/nominee-codes");
+
+test("random numeric voting codes are permanent, unique, and preserve legacy aliases", async()=>{
+  const app=await fixture();
+  try {
+    const ids=app.db.prepare("SELECT id FROM nominees ORDER BY id").all().map(row=>row.id);
+    const codes=ids.map(id=>votingCode(id,app.db));
+    assert.equal(new Set(codes).size,ids.length);
+    ensureVotingCodes(app.db);
+    ids.forEach((id,index)=>{
+      assert.match(codes[index],/^[1-9][0-9]{3}$/);
+      assert.equal(votingCode(id,app.db),codes[index]);
+      assert.equal(nomineeIdFromCode(codes[index],app.db),id);
+      assert.equal(nomineeIdFromCode(String(id+1000),app.db),id);
+    });
+    assert.equal(nomineeIdFromCode("invalid",app.db),null);
+  } finally { await app.close(); }
+});
 
 async function fixture(options = {}) {
   const uploadDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "src-services-test-"));

@@ -1,5 +1,5 @@
 const crypto = require("crypto");
-const { votingCode } = require("./nominee-codes");
+const { votingCode, ensureVotingCodes } = require("./nominee-codes");
 const { approvedNominees } = require("./approved-nominees");
 
 const PAYMENT_STATUSES = new Set(["pending", "successful", "failed", "cancelled", "expired", "reversed", "refunded"]);
@@ -63,6 +63,7 @@ function migrateAwards(db) {
   `);
   addColumn(db, "awards_settings", "ussd_dial_code TEXT NOT NULL DEFAULT ''");
   addColumn(db, "awards_settings", "ussd_display_enabled INTEGER NOT NULL DEFAULT 0");
+  ensureVotingCodes(db);
   const insertPerson=db.prepare("INSERT OR IGNORE INTO award_people(display_name,normalized_name,programme,level,photo_token) VALUES(?,?,?,?,?)");
   const attachPerson=db.prepare("UPDATE nominees SET person_id=?,profile_slug=COALESCE(profile_slug,?) WHERE id=?");
   for(const item of db.prepare("SELECT id,name,program,category_id AS categoryId,photo_token AS photoToken FROM nominees").all()){
@@ -252,7 +253,7 @@ function publicData(db) {
   const ranks = new Map();
   if (visible) [...new Set(rows.map(r=>r.category))].forEach(category => rows.filter(r=>r.category===category).sort((a,b)=>b.votes-a.votes||a.id-b.id).forEach((r,i)=>ranks.set(r.id,i+1)));
   const nominees = rows.map(({votes,photoToken,...row}) => {
-    const publicRow = {...row,votingCode:votingCode(row.id),imageUrl:photoToken?`/api/awards/files/${photoToken}`:null,profileUrl:`/awards/nominees/${row.profileSlug}`};
+    const publicRow = {...row,votingCode:votingCode(row.id,db),imageUrl:photoToken?`/api/awards/files/${photoToken}`:null,profileUrl:`/awards/nominees/${row.profileSlug}`};
     return visible ? {...publicRow,percentage:totals.get(row.category)?votes/totals.get(row.category)*100:0,rank:ranks.get(row.id)} : publicRow;
   });
   return { title: config.awards_title, ussd: { enabled: Boolean(config.ussd_display_enabled && config.ussd_dial_code), dialCode: config.ussd_display_enabled ? config.ussd_dial_code : "" }, campaignStage:config.campaign_stage, categories: [...new Set(rows.map(r=>r.category))], nominees, pricePerVote: config.price_per_vote,

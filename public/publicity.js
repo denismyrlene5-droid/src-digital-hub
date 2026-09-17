@@ -285,7 +285,7 @@
       context.capabilities.awards && [awards.categories, "Award categories"],
       context.capabilities.awards && [awards.nominees, "Award nominees"],
       context.capabilities.awards && [awards.totalVotes, "Total votes"],
-      context.capabilities.awards && [awards.paidRevenue, "Verified revenue (GHS)"]
+      context.capabilities.awards && [awards.paidRevenue, "Verified revenue (GHS)", true]
     ].filter(Boolean);
     const tabs = [
       ["overview", "Dashboard", "Dashboard"],
@@ -320,7 +320,7 @@
     }));
     function renderOverview() {
       const module = document.getElementById("adminModule");
-      module.innerHTML = `<div class="admin-module-head"><div><h2>Dashboard overview</h2><p>Live values from the Hub database.</p></div></div><div class="publicity-metrics">${metrics.map(item=>`<article><strong>${Number(item[0]).toLocaleString()}</strong><span>${item[1]}</span></article>`).join("")}</div>${context.capabilities.feedback?`<div class="dashboard-preview-grid"><section class="hub-card"><h3>Most common feedback</h3>${services.feedback.categories.length?`<ul>${services.feedback.categories.map(item=>`<li><span>${esc(item.category)}</span><b>${Number(item.count)}</b></li>`).join("")}</ul>`:"<p>No feedback yet.</p>"}</section><section class="hub-card"><h3>Recent feedback</h3>${services.feedback.recent.length?`<ul>${services.feedback.recent.map(item=>`<li><span>${esc(item.subject)}</span><b>${esc(item.status.replaceAll("_"," "))}</b></li>`).join("")}</ul>`:"<p>No feedback yet.</p>"}</section></div>`:""}<section class="hub-card admin-activity"><h3>Recent administrative activity</h3>${activity.length?`<ul class="activity-list">${activity.map(item=>`<li><b>${esc(item.action)}</b><span>${esc(item.summary||item.resourceType||"Administrative action")}</span><time>${formatDate(item.createdAt)}</time></li>`).join("")}</ul>`:"<p>No administrative activity recorded yet.</p>"}</section>`;
+      module.innerHTML = `<div class="admin-module-head"><div><h2>Dashboard overview</h2><p>Live values from the Hub database.</p></div></div><div class="publicity-metrics">${metrics.map(item=>`<article><strong>${Number(item[0]).toLocaleString("en-GH",item[2]?{minimumFractionDigits:2,maximumFractionDigits:2}:undefined)}</strong><span>${item[1]}</span></article>`).join("")}</div>${context.capabilities.feedback?`<div class="dashboard-preview-grid"><section class="hub-card"><h3>Most common feedback</h3>${services.feedback.categories.length?`<ul>${services.feedback.categories.map(item=>`<li><span>${esc(item.category)}</span><b>${Number(item.count)}</b></li>`).join("")}</ul>`:"<p>No feedback yet.</p>"}</section><section class="hub-card"><h3>Recent feedback</h3>${services.feedback.recent.length?`<ul>${services.feedback.recent.map(item=>`<li><span>${esc(item.subject)}</span><b>${esc(item.status.replaceAll("_"," "))}</b></li>`).join("")}</ul>`:"<p>No feedback yet.</p>"}</section></div>`:""}<section class="hub-card admin-activity"><h3>Recent administrative activity</h3>${activity.length?`<ul class="activity-list">${activity.map(item=>`<li><b>${esc(item.action)}</b><span>${esc(item.summary||item.resourceType||"Administrative action")}</span><time>${formatDate(item.createdAt)}</time></li>`).join("")}</ul>`:"<p>No administrative activity recorded yet.</p>"}</section>`;
     }
     renderOverview();
   }

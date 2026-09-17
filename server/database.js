@@ -118,8 +118,7 @@ function creditSimulation(db, nomineeId, votes, reference) {
 function adminSummary(db) {
   const metrics = db.prepare(`SELECT COALESCE(SUM(vote_total),0) AS totalVotes,COUNT(*) AS nominees,
     COUNT(DISTINCT category_id) AS categories FROM nominees WHERE active=1`).get();
-  const paid = db.prepare("SELECT COALESCE(SUM(expected_amount),0) AS amount FROM payments WHERE status='success'").get().amount;
-  return { ...metrics, paidRevenue: Number(paid) / 100 };
+  return { ...metrics, ...require("./payment-metrics").verifiedRevenue(db) };
 }
 
 module.exports = { createDatabase, publicAwards, nomineeExists, recordPayment, getPayment, creditPayment, creditSimulation, adminSummary };

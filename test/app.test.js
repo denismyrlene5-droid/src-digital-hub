@@ -377,6 +377,23 @@ test("Awards overview counts active categories including those without published
   }finally{await app.close();}
 });
 
+test("both admin summaries report verified revenue in cedis and exclude unsettled or refunded payments",async()=>{
+  const app=await fixture();
+  try {
+    const transactions=[];
+    for(let index=0;index<3;index++) transactions.push(await (await createSimulatedTransaction(app,{votes:2})).json());
+    app.db.prepare("UPDATE payments SET paid_amount=117600,payment_status='successful',verification_status='verified',status='success' WHERE reference=?").run(transactions[0].reference);
+    app.db.prepare("UPDATE payments SET paid_amount=100000,expected_amount=100000,payment_status='pending',verification_status='unverified',status='success' WHERE reference=?").run(transactions[1].reference);
+    app.db.prepare("UPDATE payments SET paid_amount=100000,expected_amount=100000,payment_status='refunded',verification_status='verified',status='success' WHERE reference=?").run(transactions[2].reference);
+    const summary=require("../server/database").adminSummary(app.db);
+    const awardsSummary=awards.adminData(app.db).metrics;
+    assert.equal(summary.paidRevenue,1176);
+    assert.equal(awardsSummary.paidRevenue,summary.paidRevenue);
+    assert.equal(awardsSummary.verifiedAmount,117600);
+    assert.equal(Number(awardsSummary.paidRevenue).toLocaleString("en-GH",{minimumFractionDigits:2,maximumFractionDigits:2}),"1,176.00");
+  } finally { await app.close(); }
+});
+
 test("public result hiding removes rankings and percentages from the API",async()=>{
   const app=await fixture();
   try{

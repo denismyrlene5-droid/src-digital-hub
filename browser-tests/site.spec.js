@@ -93,6 +93,26 @@ test("Moolre transaction lookup displays a read-only match on desktop and mobile
   expect(errors).toEqual([]);
 });
 
+test("daily payment report flags uncredited success on desktop and mobile",async({page})=>{
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));
+  await page.route('**/api/admin/awards/reconciliation/daily?*',route=>{
+    const next=new URL(route.request().url()).searchParams.get('afterId')!=='0';
+    const entry={reference:next?'SRCVOTE-second':'SRCVOTE-first',nominee:'Example Nominee',category:'Campus Icon',source:'USSD',expectedAmount:1000,currency:'GHS',votes:10,paymentStatus:'pending',verificationStatus:'unverified',creditStatus:'not_credited',createdAt:'2026-09-19T12:00:00Z',providerStatus:'successful',finding:'provider_success_uncredited'};
+    return route.fulfill({json:{date:'2026-09-19',timeZone:'UTC',total:2,entries:[entry],hasMore:!next,nextCursor:next?2:1,summary:{provider_success_uncredited:1}}});
+  });
+  await loginAsAdmin(page);await page.getByRole('button',{name:'Awards & Voting',exact:true}).click();
+  const report=page.locator('.awards-daily-form').locator('xpath=..');
+  await report.getByLabel('Payment date (UTC)').fill('2026-09-19');
+  await report.getByRole('button',{name:'Run daily check'}).click();
+  await expect(report).toContainText('1 of 2 Moolre payments checked');
+  await expect(report).toContainText('provider success uncredited');
+  await report.getByRole('button',{name:'Check next five'}).click();
+  await expect(report).toContainText('2 of 2 Moolre payments checked');
+  await expect(report.getByRole('button',{name:'Check next five'})).toBeHidden();
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth-document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+  expect(errors).toEqual([]);
+});
+
 test("private vote overview is searchable and usable on desktop and mobile",async({page})=>{
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.route('**/api/admin/awards',async route=>{

@@ -23,6 +23,7 @@ const { createNominationRouter } = require("./nomination-routes");
 const { createNomineeFlyer } = require("./award-flyers");
 const { createRepository: createNomineePhotoRepository, createRouter: createNomineePhotoRouter } = require("./nominee-photo-submissions");
 const { createMoolreUssdRouter } = require("./moolre-ussd");
+const { scanDailyPayments } = require("./payment-reconciliation");
 
 function parseAdminUsers(value) {
   if (!String(value || "").trim()) return [];
@@ -376,6 +377,16 @@ function createApp(options = {}) {
         amountMatches:Boolean(amountMatches),currencyMatches:Boolean(currencyMatches),idMatches:Boolean(idMatches),
         payment:matched?{reference:item.reference,nominee:item.nominee,category:item.category,expectedAmount:item.expectedAmount,currency:item.currency,votes:item.votes,paymentStatus:item.paymentStatus,verificationStatus:item.verificationStatus,creditStatus:item.voteCreditStatus,failureReason:item.failureReason}:null
       });
+    } catch(error){next(error);}
+  });
+  app.get("/api/admin/awards/reconciliation/daily", auth.requireAwardsAdmin, rateLimit({windowMs:60000,max:12}), async(req,res,next)=>{
+    try {
+      res.setHeader("Cache-Control","private, no-store");
+      const report=await scanDailyPayments(db,{
+        date:String(req.query.date||""),afterId:Number(req.query.afterId||0),providerForTransaction
+      });
+      if(report.error)return res.status(400).json({message:report.error});
+      res.json(report);
     } catch(error){next(error);}
   });
   let ussdRecheckRunning = false;

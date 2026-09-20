@@ -41,6 +41,26 @@
       votes.querySelector('[data-vote-search]').addEventListener('input',event=>{const query=event.target.value.trim().toLowerCase();rows.forEach((row,index)=>{const item=overview.nominees[index];row.hidden=!!item&&!`${item.name} ${item.category}`.toLowerCase().includes(query);});});
     }
     const reconciliation=host.querySelector('#awardsTransactionFilters').closest('.cms-admin-section');
+    const daily=document.createElement('section');daily.className='hub-card cms-admin-section';
+    daily.innerHTML=`<div class="admin-module-head"><div><h3>Daily payment reconciliation</h3><p>Read-only Moolre check for one UTC date. Five payments per batch; no votes or payment records are changed. This checks website-created payments only; compare Moolre's account statement separately for payments with no website record.</p></div></div><form class="service-form awards-daily-form"><label><span>Payment date (UTC)</span><input type="date" name="date" required value="${new Date().toISOString().slice(0,10)}"></label><div class="form-actions"><button type="submit" class="hub-btn hub-btn-outline">Run daily check</button></div></form><p class="form-message awards-daily-message" role="status" aria-live="polite"></p><div class="admin-table-wrap" hidden><table class="admin-table"><thead><tr><th>Website reference</th><th>Nominee</th><th>Channel</th><th>Expected</th><th>Moolre</th><th>Website credit</th><th>Finding</th></tr></thead><tbody></tbody></table></div><button type="button" class="hub-btn hub-btn-outline awards-daily-next" hidden>Check next five</button>`;
+    reconciliation.before(daily);
+    const dailyForm=daily.querySelector('form'),dailyButton=dailyForm.querySelector('button'),dailyNext=daily.querySelector('.awards-daily-next'),dailyMessage=daily.querySelector('.awards-daily-message'),dailyTable=daily.querySelector('.admin-table-wrap'),dailyRows=dailyTable.querySelector('tbody');
+    let dailyDate='',dailyCursor=0,dailyChecked=0;
+    const runDaily=async(reset)=>{
+      if(reset){dailyDate=dailyForm.elements.date.value;dailyCursor=0;dailyChecked=0;dailyRows.replaceChildren();dailyTable.hidden=true;dailyNext.hidden=true;}
+      dailyButton.disabled=true;dailyNext.disabled=true;dailyMessage.textContent='Checking existing payments with Moolre…';dailyMessage.classList.remove('is-error');
+      try {
+        const query=new URLSearchParams({date:dailyDate,afterId:String(dailyCursor)}),report=await api(`/api/admin/awards/reconciliation/daily?${query}`);
+        dailyCursor=report.nextCursor;dailyChecked+=report.entries.length;
+        for(const item of report.entries){const row=document.createElement('tr');row.innerHTML=`<td data-label="Website reference">${esc(item.reference)}</td><td data-label="Nominee">${esc(item.nominee)}<small>${esc(item.category)}</small></td><td data-label="Channel">${esc(item.source)}</td><td data-label="Expected">${esc(item.currency)} ${(Number(item.expectedAmount)/100).toFixed(2)} · ${Number(item.votes)} votes</td><td data-label="Moolre">${esc(item.providerStatus)}</td><td data-label="Website credit">${esc(item.creditStatus)}</td><td data-label="Finding">${esc(item.finding.replace(/_/g,' '))}</td>`;dailyRows.append(row);}
+        dailyTable.hidden=dailyChecked===0;dailyNext.hidden=!report.hasMore;
+        const flags=[...dailyRows.querySelectorAll('td:last-child')].filter(cell=>/provider success uncredited|payment details mismatch|provider unavailable/.test(cell.textContent)).length;
+        dailyMessage.textContent=`${dailyChecked} of ${report.total} Moolre payments checked for ${report.date} UTC · ${flags} need review.${report.hasMore?' Check the next batch to complete this date.':' Report complete.'} No votes were changed.`;
+      }catch(error){dailyMessage.textContent=error.message;dailyMessage.classList.add('is-error');}
+      finally{dailyButton.disabled=false;dailyNext.disabled=false;}
+    };
+    dailyForm.addEventListener('submit',event=>{event.preventDefault();runDaily(true);});
+    dailyNext.addEventListener('click',()=>runDaily(false));
     const moolreLookup=document.createElement('form');moolreLookup.className='service-form awards-moolre-lookup';
     moolreLookup.innerHTML='<label><span>Find by Moolre transaction ID</span><input name="transactionId" inputmode="numeric" pattern="[0-9]{6,20}" maxlength="20" placeholder="e.g. 51606736" required></label><div class="form-actions"><button type="submit" class="hub-btn hub-btn-outline">Look up payment</button></div><p class="form-message field-wide" role="status" aria-live="polite"></p><div class="field-wide awards-moolre-result" hidden></div>';
     reconciliation.querySelector('#awardsTransactionFilters').before(moolreLookup);

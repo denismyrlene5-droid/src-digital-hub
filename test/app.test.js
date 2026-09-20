@@ -215,7 +215,7 @@ test("Awards administration is consolidated into the unified dashboard", async (
     assert.match(moduleScript, /api\/admin\/awards\/settings/);
     assert.doesNotMatch(shellScript, /Awards Admin/);
     assert.doesNotMatch(awardsPage, /id="adminOverlay"/);
-    assert.match(adminPage, /admin-awards\.js\?v=16/);
+    assert.match(adminPage, /admin-awards\.js\?v=17/);
   } finally { await app.close(); }
 });
 
@@ -642,6 +642,39 @@ test("admin Moolre ID lookup is protected, read-only, and matches existing USSD 
     assert.equal((await fetch(url,{headers:{Cookie:cookie}})).status,409);
     assert.equal(app.db.prepare('SELECT vote_total FROM nominees WHERE id=1').get().vote_total,before);
   } finally { await app.close(); }
+});
+
+test("daily Moolre report flags successful uncredited payments without changing votes",async()=>{
+  const outcomes=new Map(),requests=[];
+  const fetchImpl=async(url,options)=>{
+    assert.ok(String(url).endsWith('/open/transact/status'));
+    const body=JSON.parse(options.body);requests.push(body);
+    const outcome=outcomes.get(body.id);
+    if(outcome==='network')throw new Error('Network unavailable');
+    return {ok:true,status:200,json:async()=>({status:1,data:{txstatus:outcome==='pending'?0:outcome==='failed'?2:1,externalref:body.id,accountnumber:outcome==='account'?'wrong-account':'100000001',amount:outcome==='amount'?'9.00':'10.00',currency:'GHS',transactionid:`FINAL-${body.id}`}})};
+  };
+  const app=await fixture({paymentProvider:'moolre_sandbox',moolreApiUser:'merchant-user',moolrePublicKey:'public-key',moolreAccountNumber:'100000001',moolreBusinessEmail:'payments@example.edu',fetchImpl});
+  try {
+    const endpoint=`${app.base}/api/admin/awards/reconciliation/daily?date=2026-09-19`;
+    assert.equal((await fetch(endpoint)).status,401);
+    const cookie=await adminCookie(app);
+    assert.equal((await fetch(`${app.base}/api/admin/awards/reconciliation/daily?date=2026-02-30`,{headers:{Cookie:cookie}})).status,400);
+    for(const outcome of ['success','amount','account','pending','network','failed']){
+      const created=awards.createTransaction(app.db,{nomineeId:1,votes:10,provider:'moolre_sandbox',metadata:{source:'ussd',recipientAccount:'100000001'}});
+      app.db.prepare("UPDATE payments SET created_at='2026-09-19T12:00:00.000Z' WHERE reference=?").run(created.reference);
+      outcomes.set(created.reference,outcome);
+    }
+    const before=app.db.prepare('SELECT vote_total FROM nominees WHERE id=1').get().vote_total;
+    const firstResponse=await fetch(endpoint,{headers:{Cookie:cookie}}),first=await firstResponse.json();
+    assert.equal(firstResponse.status,200);assert.match(firstResponse.headers.get('cache-control'),/no-store/);
+    assert.equal(first.total,6);assert.equal(first.entries.length,5);assert.equal(first.hasMore,true);
+    assert.deepEqual(first.entries.map(item=>item.finding),['provider_success_uncredited','payment_details_mismatch','payment_details_mismatch','provider_pending','provider_unavailable']);
+    const second=await (await fetch(`${endpoint}&afterId=${first.nextCursor}`,{headers:{Cookie:cookie}})).json();
+    assert.equal(second.entries.length,1);assert.equal(second.entries[0].finding,'provider_failed');assert.equal(second.hasMore,false);
+    assert.ok(requests.every(item=>item.idtype===1));
+    assert.equal(app.db.prepare('SELECT vote_total FROM nominees WHERE id=1').get().vote_total,before);
+    assert.equal(app.db.prepare("SELECT COUNT(*) AS count FROM payments WHERE vote_credit_status='credited'").get().count,0);
+  }finally{await app.close();}
 });
 
 test("disabled production payments retain live verification for old records but cannot initiate new payments",async()=>{

@@ -113,6 +113,29 @@ test("daily payment report flags uncredited success on desktop and mobile",async
   expect(errors).toEqual([]);
 });
 
+test("Awards admin exports missing-photo nominee details on desktop and mobile",async({page})=>{
+  await page.route('**/api/nominee-photos/admin/overview',async route=>{
+    const response=await route.fetch(),data=await response.json();
+    data.people=[{id:999001,name:'=Example Student',programme:'Education',level:'Level 300',categories:['Campus Icon'],publicationStatuses:['published'],submissionStatus:'not_submitted',linkStatus:'not_generated',linkExpiresAt:null,checks:{name:true,category:true,photo:false,consent:false,message:false},ready:false},{id:999002,name:'Photo Ready',programme:'Education',level:'Level 350',categories:['Student Leader'],publicationStatuses:['published'],submissionStatus:'approved',linkStatus:'used',linkExpiresAt:null,checks:{name:true,category:true,photo:true,consent:true,message:true},ready:true}];
+    data.metrics={...data.metrics,people:2,missingPhotos:1,ready:1};
+    await route.fulfill({json:data});
+  });
+  await page.route('**/api/admin/awards',async route=>{
+    const response=await route.fetch(),data=await response.json();
+    data.nominees.push({id:999001,personId:999001,name:'=Example Student',code:'CAMPUS-001',category:'Campus Icon',categoryId:1,program:'Education',level:'Level 300',publicationStatus:'published',active:true});
+    await route.fulfill({json:data});
+  });
+  await loginAsAdmin(page);await page.getByRole('button',{name:'Awards & Voting',exact:true}).click();
+  const button=page.getByRole('button',{name:'Export missing photos (1)'});
+  await expect(button).toBeVisible();
+  const downloadPromise=page.waitForEvent('download');await button.click();const download=await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/^src-nominees-missing-photos-\d{4}-\d{2}-\d{2}\.csv$/);
+  const csv=fs.readFileSync(await download.path(),'utf8');
+  expect(csv).toContain('"\'=Example Student"');expect(csv).toContain('Education');expect(csv).toContain('Level 300');expect(csv).toContain('CAMPUS-001');
+  expect(csv).not.toContain('Photo Ready');expect(csv).not.toContain('/nominee-photo/');
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth-document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+});
+
 test("private vote overview is searchable and usable on desktop and mobile",async({page})=>{
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.route('**/api/admin/awards',async route=>{

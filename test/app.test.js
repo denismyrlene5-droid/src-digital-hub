@@ -215,7 +215,7 @@ test("Awards administration is consolidated into the unified dashboard", async (
     assert.match(moduleScript, /api\/admin\/awards\/settings/);
     assert.doesNotMatch(shellScript, /Awards Admin/);
     assert.doesNotMatch(awardsPage, /id="adminOverlay"/);
-    assert.match(adminPage, /admin-awards\.js\?v=17/);
+    assert.match(adminPage, /admin-awards\.js\?v=18/);
   } finally { await app.close(); }
 });
 

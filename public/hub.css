@@ -141,6 +141,12 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px soli
 .admin-table th{background:var(--hub-green-dark);color:#f5f8f6}
 .admin-table td button{background:var(--hub-green-soft);color:var(--hub-green-dark)}
 .admin-table td button.danger,.admin-photo-grid button.danger{background:#f8e1df;color:var(--hub-danger)}
+.awards-payment-extra-filters{display:contents}
+.awards-payment-pager{display:flex;align-items:center;justify-content:flex-end;gap:12px;flex-wrap:wrap;margin-top:14px}
+.awards-payment-pager span{font-size:13px;color:var(--hub-muted)}
+.awards-transaction-table td small{display:block;color:var(--hub-muted);margin-top:3px}
+.awards-transaction-table td{overflow-wrap:anywhere}
+@media(max-width:768px){.awards-payment-pager{justify-content:space-between}.awards-payment-pager span{order:-1;width:100%}.awards-payment-pager button{flex:1;min-height:44px}}
 .admin-tabs button.is-active{color:var(--hub-green-dark);border-bottom-color:var(--hub-gold)}
 
 .hub-footer{background:var(--hub-green-dark);border-top:4px solid var(--hub-gold)}

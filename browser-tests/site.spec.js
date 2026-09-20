@@ -52,6 +52,32 @@ test("admin saves shared USSD instructions without changing voting state", async
   await expect.poll(async () => (await (await page.request.get("/api/awards")).json()).ussd.enabled).toBe(false);
 });
 
+test("payment reconciliation searches Moolre IDs and paginates on desktop and mobile",async({page})=>{
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));
+  await page.route('**/api/admin/awards*',async route=>{
+    const response=await route.fetch(),data=await response.json(),url=new URL(route.request().url());
+    const search=url.searchParams.get('search')||'',number=Number(url.searchParams.get('page')||1);
+    const sample=index=>({reference:`SRCVOTE-sample-${index}`,providerReference:`MLR-SAMPLE-${index}`,nominee:'DDT Example',category:'Campus Icon',votes:10,expectedAmount:1000,currency:'GHS',provider:'moolre_live',paymentStatus:'successful',verificationStatus:'verified',voteCreditStatus:'credited',createdAt:'2026-09-20 10:00:00'});
+    data.transactions=search?[sample(26)]:number===1?Array.from({length:25},(_,index)=>sample(index+1)):[sample(26)];
+    data.transactionPage={page:number,pageSize:25,total:search?1:26,totalPages:search?1:2};
+    await route.fulfill({json:data});
+  });
+  await loginAsAdmin(page);
+  await page.getByRole('button',{name:'Awards & Voting',exact:true}).click();
+  const form=page.locator('#awardsTransactionFilters'),table=page.locator('.awards-transaction-table'),pager=page.locator('.awards-payment-pager');
+  await expect(form.getByPlaceholder('SRCVOTE, Moolre ID, or nominee name')).toBeVisible();
+  await expect(table.locator('tbody tr')).toHaveCount(25);
+  await pager.getByRole('button',{name:'Next'}).click();
+  await expect(table.locator('tbody tr')).toHaveCount(1);
+  await expect(table).toContainText('MLR-SAMPLE-26');
+  await form.getByPlaceholder('SRCVOTE, Moolre ID, or nominee name').fill('MLR-SAMPLE-26');
+  await form.getByRole('button',{name:'Apply filters'}).click();
+  await expect(pager).toContainText('1 matching payment');
+  await expect(table).toContainText('DDT Example');
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth-document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+  expect(errors).toEqual([]);
+});
+
 test("private vote overview is searchable and usable on desktop and mobile",async({page})=>{
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.route('**/api/admin/awards',async route=>{

@@ -215,7 +215,7 @@ test("Awards administration is consolidated into the unified dashboard", async (
     assert.match(moduleScript, /api\/admin\/awards\/settings/);
     assert.doesNotMatch(shellScript, /Awards Admin/);
     assert.doesNotMatch(awardsPage, /id="adminOverlay"/);
-    assert.match(adminPage, /admin-awards\.js\?v=10/);
+    assert.match(adminPage, /admin-awards\.js\?v=15/);
   } finally { await app.close(); }
 });
 
@@ -256,7 +256,7 @@ test("public frontend retains accessibility and responsive spacing polish", asyn
     assert.match(css, /\.urgent-notice-content b\{white-space:normal/);
     assert.match(css, /\.hub-hero h1\{font-size:clamp\(40px,12vw,49px\)/);
     assert.match(css, /\.publicity-metrics\{grid-template-columns:repeat\(4,1fr\)\}/);
-    assert.match(home, /\/hub\.css\?v=30/);
+    assert.match(home, /\/hub\.css\?v=31/);
     assert.match(awards, /\/hub\.css\?v=16/);
   } finally { await app.close(); }
 });
@@ -607,6 +607,35 @@ test("admin USSD recheck is protected, paginated, verification-only and idempote
     assert.equal(app.db.prepare('SELECT vote_total AS votes FROM nominees WHERE id=1').get().votes,before+20);
     excluded.forEach(reference=>assert.equal(requested.includes(reference),false));
   } finally { await app.close(); }
+});
+
+test("private payment search matches website reference, Moolre ID and nominee with paginated filters",async()=>{
+  const app=await fixture();
+  try{
+    const cookie=await adminCookie(app);
+    const nominee=app.db.prepare("SELECT id,name FROM nominees WHERE source<>'demo' ORDER BY id LIMIT 1").get();
+    if(!nominee){app.db.prepare("UPDATE nominees SET source='manual' WHERE id=1").run();}
+    const id=nominee?.id||1,name=nominee?.name||app.db.prepare('SELECT name FROM nominees WHERE id=1').get().name;
+    const refs=[];
+    for(let index=0;index<31;index++){
+      const item=awards.createTransaction(app.db,{nomineeId:id,votes:1,provider:'moolre_sandbox',providerReference:`MLR-SEARCH-${index}`,metadata:{source:'ussd',recipientAccount:'100000001'}});
+      refs.push(item.reference);
+    }
+    const get=async params=>await (await fetch(`${app.base}/api/admin/awards?${new URLSearchParams(params)}`,{headers:{Cookie:cookie}})).json();
+    assert.equal((await fetch(`${app.base}/api/admin/awards?search=MLR-SEARCH-0`)).status,401);
+    const first=await get({provider:'moolre_sandbox',page:1});
+    assert.equal(first.transactionPage.total,31);assert.equal(first.transactions.length,25);assert.equal(first.transactionPage.totalPages,2);
+    const second=await get({provider:'moolre_sandbox',page:2});
+    assert.equal(second.transactions.length,6);
+    assert.equal(new Set([...first.transactions,...second.transactions].map(item=>item.reference)).size,31);
+    const byReference=await get({search:refs[0]});assert.equal(byReference.transactionPage.total,1);assert.equal(byReference.transactions[0].reference,refs[0]);
+    const byMoolre=await get({search:'MLR-SEARCH-30'});assert.equal(byMoolre.transactionPage.total,1);assert.equal(byMoolre.transactions[0].providerReference,'MLR-SEARCH-30');
+    const byNominee=await get({search:name,nomineeId:id,verificationStatus:'unverified',creditStatus:'not_credited'});
+    assert.ok(byNominee.transactionPage.total>=31);
+    assert.equal((await get({search:'NO-MATCH-REFERENCE'})).transactionPage.total,0);
+    assert.equal((await get({search:'NO-MATCH-REFERENCE'})).transactions.length,0);
+    assert.equal((await get({search:refs[0].slice(0,10),status:'successful'})).transactionPage.total,0);
+  }finally{await app.close();}
 });
 
 test("private vote overview reports exact net totals and separates live channels from historical votes",async()=>{

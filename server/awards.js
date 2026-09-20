@@ -332,13 +332,24 @@ function adminData(db, filters={}) {
   if (filters.status) { where.push("p.payment_status=?"); args.push(filters.status); }
   if (filters.categoryId) { where.push("p.category_id=?"); args.push(Number(filters.categoryId)); }
   if (filters.nomineeId) { where.push("p.nominee_id=?"); args.push(Number(filters.nomineeId)); }
-  if (filters.reference) { where.push("p.reference LIKE ?"); args.push(`%${String(filters.reference).slice(0,80)}%`); }
+  if (filters.search || filters.reference) {
+    const term=String(filters.search||filters.reference).trim().slice(0,80).replace(/[\\%_]/g,'\\$&');
+    const match=`%${term}%`;
+    where.push("(p.reference LIKE ? ESCAPE '\\' OR p.provider_reference LIKE ? ESCAPE '\\' OR n.name LIKE ? ESCAPE '\\')");
+    args.push(match,match,match);
+  }
+  if (filters.provider) { where.push("p.provider=?"); args.push(String(filters.provider).slice(0,40)); }
+  if (filters.verificationStatus) { where.push("p.verification_status=?"); args.push(String(filters.verificationStatus).slice(0,30)); }
+  if (filters.creditStatus) { where.push("p.vote_credit_status=?"); args.push(String(filters.creditStatus).slice(0,30)); }
   if (filters.from) { where.push("p.created_at>=?"); args.push(filters.from); }
   if (filters.to) { where.push("p.created_at<=?"); args.push(filters.to); }
-  const transactions=db.prepare(`SELECT p.reference,n.name AS nominee,c.name AS category,p.votes,p.expected_amount AS expectedAmount,p.paid_amount AS paidAmount,p.currency,p.provider,p.payment_status AS paymentStatus,p.verification_status AS verificationStatus,p.vote_credit_status AS voteCreditStatus,p.failure_reason AS failureReason,p.created_at AS createdAt FROM payments p JOIN nominees n ON n.id=p.nominee_id JOIN categories c ON c.id=p.category_id ${where.length?`WHERE ${where.join(" AND ")}`:""} ORDER BY p.created_at DESC LIMIT 250`).all(...args);
+  const page=Math.min(10000,Math.max(1,Number.parseInt(filters.page,10)||1));
+  const pageSize=25,condition=where.length?`WHERE ${where.join(" AND ")}`:"";
+  const total=db.prepare(`SELECT COUNT(*) AS count FROM payments p JOIN nominees n ON n.id=p.nominee_id JOIN categories c ON c.id=p.category_id ${condition}`).get(...args).count;
+  const transactions=db.prepare(`SELECT p.reference,p.provider_reference AS providerReference,n.name AS nominee,c.name AS category,p.votes,p.expected_amount AS expectedAmount,p.paid_amount AS paidAmount,p.currency,p.provider,p.payment_status AS paymentStatus,p.verification_status AS verificationStatus,p.vote_credit_status AS voteCreditStatus,p.failure_reason AS failureReason,p.created_at AS createdAt FROM payments p JOIN nominees n ON n.id=p.nominee_id JOIN categories c ON c.id=p.category_id ${condition} ORDER BY p.created_at DESC,p.rowid DESC LIMIT ? OFFSET ?`).all(...args,pageSize,(page-1)*pageSize);
   const metrics=db.prepare(`SELECT COUNT(*) AS transactions,COALESCE(SUM(CASE WHEN payment_status='successful' AND verification_status='verified' THEN votes ELSE 0 END),0) AS verifiedVotes,COALESCE(SUM(CASE WHEN payment_status='successful' AND verification_status='verified' THEN paid_amount ELSE 0 END),0) AS verifiedAmount,SUM(payment_status='pending') AS pending,SUM(payment_status='successful') AS successful,SUM(payment_status IN ('failed','cancelled','expired')) AS unsuccessful,SUM(payment_status='reversed') AS reversed,SUM(payment_status='refunded') AS refunded,SUM(verification_status='rejected') AS verificationFailures,SUM(verification_status='verified' AND vote_credit_status='not_credited') AS uncredited FROM payments`).get();
   const adjustments=db.prepare("SELECT transaction_reference AS reference,action,votes_removed AS votesRemoved,reason,provider_reference AS providerReference,source,admin_role AS adminRole,created_at AS createdAt FROM payment_adjustments ORDER BY created_at DESC LIMIT 250").all();
-  return { settings: settings(db), metrics: {...metrics,...require("./payment-metrics").verifiedRevenue(db)}, transactions, adjustments, voteOverview:require("./admin-vote-overview").adminVoteOverview(db) };
+  return { settings: settings(db), metrics: {...metrics,...require("./payment-metrics").verifiedRevenue(db)}, transactions,transactionPage:{page,pageSize,total,totalPages:Math.max(1,Math.ceil(total/pageSize))},adjustments, voteOverview:require("./admin-vote-overview").adminVoteOverview(db) };
 }
 
 module.exports={migrateAwards,settings,votingAvailability,validateInitiation,createTransaction,transaction,verifyAndCredit,markStatus,recordAdjustment,publicData,updateSettings,adminData,importPreview,applyApprovedImport};

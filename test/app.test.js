@@ -215,7 +215,7 @@ test("Awards administration is consolidated into the unified dashboard", async (
     assert.match(moduleScript, /api\/admin\/awards\/settings/);
     assert.doesNotMatch(shellScript, /Awards Admin/);
     assert.doesNotMatch(awardsPage, /id="adminOverlay"/);
-    assert.match(adminPage, /admin-awards\.js\?v=15/);
+    assert.match(adminPage, /admin-awards\.js\?v=16/);
   } finally { await app.close(); }
 });
 
@@ -607,6 +607,66 @@ test("admin USSD recheck is protected, paginated, verification-only and idempote
     assert.equal(app.db.prepare('SELECT vote_total AS votes FROM nominees WHERE id=1').get().votes,before+20);
     excluded.forEach(reference=>assert.equal(requested.includes(reference),false));
   } finally { await app.close(); }
+});
+
+test("admin Moolre ID lookup is protected, read-only, and matches existing USSD payments",async()=>{
+  const calls=[];
+  let responseAmount='10.00',responseReference=null,responseAccount='100000001';
+  const fetchImpl=async(url,options)=>{
+    const body=JSON.parse(options.body);calls.push({url:String(url),body});
+    return {ok:true,status:200,json:async()=>({status:1,data:{txstatus:1,transactionid:body.id,externalref:responseReference||created.reference,accountnumber:responseAccount,amount:responseAmount,currency:'GHS',payer:'private-phone'}})};
+  };
+  const app=await fixture({paymentProvider:'moolre_sandbox',moolreApiUser:'merchant-user',moolrePublicKey:'public-key',moolreAccountNumber:'100000001',moolreBusinessEmail:'payments@example.edu',fetchImpl});
+  let created;
+  try {
+    created=awards.createTransaction(app.db,{nomineeId:1,votes:10,provider:'moolre_sandbox',metadata:{source:'ussd',recipientAccount:'100000001'}});
+    const url=`${app.base}/api/admin/awards/moolre-transaction/51606736`;
+    assert.equal((await fetch(url)).status,401);
+    const cookie=await adminCookie(app);
+    assert.equal((await fetch(`${app.base}/api/admin/awards/moolre-transaction/not-a-number`,{headers:{Cookie:cookie}})).status,400);
+    const before=app.db.prepare('SELECT vote_total FROM nominees WHERE id=1').get().vote_total;
+    const response=await fetch(url,{headers:{Cookie:cookie}}),data=await response.json();
+    assert.equal(response.status,200);assert.equal(data.status,'matched');assert.equal(data.externalReference,created.reference);
+    assert.equal(data.payment.creditStatus,'not_credited');assert.equal(data.amountMatches,true);assert.equal(data.currencyMatches,true);
+    assert.equal(data.idMatches,true);assert.equal(JSON.stringify(data).includes('private-phone'),false);
+    assert.equal(app.db.prepare('SELECT vote_total FROM nominees WHERE id=1').get().vote_total,before);
+    assert.equal(calls.length,1);assert.equal(calls[0].body.idtype,2);assert.equal(calls[0].body.id,'51606736');
+    assert.ok(calls[0].url.endsWith('/open/transact/status'));
+    responseAmount='9.00';
+    const mismatch=await (await fetch(url,{headers:{Cookie:cookie}})).json();
+    assert.equal(mismatch.amountMatches,false);assert.equal(mismatch.payment.creditStatus,'not_credited');
+    responseReference='SRCVOTE-12345678901234567890';
+    const missing=await (await fetch(url,{headers:{Cookie:cookie}})).json();
+    assert.equal(missing.status,'no_matching_website_payment');assert.equal(missing.payment,null);
+    responseAccount='other-account';
+    assert.equal((await fetch(url,{headers:{Cookie:cookie}})).status,409);
+    assert.equal(app.db.prepare('SELECT vote_total FROM nominees WHERE id=1').get().vote_total,before);
+  } finally { await app.close(); }
+});
+
+test("disabled production payments retain live verification for old records but cannot initiate new payments",async()=>{
+  let reference='',transactionId='51606736';const calls=[];
+  const fetchImpl=async(url,options)=>{
+    const body=JSON.parse(options.body);calls.push({url:String(url),body});
+    return {ok:true,status:200,json:async()=>({status:1,data:{txstatus:1,transactionid:transactionId,externalref:reference,accountnumber:'100000001',amount:'10.00',currency:'GHS'}})};
+  };
+  const app=await fixture({environment:'production',baseUrl:'https://hub.example.edu',paymentProvider:'disabled',simulationEnabled:false,adminPassword:'production-super-admin-password',seedData:true,moolreApiUser:'merchant-user',moolrePublicKey:'public-key',moolreAccountNumber:'100000001',moolreBusinessEmail:'payments@example.edu',fetchImpl});
+  try {
+    const created=awards.createTransaction(app.db,{nomineeId:1,votes:10,provider:'moolre_live',metadata:{source:'ussd',recipientAccount:'100000001'}});reference=created.reference;
+    const cookie=await adminCookie(app,'production-super-admin-password');
+    const payment=await fetch(`${app.base}/api/awards/transactions`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nomineeId:1,votes:10})});
+    assert.equal(payment.status,503);
+    const lookup=await fetch(`${app.base}/api/admin/awards/moolre-transaction/51606736`,{headers:{Cookie:cookie}});
+    assert.equal(lookup.status,200);assert.equal((await lookup.json()).payment.reference,reference);
+    const verify=await fetch(`${app.base}/api/awards/transactions/${reference}/verify`,{method:'POST'});
+    assert.equal(verify.status,200);assert.equal((await verify.json()).transaction.voteCreditStatus,'credited');
+    assert.equal(app.db.prepare('SELECT vote_total FROM nominees WHERE id=1').get().vote_total,10);
+    const second=awards.createTransaction(app.db,{nomineeId:1,votes:10,provider:'moolre_live',metadata:{source:'ussd',recipientAccount:'100000001'}});reference=second.reference;transactionId='51606737';
+    const recheck=await fetch(`${app.base}/api/admin/awards/transactions/recheck-ussd`,{method:'POST',headers:{'Content-Type':'application/json',Cookie:cookie},body:JSON.stringify({confirm:true})});
+    assert.equal(recheck.status,200);assert.equal((await recheck.json()).counts.credited,1);
+    assert.equal(app.db.prepare('SELECT vote_total FROM nominees WHERE id=1').get().vote_total,20);
+    assert.ok(calls.every(call=>call.url.startsWith('https://api.moolre.com/open/transact/status')));
+  }finally{await app.close();}
 });
 
 test("private payment search matches website reference, Moolre ID and nominee with paginated filters",async()=>{

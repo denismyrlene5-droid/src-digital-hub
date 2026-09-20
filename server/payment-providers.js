@@ -251,6 +251,27 @@ function createMoolreProvider({
         };
       }
       return status === "failed" ? { status, reason: "provider_failed" } : { status };
+    },
+    async lookupTransactionId(id) {
+      if (!enabled || !/^\d{6,20}$/.test(String(id))) return { status: "unavailable" };
+      try {
+        const response = await request("/open/transact/status", { type: 1, idtype: 2, id: String(id), accountnumber: credentials.accountNumber });
+        const result = await response.json();
+        if (!response.ok || Number(result?.status) !== 1 || !result?.data) return { status: "unavailable" };
+        const data = result.data;
+        if (String(data.transactionid || "") !== String(id) || normalizeAccountNumber(data.accountnumber) !== credentials.accountNumber) return { status: "mismatch" };
+        const amount = Number(data.amount);
+        return {
+          status: "found",
+          reference: String(data.externalref || ""),
+          paymentStatus: moolreStatus(data.txstatus),
+          amount: Number.isFinite(amount) && amount >= 0 ? Math.round((amount + Number.EPSILON) * 100) : null,
+          currency: data.currency ? String(data.currency).toUpperCase() : null,
+          recipientAccount: normalizeAccountNumber(data.accountnumber)
+        };
+      } catch {
+        return { status: "unavailable" };
+      }
     }
   };
 }

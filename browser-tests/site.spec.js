@@ -78,6 +78,21 @@ test("payment reconciliation searches Moolre IDs and paginates on desktop and mo
   expect(errors).toEqual([]);
 });
 
+test("Moolre transaction lookup displays a read-only match on desktop and mobile",async({page})=>{
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));
+  await page.route('**/api/admin/awards/moolre-transaction/51606736',route=>route.fulfill({json:{status:'matched',moolreTransactionId:'51606736',externalReference:'SRCVOTE-12345678901234567890',providerPaymentStatus:'successful',providerAmount:1000,providerCurrency:'GHS',amountMatches:true,currencyMatches:true,idMatches:true,payment:{reference:'SRCVOTE-12345678901234567890',nominee:'Example Nominee',category:'Campus Icon',expectedAmount:1000,currency:'GHS',votes:10,paymentStatus:'pending',verificationStatus:'unverified',creditStatus:'not_credited',failureReason:null}}}));
+  await loginAsAdmin(page);
+  await page.getByRole('button',{name:'Awards & Voting',exact:true}).click();
+  const lookup=page.locator('.awards-moolre-lookup');
+  await lookup.getByLabel('Find by Moolre transaction ID').fill('51606736');
+  await lookup.getByRole('button',{name:'Look up payment'}).click();
+  await expect(lookup.locator('.awards-moolre-result')).toContainText('Example Nominee');
+  await expect(lookup.locator('.awards-moolre-result')).toContainText('not_credited');
+  await expect(lookup.locator('.form-message')).toContainText('did not credit votes');
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth-document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+  expect(errors).toEqual([]);
+});
+
 test("private vote overview is searchable and usable on desktop and mobile",async({page})=>{
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.route('**/api/admin/awards',async route=>{

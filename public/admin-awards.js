@@ -41,6 +41,20 @@
       votes.querySelector('[data-vote-search]').addEventListener('input',event=>{const query=event.target.value.trim().toLowerCase();rows.forEach((row,index)=>{const item=overview.nominees[index];row.hidden=!!item&&!`${item.name} ${item.category}`.toLowerCase().includes(query);});});
     }
     const reconciliation=host.querySelector('#awardsTransactionFilters').closest('.cms-admin-section');
+    const moolreLookup=document.createElement('form');moolreLookup.className='service-form awards-moolre-lookup';
+    moolreLookup.innerHTML='<label><span>Find by Moolre transaction ID</span><input name="transactionId" inputmode="numeric" pattern="[0-9]{6,20}" maxlength="20" placeholder="e.g. 51606736" required></label><div class="form-actions"><button type="submit" class="hub-btn hub-btn-outline">Look up payment</button></div><p class="form-message field-wide" role="status" aria-live="polite"></p><div class="field-wide awards-moolre-result" hidden></div>';
+    reconciliation.querySelector('#awardsTransactionFilters').before(moolreLookup);
+    moolreLookup.addEventListener('submit',async event=>{
+      event.preventDefault();const button=moolreLookup.querySelector('button'),feedback=moolreLookup.querySelector('.form-message'),result=moolreLookup.querySelector('.awards-moolre-result');
+      button.disabled=true;feedback.textContent='Checking Moolre without changing votes…';feedback.classList.remove('is-error');result.hidden=true;
+      try {
+        const data=await api(`/api/admin/awards/moolre-transaction/${encodeURIComponent(moolreLookup.elements.transactionId.value.trim())}`);
+        feedback.textContent=data.payment?'Moolre transaction matched to a website payment. This lookup did not credit votes.':'Moolre returned a payment, but no matching website payment was found. Do not credit votes manually.';
+        result.innerHTML=`<p><strong>Moolre status:</strong> ${esc(data.providerPaymentStatus)} · <strong>External reference:</strong> ${esc(data.externalReference||'Not supplied')} · <strong>Moolre amount:</strong> ${data.providerAmount==null?'Unavailable':`${data.providerCurrency?`${esc(data.providerCurrency)} `:''}${(Number(data.providerAmount)/100).toFixed(2)}`}</p>${data.payment?`<p><strong>Nominee:</strong> ${esc(data.payment.nominee)} · <strong>Category:</strong> ${esc(data.payment.category)} · <strong>Votes:</strong> ${Number(data.payment.votes).toLocaleString()} · <strong>Expected:</strong> ${esc(data.payment.currency)} ${(Number(data.payment.expectedAmount)/100).toFixed(2)}</p><p><strong>Website:</strong> ${esc(data.payment.paymentStatus)} / ${esc(data.payment.verificationStatus)} / ${esc(data.payment.creditStatus)}${data.payment.failureReason?` · <strong>Reason:</strong> ${esc(data.payment.failureReason)}`:''}</p><p><strong>Amount:</strong> ${data.amountMatches?'matches':'MISMATCH or unavailable'} · <strong>Currency:</strong> ${data.currencyMatches?'matches or not supplied':'MISMATCH'} · <strong>Transaction ID:</strong> ${data.idMatches?'consistent':'MISMATCH'}</p>`:''}`;
+        result.hidden=false;
+      } catch(error){feedback.textContent=error.message;feedback.classList.add('is-error');}
+      finally{button.disabled=false;}
+    });
     const transactionForm=host.querySelector('#awardsTransactionFilters');
     const referenceInput=transactionForm.elements.reference;
     referenceInput.name='search';referenceInput.placeholder='SRCVOTE, Moolre ID, or nominee name';referenceInput.autocomplete='off';

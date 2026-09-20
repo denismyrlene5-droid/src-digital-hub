@@ -114,7 +114,8 @@ function createApp(options = {}) {
   const simulatedProvider = createSimulatedProvider({ enabled: simulationEnabled });
   const paystackMode=paystackKey.startsWith("sk_live_")?"live":"test";
   const paystackProvider = createPaystackProvider({ secretKey: paystackKey, mode:paystackMode, fetchImpl: options.fetchImpl, diagnosticsEnabled: staging, diagnosticLogger: options.paymentDiagnosticLogger || console.info });
-  const moolreMode=paymentProvider==="moolre_live"?"live":"sandbox";
+  // Keep the production verifier available for existing records when new payments are disabled.
+  const moolreMode=paymentProvider==="moolre_live"||(paymentProvider==="disabled"&&production)?"live":"sandbox";
   const moolreProvider=createMoolreProvider({...moolreConfig,mode:moolreMode,fetchImpl:options.fetchImpl});
   const activePaymentProvider=paymentProvider.startsWith("moolre_")&&moolreProvider.enabled?moolreProvider:paymentProvider==="simulation"&&simulatedProvider.enabled?simulatedProvider:null;
   const providerForTransaction=item=>{
@@ -351,6 +352,32 @@ function createApp(options = {}) {
     categories:db.prepare("SELECT c.id,c.name,c.sort_order AS sortOrder,c.active FROM categories c WHERE NOT(c.active=0 AND EXISTS(SELECT 1 FROM nominees d WHERE d.category_id=c.id AND d.source='demo') AND NOT EXISTS(SELECT 1 FROM nominees genuine WHERE genuine.category_id=c.id AND genuine.source<>'demo')) ORDER BY c.sort_order").all(),
     nominees:db.prepare("SELECT n.id,n.name,n.program,n.level,n.short_message AS shortMessage,n.publication_status AS publicationStatus,n.profile_slug AS profileSlug,n.source,n.code,n.active,n.photo_token AS photoToken,n.vote_total AS voteTotal,n.category_id AS categoryId,n.person_id AS personId,c.name AS category FROM nominees n JOIN categories c ON c.id=n.category_id WHERE n.source<>'demo' ORDER BY c.sort_order,n.name").all()
   }));
+  app.get("/api/admin/awards/moolre-transaction/:id", auth.requireAwardsAdmin, rateLimit({windowMs:60000,max:12}), async(req,res,next)=>{
+    try {
+      const id=String(req.params.id||"");
+      if(!/^\d{6,20}$/.test(id))return res.status(400).json({message:"Enter a valid Moolre transaction ID."});
+      if(!moolreProvider.enabled)return res.status(503).json({message:"Moolre verification is not configured."});
+      const found=await moolreProvider.lookupTransactionId(id);
+      if(found.status==="unavailable")return res.status(503).json({message:"Moolre status is temporarily unavailable. Try again later."});
+      if(found.status!=="found")return res.status(409).json({message:"Moolre returned details that do not match this account and transaction ID."});
+      const item=/^SRCVOTE-[A-Za-z0-9_-]{20,60}$/.test(found.reference)?awards.transaction(db,found.reference,true):null;
+      const sameProvider=item?.provider===moolreProvider.name;
+      const matched=Boolean(sameProvider && (!item.metadata?.recipientAccount || item.metadata.recipientAccount===found.recipientAccount));
+      const amountMatches=matched && found.amount!==null && found.amount===item.expectedAmount;
+      const currencyMatches=matched && (!found.currency || found.currency===item.currency);
+      const idMatches=matched && (!item.providerReference || item.providerReference===id || (item.metadata?.source==="ussd" && item.metadata?.moolreReferenceKind!=="transaction"));
+      res.json({
+        status:matched?"matched":"no_matching_website_payment",
+        moolreTransactionId:id,
+        externalReference:found.reference,
+        providerPaymentStatus:found.paymentStatus,
+        providerAmount:found.amount,
+        providerCurrency:found.currency,
+        amountMatches:Boolean(amountMatches),currencyMatches:Boolean(currencyMatches),idMatches:Boolean(idMatches),
+        payment:matched?{reference:item.reference,nominee:item.nominee,category:item.category,expectedAmount:item.expectedAmount,currency:item.currency,votes:item.votes,paymentStatus:item.paymentStatus,verificationStatus:item.verificationStatus,creditStatus:item.voteCreditStatus,failureReason:item.failureReason}:null
+      });
+    } catch(error){next(error);}
+  });
   let ussdRecheckRunning = false;
   app.post("/api/admin/awards/transactions/recheck-ussd", auth.requireAwardsAdmin, rateLimit({windowMs:60000,max:60}), async(req,res,next)=>{
     if(req.body?.confirm!==true)return res.status(400).json({ok:false,message:"Confirm the existing USSD payment recheck."});

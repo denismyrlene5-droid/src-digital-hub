@@ -188,6 +188,15 @@ test("Awards payment exception centre is available to administrators",async({pag
   await expect(page.locator('#payment-exception-centre')).toHaveAttribute('data-admin-group','Payments');
 });
 
+test("Awards operations alerts expose live risks without changing state",async({page})=>{
+  await loginAsAdmin(page);await page.getByRole('button',{name:'Awards & Voting',exact:true}).click();
+  const alerts=page.locator('#operations-alerts');
+  await expect(alerts.getByRole('heading',{name:'Operations alerts'})).toBeVisible();
+  await expect(alerts).toContainText('Nothing is changed automatically');
+  expect(await alerts.locator('.awards-alert').count()).toBeGreaterThan(0);
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth-document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+});
+
 test("nominee profile has direct sharing and campaign navigation without listing filters", async ({ page }) => {
   const nominee = { id: 1, votingCode: "1001", name: "Example Nominee", category: "Campus Icon of the Year", program: "Education", level: "300", profileSlug: "example-nominee", profileUrl: "/awards/nominees/example-nominee" };
   await page.route("**/api/awards", async route => {

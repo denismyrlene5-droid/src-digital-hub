@@ -215,7 +215,7 @@ test("Awards administration is consolidated into the unified dashboard", async (
     assert.match(moduleScript, /api\/admin\/awards\/settings/);
     assert.doesNotMatch(shellScript, /Awards Admin/);
     assert.doesNotMatch(awardsPage, /id="adminOverlay"/);
-    assert.match(adminPage, /admin-awards\.js\?v=19/);
+    assert.match(adminPage, /admin-awards\.js\?v=20/);
   } finally { await app.close(); }
 });
 
@@ -394,6 +394,21 @@ test("both admin summaries report verified revenue in cedis and exclude unsettle
   } finally { await app.close(); }
 });
 
+test("payment exception filter returns only records requiring administrator review",async()=>{
+  const app=await fixture();
+  try {
+    const pending=await (await createSimulatedTransaction(app,{votes:2})).json();
+    const refunded=await (await createSimulatedTransaction(app,{votes:3})).json();
+    app.db.prepare("UPDATE payments SET payment_status='refunded',verification_status='verified' WHERE reference=?").run(refunded.reference);
+    const cookie=await adminCookie(app);
+    const response=await fetch(`${app.base}/api/admin/awards?exception=1`,{headers:{Cookie:cookie}});
+    assert.equal(response.status,200);
+    const result=await response.json();
+    assert.equal(result.transactionPage.total,1);
+    assert.equal(result.transactions[0].reference,pending.reference);
+  } finally { await app.close(); }
+});
+
 test("public result hiding removes rankings and percentages from the API",async()=>{
   const app=await fixture();
   try{
@@ -564,6 +579,21 @@ test("legacy USSD prompt reference failures recover only after verified payment 
     assert.equal(app.db.prepare("SELECT vote_total AS votes FROM nominees WHERE id=1").get().votes,before+10);
     const duplicate=awards.createTransaction(app.db,{nomineeId:1,votes:10,provider:"moolre_sandbox",metadata:{source:"ussd",recipientAccount:"100000001"}});
     assert.equal(awards.verifyAndCredit(app.db,duplicate.reference,{...result,reference:duplicate.reference}).reason,"duplicate_provider_reference");
+  } finally { await app.close(); }
+});
+
+test("administrator can safely recheck one existing Moolre exception without creating a charge",async()=>{
+  let verificationCalls=0;
+  const fetchImpl=async(url,options)=>{assert.ok(String(url).endsWith('/open/transact/status'));verificationCalls++;const body=JSON.parse(options.body);return{ok:true,status:200,json:async()=>({status:1,data:{txstatus:1,externalref:body.id,accountnumber:'100000001',amount:'2.00',transactionid:'MLR-EXCEPTION-1',currency:'GHS'}})};};
+  const app=await fixture({paymentProvider:'moolre_sandbox',moolreApiUser:'merchant-user',moolrePublicKey:'public-key',moolreAccountNumber:'100000001',moolreBusinessEmail:'payments@example.edu',fetchImpl});
+  try {
+    const item=awards.createTransaction(app.db,{nomineeId:1,votes:2,provider:'moolre_sandbox',metadata:{recipientAccount:'100000001'}});
+    const cookie=await adminCookie(app),endpoint=`${app.base}/api/admin/awards/transactions/${item.reference}/recheck`;
+    assert.equal((await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json',Cookie:cookie},body:JSON.stringify({confirm:false})})).status,400);
+    const response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json',Cookie:cookie},body:JSON.stringify({confirm:true})});
+    assert.equal(response.status,200);assert.equal((await response.json()).credited,true);assert.equal(verificationCalls,1);
+    const repeat=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json',Cookie:cookie},body:JSON.stringify({confirm:true})});
+    assert.equal((await repeat.json()).status,'already_credited');assert.equal(verificationCalls,1);
   } finally { await app.close(); }
 });
 

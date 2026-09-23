@@ -181,6 +181,13 @@ test("Awards operations interface is grouped and responsive on desktop and mobil
   expect(errors).toEqual([]);
 });
 
+test("Awards payment exception centre is available to administrators",async({page})=>{
+  await loginAsAdmin(page);await page.getByRole('button',{name:'Awards & Voting',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'Payment exception centre'})).toBeVisible();
+  await expect(page.getByText('Total review queue')).toBeVisible();
+  await expect(page.locator('#payment-exception-centre')).toHaveAttribute('data-admin-group','Payments');
+});
+
 test("nominee profile has direct sharing and campaign navigation without listing filters", async ({ page }) => {
   const nominee = { id: 1, votingCode: "1001", name: "Example Nominee", category: "Campus Icon of the Year", program: "Education", level: "300", profileSlug: "example-nominee", profileUrl: "/awards/nominees/example-nominee" };
   await page.route("**/api/awards", async route => {

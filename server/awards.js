@@ -341,6 +341,7 @@ function adminData(db, filters={}) {
   if (filters.provider) { where.push("p.provider=?"); args.push(String(filters.provider).slice(0,40)); }
   if (filters.verificationStatus) { where.push("p.verification_status=?"); args.push(String(filters.verificationStatus).slice(0,30)); }
   if (filters.creditStatus) { where.push("p.vote_credit_status=?"); args.push(String(filters.creditStatus).slice(0,30)); }
+  if (String(filters.exception||"")==="1") where.push(`(p.payment_status NOT IN ('refunded','reversed') AND p.vote_credit_status<>'reversed' AND (p.payment_status IN ('pending','failed','cancelled','expired') OR p.verification_status='rejected' OR (p.verification_status='verified' AND p.vote_credit_status='not_credited')))`);
   if (filters.from) { where.push("p.created_at>=?"); args.push(filters.from); }
   if (filters.to) { where.push("p.created_at<=?"); args.push(filters.to); }
   const page=Math.min(10000,Math.max(1,Number.parseInt(filters.page,10)||1));

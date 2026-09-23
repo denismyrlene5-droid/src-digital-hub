@@ -421,6 +421,24 @@ function createApp(options = {}) {
       res.json({ok:true,counts,hasMore:rows.length>5,nextCursor:batch.at(-1)?.cursor ?? afterId});
     }catch(error){next(error);}finally{ussdRecheckRunning=false;}
   });
+  app.post("/api/admin/awards/transactions/:reference/recheck", auth.requireAwardsAdmin, rateLimit({windowMs:60000,max:30}), async(req,res,next)=>{
+    if(req.body?.confirm!==true)return res.status(400).json({ok:false,message:"Confirm the existing payment recheck."});
+    try {
+      const item=awards.transaction(db,req.params.reference,true);
+      if(!item)return res.status(404).json({ok:false,message:"Payment record not found."});
+      if(item.voteCreditStatus==='credited')return res.json({ok:true,credited:false,status:'already_credited',transaction:item});
+      if(['refunded','reversed'].includes(item.paymentStatus)||item.voteCreditStatus==='reversed')return res.status(409).json({ok:false,message:"Refunded or reversed payments cannot be rechecked for vote credit."});
+      const provider=providerForTransaction(item);
+      if(!provider)return res.status(503).json({ok:false,message:"The payment provider needed for this record is unavailable."});
+      const result=await provider.verify(item.reference,item);
+      let outcome;
+      if(result.status==='successful')outcome=awards.verifyAndCredit(db,item.reference,result,'admin_exception_recheck');
+      else if(result.status==='pending')outcome={ok:true,credited:false,status:'pending'};
+      else {awards.markStatus(db,item.reference,result.status,result.reason);outcome={ok:false,credited:false,status:result.status};}
+      content.audit(req.admin,'awards.payment_rechecked','payment',item.reference,`Payment rechecked: ${outcome.status||result.status}; credited: ${Boolean(outcome.credited)}`);
+      res.json({...outcome,transaction:awards.transaction(db,item.reference,true)});
+    }catch(error){next(error);}
+  });
   app.get("/api/admin/awards/import-preview",auth.requireAwardsAdmin,(req,res)=>res.json(awards.importPreview(db)));
   app.post("/api/admin/awards/import",auth.requireAwardsAdmin,(req,res,next)=>{try{if(req.body?.confirm!==true)return res.status(400).json({ok:false,message:"Review and explicitly confirm the import first."});res.status(201).json(awards.applyApprovedImport(db,req.admin));}catch(error){next(error);}});
   app.get("/api/admin/awards/nominees/:id/flyer",auth.requireAwardsAdmin,async(req,res,next)=>{try{const base=publicBaseUrl||`${req.protocol}://${req.get("host")}`;const flyer=await createNomineeFlyer({db,uploadDirectory,publicDirectory,baseUrl:base,selector:{id:Number(req.params.id)},format:req.query.format||"status",design:req.query.design,allowDraft:true});res.setHeader("Content-Type","image/png");res.setHeader("Content-Disposition","inline");res.setHeader("Cache-Control","private, no-store");res.send(flyer.buffer);}catch(error){next(error);}});

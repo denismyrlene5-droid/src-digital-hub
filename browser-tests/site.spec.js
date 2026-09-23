@@ -160,6 +160,27 @@ test("private vote overview is searchable and usable on desktop and mobile",asyn
   expect(errors).toEqual([]);
 });
 
+test("Awards operations interface is grouped and responsive on desktop and mobile",async({page})=>{
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));
+  await loginAsAdmin(page);await page.getByRole('button',{name:'Awards & Voting',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'Operations summary'})).toBeVisible();
+  const operations=page.locator('#awards-operations');
+  await expect(operations).toContainText('Voting');await expect(operations).toContainText('Payments');await expect(operations).toContainText('Nominee photos');
+  await expect(page.locator('#campaign-voting-controls')).toBeAttached();await expect(page.locator('#payment-reconciliation')).toBeAttached();await expect(page.locator('#awards-nominees-admin')).toBeAttached();
+  const sectionNav=page.getByRole('navigation',{name:'Awards administration sections'});
+  await expect(sectionNav).toBeVisible();
+  if((await page.viewportSize()).width<=900){
+    await expect(sectionNav.getByLabel('Jump to Awards section')).toBeVisible();
+    await sectionNav.getByLabel('Jump to Awards section').selectOption('payment-reconciliation');
+    await expect(page.getByRole('button',{name:'Back to top of Awards administration'})).toBeVisible();
+  }else{
+    await expect(sectionNav.getByRole('button',{name:'Campaign'})).toBeVisible();
+    await sectionNav.getByRole('button',{name:'Payments'}).click();
+  }
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth-document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+  expect(errors).toEqual([]);
+});
+
 test("nominee profile has direct sharing and campaign navigation without listing filters", async ({ page }) => {
   const nominee = { id: 1, votingCode: "1001", name: "Example Nominee", category: "Campus Icon of the Year", program: "Education", level: "300", profileSlug: "example-nominee", profileUrl: "/awards/nominees/example-nominee" };
   await page.route("**/api/awards", async route => {

@@ -112,8 +112,11 @@ function composePremiumCampaign({ design, theme, width, height, item, logo, trop
     <rect x="0" y="${height - (tall ? 285 : 205)}" width="1080" height="${tall ? 285 : 205}" fill="${style.footer}"/>
     <path d="M0 ${height - (tall ? 285 : 205)}H1080" stroke="${theme.accent}" stroke-width="8"/>
     ${textPath(statusLabel,70,height-(tall?205:140),tall?30:22,sansBold,theme.accent)}
-    ${textPath("SCAN TO VIEW THE NOMINEE PROFILE",70,height-(tall?145:95),tall?20:15,sansBold,"#ffffff")}
-    ${textPath("uccwisesrc.com",70,height-(tall?92:52),tall?25:18,sans,"#ffffff")}
+    ${textPath("SCAN TO VIEW THE NOMINEE PROFILE",70,height-(tall?145:95),tall?20:15,sansBold,"#ffffff",tall?1.5:1)}
+    <rect x="70" y="${height-(tall?127:80)}" width="${tall?430:350}" height="${tall?62:44}" rx="${tall?31:22}" fill="#ffffff" opacity=".09" stroke="${theme.accent}" stroke-width="1.5"/>
+    <circle cx="${tall?101:93}" cy="${height-(tall?96:58)}" r="${tall?7:5}" fill="${theme.accent}"/>
+    ${textPath("VOTE ONLINE",tall?122:110,height-(tall?89:53),tall?15:11,sansBold,theme.accent,tall?1.6:1.1)}
+    ${textPath("uccwisesrc.com",tall?245:200,height-(tall?87:52),tall?24:17,sansBold,"#ffffff")}
     <rect x="${qrX - 12}" y="${qrY - 12}" width="${qrSize + 24}" height="${qrSize + 24}" rx="12" fill="#ffffff"/><image href="${qr}" x="${qrX}" y="${qrY}" width="${qrSize}" height="${qrSize}"/>
   </svg>`;
 }

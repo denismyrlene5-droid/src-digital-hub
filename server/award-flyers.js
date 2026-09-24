@@ -31,7 +31,7 @@ const textPath = (value, x, y, size, font, fill, letterSpacing = 0) => {
 
 function nomineeRecord(db, selector, allowDraft) {
   const where = selector.id ? "n.id=?" : "n.profile_slug=?";
-  const row = db.prepare(`SELECT n.id,n.name,n.program,n.level,n.photo_token AS photoToken,n.profile_slug AS profileSlug,n.publication_status AS publicationStatus,n.active,c.name AS category,c.active AS categoryActive,
+  const row = db.prepare(`SELECT n.id,n.name,n.program,n.level,n.photo_token AS photoToken,n.flyer_design AS flyerDesign,n.profile_slug AS profileSlug,n.publication_status AS publicationStatus,n.active,c.name AS category,c.active AS categoryActive,
     COALESCE(p.photo_position_x,50) AS photoPositionX,COALESCE(p.photo_position_y,50) AS photoPositionY,COALESCE(p.photo_zoom,1) AS photoZoom,
     COALESCE((SELECT nc.description FROM nomination_categories nc WHERE nc.name=c.name LIMIT 1),'') AS categoryDescription,
     COALESCE((SELECT g.slug FROM nomination_categories nc JOIN nomination_award_groups g ON g.id=nc.group_id WHERE nc.name=c.name LIMIT 1),'') AS categoryGroup
@@ -65,7 +65,7 @@ async function portraitData(item, uploads, width, height, sansBold) {
 async function createNomineeFlyer({ db, uploadDirectory, publicDirectory, baseUrl, selector, format = "status", design, allowDraft = false }) {
   const size = formats[format]; if (!size) { const error = new Error("Choose status or square format."); error.status = 400; throw error; }
   const item = nomineeRecord(db, selector, allowDraft); if (!item) { const error = new Error("Published nominee not found."); error.status = 404; throw error; }
-  const designNames=Object.keys(designs),designName=design||designNames[(Number(item.id)-1)%designNames.length];
+  const designNames=Object.keys(designs),designName=design||item.flyerDesign||designNames[(Number(item.id)-1)%designNames.length];
   if(!designs[designName]){const error=new Error("Choose a valid flyer design.");error.status=400;throw error;}
   const theme=designs[designName];
   const settings = db.prepare("SELECT voting_state AS votingState,awards_title AS awardsTitle,ussd_dial_code AS dialCode,ussd_display_enabled AS ussdEnabled FROM awards_settings WHERE id=1").get();

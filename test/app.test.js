@@ -215,7 +215,7 @@ test("Awards administration is consolidated into the unified dashboard", async (
     assert.match(moduleScript, /api\/admin\/awards\/settings/);
     assert.doesNotMatch(shellScript, /Awards Admin/);
     assert.doesNotMatch(awardsPage, /id="adminOverlay"/);
-    assert.match(adminPage, /admin-awards\.js\?v=23/);
+    assert.match(adminPage, /admin-awards\.js\?v=24/);
   } finally { await app.close(); }
 });
 
@@ -1521,6 +1521,10 @@ test("a nominee photo stays synchronized across the same person's category entri
     assert.deepEqual({...framing},{x:24,y:36,zoom:1.4});
     const adminNominees=(await (await fetch(`${app.base}/api/admin/awards`,{headers:{Cookie:cookie}})).json()).nominees.filter(item=>item.personId===second.personId);
     assert.equal(adminNominees.every(item=>item.photoPositionX===24&&item.photoPositionY===36&&item.photoZoom===1.4),true);
+    const preference=await fetch(`${app.base}/api/admin/awards/nominees/${first.id}`,{method:"PUT",headers:{"Content-Type":"application/json",Cookie:cookie},body:JSON.stringify({flyerDesign:"midnight"})});
+    assert.equal(preference.status,200);assert.equal((await preference.json()).nominee.flyerDesign,"midnight");
+    assert.equal(app.db.prepare("SELECT flyer_design value FROM nominees WHERE id=?").get(second.id).value,"");
+    assert.equal((await fetch(`${app.base}/api/admin/awards/nominees/${first.id}`,{method:"PUT",headers:{"Content-Type":"application/json",Cookie:cookie},body:JSON.stringify({flyerDesign:"invalid"})})).status,400);
     const beforeCrop=await createNomineeFlyer({db:app.db,uploadDirectory:app.uploadDirectory,publicDirectory:path.join(__dirname,"..","public"),baseUrl:"https://uccwisesrc.com",selector:{id:first.id},format:"square",design:"ivory",allowDraft:false});
     const reframed=await fetch(`${app.base}/api/admin/awards/nominees/${first.id}`,{method:"PUT",headers:{"Content-Type":"application/json",Cookie:cookie},body:JSON.stringify({photoPositionX:82,photoPositionY:15,photoZoom:2})});
     assert.equal(reframed.status,200);
@@ -2367,6 +2371,9 @@ test("campaign flyers have exact dimensions, stable category links and public dr
     assert.equal(decoded.data,generated.targetUrl);
     const variants=[];for(const state of ["not_started","open","closed"]){app.db.prepare("UPDATE awards_settings SET voting_state=? WHERE id=1").run(state);variants.push(crypto.createHash("sha256").update((await createNomineeFlyer({db:app.db,uploadDirectory:app.uploadDirectory,publicDirectory:path.join(__dirname,"..","public"),baseUrl:"https://uccwisesrc.com",selector:{id:nominee.id},format:"status",allowDraft:false})).buffer).digest("hex"));}assert.equal(new Set(variants).size,3);
     const designs=[];for(const design of ["emerald","midnight","burgundy","ivory","royal"]){const flyer=await createNomineeFlyer({db:app.db,uploadDirectory:app.uploadDirectory,publicDirectory:path.join(__dirname,"..","public"),baseUrl:"https://uccwisesrc.com",selector:{id:nominee.id},format:"square",design,allowDraft:false});designs.push(crypto.createHash("sha256").update(flyer.buffer).digest("hex"));assert.match(flyer.filename,new RegExp(`-${design}-square\\.png$`));}assert.equal(new Set(designs).size,5);
+    app.db.prepare("UPDATE nominees SET flyer_design='royal' WHERE id=?").run(nominee.id);
+    const preferred=await createNomineeFlyer({db:app.db,uploadDirectory:app.uploadDirectory,publicDirectory:path.join(__dirname,"..","public"),baseUrl:"https://uccwisesrc.com",selector:{id:nominee.id},format:"square",allowDraft:false});
+    assert.equal(preferred.design,"royal");assert.match(preferred.filename,/-royal-square\.png$/);
     const categoryNominee=app.db.prepare("SELECT n.id,c.name category FROM nominees n JOIN categories c ON c.id=n.category_id JOIN nomination_categories nc ON nc.name=c.name WHERE n.active=1 AND n.publication_status='published' ORDER BY n.id LIMIT 1").get();
     assert.ok(categoryNominee);
     const originalFlyer=await createNomineeFlyer({db:app.db,uploadDirectory:app.uploadDirectory,publicDirectory:path.join(__dirname,"..","public"),baseUrl:"https://uccwisesrc.com",selector:{id:categoryNominee.id},format:"square",design:"ivory",allowDraft:false});

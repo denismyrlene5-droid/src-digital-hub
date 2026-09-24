@@ -32,6 +32,7 @@ function migrateAwards(db) {
   addColumn(db, "nominees", "publication_status TEXT NOT NULL DEFAULT 'draft'");
   addColumn(db, "nominees", "profile_slug TEXT");
   addColumn(db, "nominees", "source TEXT NOT NULL DEFAULT 'legacy'");
+  addColumn(db, "nominees", "flyer_design TEXT NOT NULL DEFAULT ''");
   [
     "internal_id TEXT", "public_id TEXT", "category_id INTEGER REFERENCES categories(id)", "price_per_vote INTEGER NOT NULL DEFAULT 100",
     "paid_amount INTEGER", "payment_status TEXT NOT NULL DEFAULT 'pending'", "verification_status TEXT NOT NULL DEFAULT 'unverified'",

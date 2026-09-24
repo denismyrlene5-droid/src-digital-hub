@@ -1,9 +1,9 @@
 // Code-native poster layouts. Text is rendered as paths by the existing font engine.
-function composeFlyer({ design, theme, width, height, item, logo, portrait, qr, title, state, instruction, dialCode, nomineeCode, sans, sansBold, serif, textPath }) {
-  return composePremiumCampaign({ design, theme, width, height, item, logo, portrait, qr, title, state, dialCode, nomineeCode, sans, sansBold, serif, textPath });
+function composeFlyer({ design, theme, width, height, item, logo, trophy, portrait, qr, title, state, instruction, dialCode, nomineeCode, sans, sansBold, serif, textPath }) {
+  return composePremiumCampaign({ design, theme, width, height, item, logo, trophy, portrait, qr, title, state, dialCode, nomineeCode, sans, sansBold, serif, textPath });
 }
 
-function composePremiumCampaign({ design, theme, width, height, item, logo, portrait, qr, title, state, dialCode, nomineeCode, sans, sansBold, serif, textPath }) {
+function composePremiumCampaign({ design, theme, width, height, item, logo, trophy, portrait, qr, title, state, dialCode, nomineeCode, sans, sansBold, serif, textPath }) {
   const tall = height > width;
   const styles = {
     ivory: { primary: "#08243f", footer: "#071f3d", bgStart: "#fffdf7", bgMiddle: "#f8edd2", bgEnd: "#f0d994", portraitRadius: tall ? 235 : 36, mirror: false, pattern: "facets" },
@@ -50,8 +50,8 @@ function composePremiumCampaign({ design, theme, width, height, item, logo, port
     "Choose positive influence, student spirit and a commitment to representing this category with pride."
   ];
   const reason = reasons[Math.abs(Number(item.id) || 0) % reasons.length];
-  const reasonLabelY = category.bottom + (tall ? 80 : 50);
-  const calloutBlock = drawBlock(reason, infoX, reasonLabelY + (tall ? 45 : 31), tall ? 25 : 17, sans, "#4b5560", infoWidth, tall ? 5 : 4, 1.3);
+  const reasonY = category.bottom + (tall ? 80 : 50);
+  const calloutBlock = drawBlock(reason, infoX, reasonY, tall ? 25 : 17, sans, "#4b5560", infoWidth, tall ? 5 : 4, 1.3);
   const processY = calloutBlock.bottom + (tall ? 100 : 58);
   const qrSize = tall ? 190 : 135;
   const qrX = tall ? 805 : 875;
@@ -88,14 +88,14 @@ function composePremiumCampaign({ design, theme, width, height, item, logo, port
     <rect width="100%" height="100%" fill="url(#campaignBg)"/><rect width="100%" height="100%" fill="url(#campaignPattern)"/>${edgeDecoration}
     <rect x="68" y="55" width="125" height="135" rx="10" fill="#ffffff" filter="url(#shadow)"/><image href="${logo}" x="78" y="65" width="105" height="115" preserveAspectRatio="xMidYMid meet"/>
     ${textPath("UCC SANDWICH–WISE CAMPUS",235,tall?82:75,tall?21:18,sansBold,theme.accent)}${mastheadTitle.svg}
-    <path d="M235 ${tall ? 175 : 155}H995" stroke="${theme.accent}" stroke-width="3"/><circle cx="980" cy="${tall ? 175 : 155}" r="7" fill="${theme.accent}"/>
+    <path d="M235 ${tall ? 175 : 155}H915" stroke="${theme.accent}" stroke-width="3"/><circle cx="900" cy="${tall ? 175 : 155}" r="7" fill="${theme.accent}"/>
+    <image href="${trophy}" x="935" y="30" width="90" height="155" preserveAspectRatio="xMidYMid meet"/>
     <rect x="${infoX - 25}" y="${tall ? 330 : 225}" width="${infoWidth + 65}" height="${tall ? 70 : 54}" fill="${style.primary}"/><rect x="${style.mirror ? infoX - 25 : infoX + infoWidth + 20}" y="${tall ? 342 : 235}" width="20" height="${tall ? 70 : 54}" fill="${theme.accent}"/>
     ${textPath("AWARD CATEGORY",infoX,tall?379:263,tall?28:21,sansBold,"#ffffff")}${category.svg}${calloutBlock.svg}
     <rect x="${photoX - 15}" y="${tall ? 375 : 255}" width="505" height="${tall ? 960 : 595}" rx="${style.portraitRadius + 15}" fill="#ffffff" stroke="${theme.accent}" stroke-width="14" filter="url(#shadow)"/>
     <image href="${portrait}" x="${photoX}" y="${tall ? 390 : 270}" width="475" height="${tall ? 930 : 565}" preserveAspectRatio="xMidYMin slice" clip-path="url(#campaignPortrait)"/>
     <rect x="${plateX}" y="${tall ? 1350 : 700}" width="520" height="${tall ? 235 : 155}" rx="16" fill="url(#namePanel)" filter="url(#shadow)"/>
     <rect x="${photoX + 20}" y="${tall ? 1370 : 715}" width="${tall ? 235 : 185}" height="${tall ? 46 : 34}" rx="4" fill="${theme.accent}"/>${textPath("NOMINEE",photoX+40,tall?1402:739,tall?21:16,sansBold,style.primary)}${nomineeName.svg}
-    ${textPath("WHY VOTE FOR ME",infoX,reasonLabelY,tall?19:14,sansBold,theme.accent)}
     <rect x="${infoX - 25}" y="${processY - (tall ? 46 : 30)}" width="${infoWidth + 65}" height="${tall ? 55 : 38}" fill="${style.primary}"/>${steps}
     ${textPath("NOMINEE CODE",infoX,codeY,tall?20:15,sansBold,"#4b5560")}
     <rect x="${infoX - 5}" y="${codeY + (tall ? 25 : 17)}" width="${infoWidth + 5}" height="${tall ? 92 : 62}" rx="10" fill="#ffffff" stroke="${theme.accent}" stroke-width="3"/>

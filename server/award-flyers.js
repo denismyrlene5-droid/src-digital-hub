@@ -62,6 +62,9 @@ async function createNomineeFlyer({ db, uploadDirectory, publicDirectory, baseUr
   const logoPath = path.join(publicDirectory, "assets", "ucc-wise-src-logo.jpg");
   if (!fs.existsSync(logoPath)) { const error = new Error("The official logo asset is unavailable."); error.status = 503; throw error; }
   const logo = `data:image/jpeg;base64,${fs.readFileSync(logoPath).toString("base64")}`;
+  const trophyPath = path.join(publicDirectory, "assets", "awards", "generic-award-trophy.png");
+  if (!fs.existsSync(trophyPath)) { const error = new Error("The campaign award asset is unavailable."); error.status = 503; throw error; }
+  const trophy = `data:image/png;base64,${fs.readFileSync(trophyPath).toString("base64")}`;
   const sans = flyerFont(publicDirectory, "Lato-Regular.ttf");
   const sansBold = flyerFont(publicDirectory, "Lato-Bold.ttf");
   const serif = flyerFont(publicDirectory, "AbrilFatface-Regular.ttf");
@@ -73,7 +76,7 @@ async function createNomineeFlyer({ db, uploadDirectory, publicDirectory, baseUr
   const dialCode = settings.ussdEnabled && state === "open" ? settings.dialCode : "";
   const instruction = `Nominee code: ${nomineeCode} · ${state === "open" ? "Scan to vote." : state === "closed" ? "Voting closed." : "Voting opens soon."}`;
   const { width, height } = size;
-  const svg = composeFlyer({ design: designName, theme, width, height, item, logo, portrait, qr, title: settings.awardsTitle || "SRC Awards 2026", state, instruction, dialCode, nomineeCode, sans, sansBold, serif, textPath });
+  const svg = composeFlyer({ design: designName, theme, width, height, item, logo, trophy, portrait, qr, title: settings.awardsTitle || "SRC Awards 2026", state, instruction, dialCode, nomineeCode, sans, sansBold, serif, textPath });
   const buffer = await sharp(Buffer.from(svg)).png({ compressionLevel: 9 }).toBuffer();
   return { buffer, item, targetUrl, design:designName, filename: `${cleanFilename(item.name)}-${cleanFilename(item.category)}-${designName}-${format}.png`, width, height };
 }

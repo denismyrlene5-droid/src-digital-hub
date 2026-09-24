@@ -12,6 +12,7 @@ function text(value, name, { required = false, min = 0, max = 200 } = {}) {
 }
 function bool(value, fallback = false) { return value === undefined ? fallback : value === true || value === 1 || value === "1" || value === "true"; }
 function order(value, fallback = 0) { const parsed = Number(value ?? fallback); if (!Number.isInteger(parsed) || parsed < 0 || parsed > 10000) throw httpError("Display order is invalid."); return parsed; }
+function framing(value, name, minimum, maximum, fallback) { if (value === undefined || value === null || value === "") return fallback; const parsed = Number(value); if (!Number.isFinite(parsed) || parsed < minimum || parsed > maximum) throw httpError(`${name} is invalid.`); return Math.round(parsed * 100) / 100; }
 function publication(value,fallback="draft"){const result=String(value??fallback);if(!["draft","published","withdrawn"].includes(result))throw httpError("Invalid publication status.");return result;}
 const personKey=value=>String(value||"").normalize("NFKD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim().split(/\s+/).sort().join(" ");
 
@@ -23,8 +24,8 @@ function createAwardsAdminRouter({ db, uploadDirectory, requireAwardsAdmin, audi
   router.use(express.json({ limit: "8mb" }));
 
   const category = categoryId => db.prepare("SELECT id,name,sort_order AS sortOrder,active FROM categories WHERE id=?").get(id(categoryId));
-  const nominee = nomineeId => db.prepare(`SELECT n.id,n.name,n.program,n.level,n.short_message AS shortMessage,n.publication_status AS publicationStatus,n.profile_slug AS profileSlug,n.person_id AS personId,n.code,n.category_id AS categoryId,n.active,n.photo_token AS photoToken,c.name AS category
-    FROM nominees n JOIN categories c ON c.id=n.category_id WHERE n.id=?`).get(id(nomineeId));
+  const nominee = nomineeId => db.prepare(`SELECT n.id,n.name,n.program,n.level,n.short_message AS shortMessage,n.publication_status AS publicationStatus,n.profile_slug AS profileSlug,n.person_id AS personId,n.code,n.category_id AS categoryId,n.active,n.photo_token AS photoToken,c.name AS category,COALESCE(p.photo_position_x,50) AS photoPositionX,COALESCE(p.photo_position_y,50) AS photoPositionY,COALESCE(p.photo_zoom,1) AS photoZoom
+    FROM nominees n JOIN categories c ON c.id=n.category_id LEFT JOIN award_people p ON p.id=n.person_id WHERE n.id=?`).get(id(nomineeId));
   const photoReferences = token => token ? Number(db.prepare(`SELECT
     (SELECT COUNT(*) FROM nominees WHERE photo_token=?) +
     (SELECT COUNT(*) FROM award_people WHERE photo_token=?) +
@@ -75,6 +76,9 @@ function createAwardsAdminRouter({ db, uploadDirectory, requireAwardsAdmin, audi
       const normalized=personKey(name);
       let personId=req.body?.personId? id(req.body.personId):null;if(personId&&!db.prepare("SELECT 1 FROM award_people WHERE id=?").get(personId))throw httpError("Person record not found.",404);
       if(!personId){db.prepare("INSERT OR IGNORE INTO award_people(display_name,normalized_name,programme,level,photo_token) VALUES(?,?,?,?,?)").run(name,normalized,program,level,photo?.token||null);personId=db.prepare("SELECT id FROM award_people WHERE normalized_name=?").get(normalized).id;}
+      const currentFraming=db.prepare("SELECT photo_position_x AS x,photo_position_y AS y,photo_zoom AS zoom FROM award_people WHERE id=?").get(personId);
+      const positionX=framing(req.body?.photoPositionX,"Horizontal photo position",0,100,currentFraming?.x??50),positionY=framing(req.body?.photoPositionY,"Vertical photo position",0,100,currentFraming?.y??50),zoom=framing(req.body?.photoZoom,"Photo zoom",1,2.5,currentFraming?.zoom??1);
+      db.prepare("UPDATE award_people SET photo_position_x=?,photo_position_y=?,photo_zoom=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").run(positionX,positionY,zoom,personId);
       let result; let priorPhotos=[]; try { result = db.prepare("INSERT INTO nominees(name,category_id,program,code,active,photo_token,person_id,level,short_message,publication_status,profile_slug,source) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)").run(name, categoryId, program, code, status==="published"?1:0, photo?.token || null,personId,level,shortMessage,status,`${normalized.replace(/ /g,"-")}-${categoryId}`,"manual"); if(photo)priorPhotos=setPersonPhoto(personId,photo.token); }
       catch (error) { if (String(error.message).includes("UNIQUE")) throw httpError("That nominee code is already in use.", 409); throw error; }
       const record = nominee(Number(result.lastInsertRowid)); priorPhotos.forEach(removeUnusedPhoto); audit(req.admin, "awards.nominee_created", "nominee", record.id, `Nominee created: ${record.name}`); res.status(201).json({ nominee: record });
@@ -89,8 +93,9 @@ function createAwardsAdminRouter({ db, uploadDirectory, requireAwardsAdmin, audi
       if (!/^[A-Z0-9_-]+$/.test(code)) throw httpError("Nominee code may contain only letters, numbers, hyphens, and underscores.");
       const categoryId = id(req.body?.categoryId ?? current.categoryId); if (!category(categoryId)) throw httpError("Category not found.", 404);
       const level=text(req.body?.level??current.level,"Level",{max:60}),shortMessage=text(req.body?.shortMessage??current.shortMessage,"Short message",{max:120}),status=publication(req.body?.publicationStatus,current.publicationStatus);
+      const positionX=framing(req.body?.photoPositionX,"Horizontal photo position",0,100,current.photoPositionX),positionY=framing(req.body?.photoPositionY,"Vertical photo position",0,100,current.photoPositionY),zoom=framing(req.body?.photoZoom,"Photo zoom",1,2.5,current.photoZoom);
       photo = uploads.save(req.body?.photo, "image");
-      let priorPhotos=[]; try { db.prepare("UPDATE nominees SET name=?,category_id=?,program=?,code=?,active=?,photo_token=COALESCE(?,photo_token),level=?,short_message=?,publication_status=? WHERE id=?").run(name, categoryId, program, code, status==="published"?1:0, photo?.token || null,level,shortMessage,status,current.id); if(photo)priorPhotos=setPersonPhoto(current.personId,photo.token); }
+      let priorPhotos=[]; try { db.prepare("UPDATE nominees SET name=?,category_id=?,program=?,code=?,active=?,photo_token=COALESCE(?,photo_token),level=?,short_message=?,publication_status=? WHERE id=?").run(name, categoryId, program, code, status==="published"?1:0, photo?.token || null,level,shortMessage,status,current.id); db.prepare("UPDATE award_people SET photo_position_x=?,photo_position_y=?,photo_zoom=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").run(positionX,positionY,zoom,current.personId); if(photo)priorPhotos=setPersonPhoto(current.personId,photo.token); }
       catch (error) { if (String(error.message).includes("UNIQUE")) throw httpError("That nominee code is already in use.", 409); throw error; }
       const record = nominee(current.id); priorPhotos.forEach(removeUnusedPhoto); audit(req.admin, "awards.nominee_updated", "nominee", record.id, `Nominee updated: ${record.name}`); res.json({ nominee: record });
     } catch (error) { uploads.remove(photo); throw error; }

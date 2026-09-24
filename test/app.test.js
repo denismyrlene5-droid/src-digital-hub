@@ -215,7 +215,7 @@ test("Awards administration is consolidated into the unified dashboard", async (
     assert.match(moduleScript, /api\/admin\/awards\/settings/);
     assert.doesNotMatch(shellScript, /Awards Admin/);
     assert.doesNotMatch(awardsPage, /id="adminOverlay"/);
-    assert.match(adminPage, /admin-awards\.js\?v=22/);
+    assert.match(adminPage, /admin-awards\.js\?v=23/);
   } finally { await app.close(); }
 });
 
@@ -1501,6 +1501,7 @@ test("a nominee photo stays synchronized across the same person's category entri
   const stored = token => fs.existsSync(path.join(app.uploadDirectory, token));
   try {
     const cookie = await adminCookie(app);
+    const validPhoto={name:"portrait.png",type:"image/png",data:(await sharp(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1400"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#102f85"/><stop offset=".5" stop-color="#e4b94e"/><stop offset="1" stop-color="#8a1838"/></linearGradient></defs><rect width="1000" height="1400" fill="url(#g)"/><circle cx="230" cy="310" r="170" fill="#fff"/></svg>')).png().toBuffer()).toString("base64")};
     const categories = app.db.prepare("SELECT id FROM categories WHERE active=1 ORDER BY id LIMIT 2").all();
     assert.equal(categories.length, 2);
     const create = async (code, categoryId, photo) => {
@@ -1508,12 +1509,24 @@ test("a nominee photo stays synchronized across the same person's category entri
       assert.equal(response.status, 201);
       return (await response.json()).nominee;
     };
-    const first = await create("SHARE01", categories[0].id, pngUpload);
-    const second = await create("SHARE02", categories[1].id, webpUpload);
+    const firstResponse = await fetch(`${app.base}/api/admin/awards/nominees`, { method:"POST", headers:{"Content-Type":"application/json",Cookie:cookie}, body:JSON.stringify({name:"Shared Photo Nominee",program:"Development Studies",level:"Level 300",code:"SHARE01",categoryId:categories[0].id,publicationStatus:"published",active:true,photo:validPhoto,photoPositionX:24,photoPositionY:36,photoZoom:1.4}) });
+    assert.equal(firstResponse.status,201);
+    const first=(await firstResponse.json()).nominee;
+    const second = await create("SHARE02", categories[1].id, validPhoto);
     assert.equal(stored(first.photoToken), false);
     assert.equal(stored(second.photoToken), true);
     const linked = app.db.prepare("SELECT DISTINCT photo_token AS token FROM nominees WHERE person_id=?").all(second.personId);
     assert.deepEqual(linked.map(row => row.token), [second.photoToken]);
+    const framing=app.db.prepare("SELECT photo_position_x x,photo_position_y y,photo_zoom zoom FROM award_people WHERE id=?").get(second.personId);
+    assert.deepEqual({...framing},{x:24,y:36,zoom:1.4});
+    const adminNominees=(await (await fetch(`${app.base}/api/admin/awards`,{headers:{Cookie:cookie}})).json()).nominees.filter(item=>item.personId===second.personId);
+    assert.equal(adminNominees.every(item=>item.photoPositionX===24&&item.photoPositionY===36&&item.photoZoom===1.4),true);
+    const beforeCrop=await createNomineeFlyer({db:app.db,uploadDirectory:app.uploadDirectory,publicDirectory:path.join(__dirname,"..","public"),baseUrl:"https://uccwisesrc.com",selector:{id:first.id},format:"square",design:"ivory",allowDraft:false});
+    const reframed=await fetch(`${app.base}/api/admin/awards/nominees/${first.id}`,{method:"PUT",headers:{"Content-Type":"application/json",Cookie:cookie},body:JSON.stringify({photoPositionX:82,photoPositionY:15,photoZoom:2})});
+    assert.equal(reframed.status,200);
+    const afterCrop=await createNomineeFlyer({db:app.db,uploadDirectory:app.uploadDirectory,publicDirectory:path.join(__dirname,"..","public"),baseUrl:"https://uccwisesrc.com",selector:{id:first.id},format:"square",design:"ivory",allowDraft:false});
+    assert.notEqual(crypto.createHash("sha256").update(beforeCrop.buffer).digest("hex"),crypto.createHash("sha256").update(afterCrop.buffer).digest("hex"));
+    assert.equal((await fetch(`${app.base}/api/admin/awards/nominees/${first.id}`,{method:"PUT",headers:{"Content-Type":"application/json",Cookie:cookie},body:JSON.stringify({photoZoom:3})})).status,400);
     const publicData = await (await fetch(`${app.base}/api/awards`)).json();
     assert.equal(publicData.nominees.filter(item => item.name === "Shared Photo Nominee").every(item => item.imageUrl.endsWith(second.photoToken)), true);
   } finally { await app.close(); }

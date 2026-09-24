@@ -32,8 +32,9 @@ const textPath = (value, x, y, size, font, fill, letterSpacing = 0) => {
 function nomineeRecord(db, selector, allowDraft) {
   const where = selector.id ? "n.id=?" : "n.profile_slug=?";
   const row = db.prepare(`SELECT n.id,n.name,n.program,n.level,n.photo_token AS photoToken,n.profile_slug AS profileSlug,n.publication_status AS publicationStatus,n.active,c.name AS category,c.active AS categoryActive,
+    COALESCE(p.photo_position_x,50) AS photoPositionX,COALESCE(p.photo_position_y,50) AS photoPositionY,COALESCE(p.photo_zoom,1) AS photoZoom,
     COALESCE((SELECT nc.description FROM nomination_categories nc WHERE nc.name=c.name LIMIT 1),'') AS categoryDescription
-    FROM nominees n JOIN categories c ON c.id=n.category_id WHERE ${where}`).get(selector.id || selector.slug);
+    FROM nominees n JOIN categories c ON c.id=n.category_id LEFT JOIN award_people p ON p.id=n.person_id WHERE ${where}`).get(selector.id || selector.slug);
   if (!row || (!allowDraft && (!row.active || !row.categoryActive || row.publicationStatus !== "published"))) return null;
   return row;
 }
@@ -41,7 +42,17 @@ function nomineeRecord(db, selector, allowDraft) {
 async function portraitData(item, uploads, width, height, sansBold) {
   const source = item.photoToken && uploads.absolute(item.photoToken);
   if (source && fs.existsSync(source)) {
-    const image = await sharp(source).rotate().resize(width, height, { fit: "cover", position: "centre" }).png().toBuffer();
+    const oriented = await sharp(source).rotate().png().toBuffer();
+    const metadata = await sharp(oriented).metadata();
+    const zoom = Math.max(1, Math.min(2.5, Number(item.photoZoom) || 1));
+    const positionX = Math.max(0, Math.min(100, Number(item.photoPositionX) || 50));
+    const positionY = Math.max(0, Math.min(100, Number(item.photoPositionY) || 50));
+    const scale = Math.max(width / metadata.width, height / metadata.height) * zoom;
+    const resizedWidth = Math.max(width, Math.ceil(metadata.width * scale));
+    const resizedHeight = Math.max(height, Math.ceil(metadata.height * scale));
+    const left = Math.round((resizedWidth - width) * positionX / 100);
+    const top = Math.round((resizedHeight - height) * positionY / 100);
+    const image = await sharp(oriented).resize(resizedWidth, resizedHeight, { fit: "fill" }).extract({ left, top, width, height }).png().toBuffer();
     return `data:image/png;base64,${image.toString("base64")}`;
   }
   const initials = item.name.split(/\s+/).filter(Boolean).slice(0, 2).map(word => word[0]).join("").toUpperCase();

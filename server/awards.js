@@ -23,6 +23,9 @@ function migrateAwards(db) {
   addColumn(db, "nominees", "legacy_unverified_votes INTEGER NOT NULL DEFAULT 0");
   addColumn(db, "nominees", "photo_token TEXT");
   db.exec(`CREATE TABLE IF NOT EXISTS award_people (id INTEGER PRIMARY KEY AUTOINCREMENT, display_name TEXT NOT NULL, normalized_name TEXT NOT NULL UNIQUE, programme TEXT NOT NULL DEFAULT '', level TEXT NOT NULL DEFAULT '', photo_token TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);`);
+  addColumn(db, "award_people", "photo_position_x REAL NOT NULL DEFAULT 50");
+  addColumn(db, "award_people", "photo_position_y REAL NOT NULL DEFAULT 50");
+  addColumn(db, "award_people", "photo_zoom REAL NOT NULL DEFAULT 1");
   addColumn(db, "nominees", "person_id INTEGER REFERENCES award_people(id)");
   addColumn(db, "nominees", "level TEXT");
   addColumn(db, "nominees", "short_message TEXT");

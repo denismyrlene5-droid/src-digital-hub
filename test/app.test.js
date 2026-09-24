@@ -2370,6 +2370,7 @@ test("campaign flyers have exact dimensions, stable category links and public dr
     const categoryNominee=app.db.prepare("SELECT n.id,c.name category FROM nominees n JOIN categories c ON c.id=n.category_id JOIN nomination_categories nc ON nc.name=c.name WHERE n.active=1 AND n.publication_status='published' ORDER BY n.id LIMIT 1").get();
     assert.ok(categoryNominee);
     const originalFlyer=await createNomineeFlyer({db:app.db,uploadDirectory:app.uploadDirectory,publicDirectory:path.join(__dirname,"..","public"),baseUrl:"https://uccwisesrc.com",selector:{id:categoryNominee.id},format:"square",design:"ivory",allowDraft:false});
+    assert.match(originalFlyer.item.categoryGroup,/^(level-300|level-350|general)$/);
     app.db.prepare("UPDATE nomination_categories SET description=? WHERE name=?").run("A distinctive category-specific campaign message for flyer regression testing.",categoryNominee.category);
     const personalizedFlyer=await createNomineeFlyer({db:app.db,uploadDirectory:app.uploadDirectory,publicDirectory:path.join(__dirname,"..","public"),baseUrl:"https://uccwisesrc.com",selector:{id:categoryNominee.id},format:"square",design:"ivory",allowDraft:false});
     assert.notEqual(crypto.createHash("sha256").update(originalFlyer.buffer).digest("hex"),crypto.createHash("sha256").update(personalizedFlyer.buffer).digest("hex"));

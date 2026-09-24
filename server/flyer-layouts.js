@@ -13,6 +13,12 @@ function composePremiumCampaign({ design, theme, width, height, item, logo, trop
     royal: { primary: "#0a3475", footer: "#061b43", bgStart: "#f8f8ef", bgMiddle: "#e2eaf8", bgEnd: "#adc4eb", portraitRadius: tall ? 120 : 90, mirror: true, pattern: "stars" }
   };
   const style = styles[design] || styles.ivory;
+  const inferredGroup = /^Level 300\b/i.test(item.category) ? "level-300" : /^Level 350\b/i.test(item.category) ? "level-350" : "general";
+  const group = {
+    "level-300": { label: "LEVEL 300 AWARDS", accent: "#16734b" },
+    "level-350": { label: "LEVEL 350 AWARDS", accent: "#2457a6" },
+    general: { label: "GENERAL AWARDS", accent: "#9b3048" }
+  }[item.categoryGroup || inferredGroup] || { label: "SRC AWARDS", accent: theme.accent };
   const photoX = style.mirror ? 540 : 65;
   const infoX = style.mirror ? 60 : 590;
   const infoWidth = style.mirror ? 410 : 390;
@@ -58,8 +64,9 @@ function composePremiumCampaign({ design, theme, width, height, item, logo, trop
   const qrY = height - qrSize - (tall ? 90 : 55);
   const mastheadTitle = drawBlock(title, 235, tall ? 132 : 118, tall ? 42 : 34, serif, style.primary, 690, 2, 1.05);
   const steps = dialCode
-    ? textPath("HOW TO VOTE", infoX, processY, tall ? 24 : 17, sansBold, "#ffffff")
-      + textPath(`1  Dial ${dialCode}`, infoX, processY + (tall ? 62 : 40), tall ? 27 : 18, sansBold, style.primary)
+    ? textPath("VOTE VIA USSD", infoX, processY, tall ? 24 : 17, sansBold, "#ffffff")
+      + textPath("ALL NETWORKS", infoX + (tall ? 235 : 238), processY, tall ? 15 : 11, sansBold, theme.accent)
+      + textPath(`1  DIAL ${dialCode}`, infoX, processY + (tall ? 62 : 40), tall ? 27 : 18, sansBold, style.primary)
       + textPath("2  Follow the voting prompts", infoX, processY + (tall ? 112 : 72), tall ? 23 : 16, sans, style.primary)
       + textPath("3  Enter the nominee code", infoX, processY + (tall ? 158 : 102), tall ? 23 : 16, sans, style.primary)
       + textPath("4  Enter your number of votes", infoX, processY + (tall ? 204 : 132), tall ? 23 : 16, sans, style.primary)
@@ -90,11 +97,13 @@ function composePremiumCampaign({ design, theme, width, height, item, logo, trop
     ${textPath("UCC SANDWICH–WISE CAMPUS",235,tall?82:75,tall?21:18,sansBold,theme.accent)}${mastheadTitle.svg}
     <path d="M235 ${tall ? 175 : 155}H915" stroke="${theme.accent}" stroke-width="3"/><circle cx="900" cy="${tall ? 175 : 155}" r="7" fill="${theme.accent}"/>
     <image href="${trophy}" x="935" y="30" width="90" height="155" preserveAspectRatio="xMidYMid meet"/>
+    <rect x="${infoX - 25}" y="${tall ? 285 : 190}" width="${tall ? 235 : 205}" height="${tall ? 34 : 29}" rx="4" fill="${group.accent}"/>${textPath(group.label,infoX-8,tall?309:212,tall?16:13,sansBold,"#ffffff")}
     <rect x="${infoX - 25}" y="${tall ? 330 : 225}" width="${infoWidth + 65}" height="${tall ? 70 : 54}" fill="${style.primary}"/><rect x="${style.mirror ? infoX - 25 : infoX + infoWidth + 20}" y="${tall ? 342 : 235}" width="20" height="${tall ? 70 : 54}" fill="${theme.accent}"/>
     ${textPath("AWARD CATEGORY",infoX,tall?379:263,tall?28:21,sansBold,"#ffffff")}${category.svg}${calloutBlock.svg}
     <rect x="${photoX - 15}" y="${tall ? 375 : 255}" width="505" height="${tall ? 960 : 595}" rx="${style.portraitRadius + 15}" fill="#ffffff" stroke="${theme.accent}" stroke-width="14" filter="url(#shadow)"/>
     <image href="${portrait}" x="${photoX}" y="${tall ? 390 : 270}" width="475" height="${tall ? 930 : 565}" preserveAspectRatio="xMidYMin slice" clip-path="url(#campaignPortrait)"/>
     <rect x="${plateX}" y="${tall ? 1350 : 700}" width="520" height="${tall ? 235 : 155}" rx="16" fill="url(#namePanel)" filter="url(#shadow)"/>
+    <rect x="${plateX}" y="${tall ? 1350 : 700}" width="11" height="${tall ? 235 : 155}" rx="5" fill="${group.accent}"/>
     <rect x="${photoX + 20}" y="${tall ? 1370 : 715}" width="${tall ? 235 : 185}" height="${tall ? 46 : 34}" rx="4" fill="${theme.accent}"/>${textPath("NOMINEE",photoX+40,tall?1402:739,tall?21:16,sansBold,style.primary)}${nomineeName.svg}
     <rect x="${infoX - 25}" y="${processY - (tall ? 46 : 30)}" width="${infoWidth + 65}" height="${tall ? 55 : 38}" fill="${style.primary}"/>${steps}
     ${textPath("NOMINEE CODE",infoX,codeY,tall?20:15,sansBold,"#4b5560")}

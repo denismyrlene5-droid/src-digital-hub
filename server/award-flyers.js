@@ -12,7 +12,7 @@ const designs = Object.freeze({
   emerald: { label:"Emerald Prestige", start:"#032f25", middle:"#075440", end:"#142d30", accent:"#d6b45f", text:"#fffaf0", soft:"#eef4e9", motif:"circles" },
   midnight: { label:"Midnight Gold", start:"#031329", middle:"#102a49", end:"#11182c", accent:"#d3b46d", text:"#ffffff", soft:"#f4efe5", motif:"rays" },
   burgundy: { label:"Burgundy Excellence", start:"#2d0713", middle:"#681c2e", end:"#111d35", accent:"#e0bd72", text:"#fff9f0", soft:"#f6eadf", motif:"arches" },
-  ivory: { label:"Ivory Editorial", start:"#f4eedf", middle:"#fffaf0", end:"#d9c8a4", accent:"#98752e", text:"#173b32", soft:"#4d554f", motif:"editorial" },
+  ivory: { label:"Ceremonial Ivory", start:"#fffdf7", middle:"#f8edd2", end:"#e5c36e", accent:"#c59228", text:"#08243f", soft:"#4b5560", motif:"editorial" },
   royal: { label:"Royal Blue", start:"#061c48", middle:"#123f88", end:"#071832", accent:"#e1bd62", text:"#ffffff", soft:"#e9f0ff", motif:"stars" }
 });
 const cleanFilename = value => String(value || "nominee").normalize("NFKD").replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 70) || "nominee";

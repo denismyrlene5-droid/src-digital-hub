@@ -35,7 +35,7 @@ function composePremiumCampaign({ design, theme, width, height, item, logo, trop
     return { svg: rows.map((row, index) => textPath(row, x, y + index * size * lineHeight, size, font, fill)).join(""), bottom: y + Math.max(0, rows.length - 1) * size * lineHeight, size };
   };
   const category = drawBlock(item.category.toUpperCase(), infoX, tall ? 465 : 320, tall ? 42 : 30, sansBold, style.primary, infoWidth, tall ? 4 : 3, 1.08);
-  const nomineeName = drawBlock(item.name.toUpperCase(), nameX, tall ? 1490 : 795, tall ? 56 : 38, sansBold, "#ffffff", 455, 2, 1.08);
+  const nomineeName = drawBlock(item.name.toUpperCase(), nameX, tall ? 1490 : 795, tall ? 62 : 42, sansBold, "#ffffff", 455, 2, 1.08);
   const statusLabel = state === "open" ? "VOTING IS OPEN" : state === "closed" ? "VOTING CLOSED" : "OFFICIAL NOMINEE";
   const reasons = [
     "Your vote celebrates the confidence, dedication and positive presence I bring to our campus community.",
@@ -49,7 +49,7 @@ function composePremiumCampaign({ design, theme, width, height, item, logo, trop
     "Let your vote recognise the passion, resilience and campus contribution behind this nomination.",
     "Choose positive influence, student spirit and a commitment to representing this category with pride."
   ];
-  const reason = reasons[Math.abs(Number(item.id) || 0) % reasons.length];
+  const reason = String(item.categoryDescription || "").trim() || reasons[Math.abs(Number(item.id) || 0) % reasons.length];
   const reasonY = category.bottom + (tall ? 80 : 50);
   const calloutBlock = drawBlock(reason, infoX, reasonY, tall ? 25 : 17, sans, "#4b5560", infoWidth, tall ? 5 : 4, 1.3);
   const processY = calloutBlock.bottom + (tall ? 100 : 58);
@@ -66,7 +66,7 @@ function composePremiumCampaign({ design, theme, width, height, item, logo, trop
       + textPath("5  Approve the MoMo prompt", infoX, processY + (tall ? 250 : 162), tall ? 23 : 16, sans, style.primary)
     : textPath(statusLabel, infoX, processY, tall ? 25 : 18, sansBold, theme.accent);
   const codeY = dialCode ? processY + (tall ? 320 : 195) : processY + (tall ? 95 : 65);
-  const codeSize = tall ? 54 : 36;
+  const codeSize = tall ? 64 : 44;
   const motif = {
     facets: `<pattern id="campaignPattern" width="150" height="150" patternUnits="userSpaceOnUse"><path d="M0 0L150 40 85 150Z" fill="#ffffff" opacity=".17"/><path d="M150 40L150 150 85 150Z" fill="${theme.accent}" opacity=".09"/></pattern>`,
     laurels: `<pattern id="campaignPattern" width="180" height="180" patternUnits="userSpaceOnUse"><circle cx="90" cy="90" r="62" fill="none" stroke="${style.primary}" stroke-width="2" opacity=".055"/><path d="M45 130Q90 42 135 130" fill="none" stroke="${theme.accent}" stroke-width="6" opacity=".08"/></pattern>`,

@@ -31,7 +31,8 @@ const textPath = (value, x, y, size, font, fill, letterSpacing = 0) => {
 
 function nomineeRecord(db, selector, allowDraft) {
   const where = selector.id ? "n.id=?" : "n.profile_slug=?";
-  const row = db.prepare(`SELECT n.id,n.name,n.program,n.level,n.photo_token AS photoToken,n.profile_slug AS profileSlug,n.publication_status AS publicationStatus,n.active,c.name AS category,c.active AS categoryActive
+  const row = db.prepare(`SELECT n.id,n.name,n.program,n.level,n.photo_token AS photoToken,n.profile_slug AS profileSlug,n.publication_status AS publicationStatus,n.active,c.name AS category,c.active AS categoryActive,
+    COALESCE((SELECT nc.description FROM nomination_categories nc WHERE nc.name=c.name LIMIT 1),'') AS categoryDescription
     FROM nominees n JOIN categories c ON c.id=n.category_id WHERE ${where}`).get(selector.id || selector.slug);
   if (!row || (!allowDraft && (!row.active || !row.categoryActive || row.publicationStatus !== "published"))) return null;
   return row;

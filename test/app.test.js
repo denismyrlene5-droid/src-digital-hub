@@ -211,11 +211,12 @@ test("Awards administration is consolidated into the unified dashboard", async (
     const adminPage = await (await fetch(`${app.base}/admin`)).text();
     assert.match(moduleScript, /id="unifiedAwardsSettings"/);
     assert.match(moduleScript, /Awards launch \/ countdown target/);
-    assert.match(moduleScript, /Payment reconciliation/);
+    assert.match(moduleScript, /Payment recovery/);
+    assert.match(moduleScript, /data-recover-payment/);
     assert.match(moduleScript, /api\/admin\/awards\/settings/);
     assert.doesNotMatch(shellScript, /Awards Admin/);
     assert.doesNotMatch(awardsPage, /id="adminOverlay"/);
-    assert.match(adminPage, /admin-awards\.js\?v=25/);
+    assert.match(adminPage, /admin-awards\.js\?v=26/);
   } finally { await app.close(); }
 });
 
@@ -256,7 +257,7 @@ test("public frontend retains accessibility and responsive spacing polish", asyn
     assert.match(css, /\.urgent-notice-content b\{white-space:normal/);
     assert.match(css, /\.hub-hero h1\{font-size:clamp\(40px,12vw,49px\)/);
     assert.match(css, /\.publicity-metrics\{grid-template-columns:repeat\(4,1fr\)\}/);
-    assert.match(home, /\/hub\.css\?v=34/);
+    assert.match(home, /\/hub\.css\?v=35/);
     assert.match(awards, /\/hub\.css\?v=16/);
   } finally { await app.close(); }
 });

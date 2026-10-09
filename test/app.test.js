@@ -544,7 +544,7 @@ test("Moolre USSD Action API uses server-owned voting data and only credits afte
     response=await callback({new:false,message:"1"});assert.equal((await response.json()).reply,false);
     await new Promise(resolve=>setTimeout(resolve,30));
     assert.equal(paymentRequest.url,"https://sandbox.moolre.com/open/transact/payment");
-    assert.equal(paymentRequest.body.channel,"MTN");assert.equal(paymentRequest.body.payer,"0241235993");assert.equal(paymentRequest.body.amount,"2.00");
+    assert.equal(paymentRequest.body.channel,"13");assert.equal(paymentRequest.body.payer,"0241235993");assert.equal(paymentRequest.body.amount,"2.00");
     assert.match(paymentRequest.body.externalref,/^SRCVOTE-/);assert.equal(paymentRequest.body.accountnumber,"100000001");
     const transaction=app.db.prepare("SELECT nominee_id nomineeId FROM payments WHERE reference=?").get(paymentRequest.body.externalref);
     const before=app.db.prepare("SELECT vote_total total FROM nominees WHERE id=?").get(transaction.nomineeId).total;
@@ -839,6 +839,14 @@ test("Moolre initialization timeouts remain pending instead of becoming confirme
   const provider=createMoolreProvider({apiUser:"merchant-user",publicKey:"public-key",accountNumber:"100000001",businessEmail:"payments@example.edu",fetchImpl:async()=>{throw new TypeError("network timeout");}});
   const result=await provider.initialize({reference:"SRCVOTE-test-reference-123456",currency:"GHS",expectedAmount:300,votes:3,nominee:{id:1}});
   assert.equal(result.ok,false);assert.equal(result.uncertain,true);assert.equal(result.status,"pending");
+});
+
+test("Moolre mobile-money collection sends the documented numeric payment channel codes",async()=>{
+  const channels=[];
+  const provider=createMoolreProvider({apiUser:"merchant-user",publicKey:"public-key",accountNumber:"100000001",businessEmail:"payments@example.edu",fetchImpl:async(_url,options)=>{channels.push(JSON.parse(options.body).channel);return{ok:true,status:200,json:async()=>({status:1,code:"TR099",data:"prompt-reference"})};}});
+  const transaction={reference:"SRCVOTE-test-reference-123456",currency:"GHS",expectedAmount:300};
+  for(const channel of ["MTN","TELECEL","AT"]){const result=await provider.collectMobileMoney(transaction,{payer:"0241235993",channel,sessionId:`session-${channel}`});assert.equal(result.ok,true);}
+  assert.deepEqual(channels,["13","6","7"]);
 });
 
 test("Moolre verification maps statuses and rejects reference, account, currency, and amount anomalies",async()=>{

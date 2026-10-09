@@ -188,7 +188,8 @@ function createMoolreProvider({
         ? `0${normalizedPayer.slice(3)}`
         : normalizedPayer;
       const network = String(channel || "").toUpperCase();
-      if (!/^0\d{9}$/.test(localPayer) || !new Set(["MTN", "TELECEL", "AT"]).has(network)) {
+      const paymentChannel = { MTN: "13", TELECEL: "6", AT: "7" }[network];
+      if (!/^0\d{9}$/.test(localPayer) || !paymentChannel) {
         return { ok: false, status: "failed", message: "The USSD payment details are invalid." };
       }
       let response;
@@ -196,7 +197,7 @@ function createMoolreProvider({
       try {
         response = await request("/open/transact/payment", {
           type: 1,
-          channel: network,
+          channel: paymentChannel,
           currency: transaction.currency,
           payer: localPayer,
           amount: (Number(transaction.expectedAmount) / 100).toFixed(2),
@@ -207,12 +208,16 @@ function createMoolreProvider({
         });
         result = await response.json();
       } catch {
+        console.warn(`[moolre_ussd_charge] reference=${transaction.reference} network=${network} classification=network_or_timeout`);
         return { ok: false, uncertain: true, status: "pending", message: "The payment prompt status is uncertain." };
       }
+      const diagnostic = `reference=${transaction.reference} network=${network} channel=${paymentChannel} httpStatus=${Number(response.status) || 0} topLevelStatus=${Number(result?.status) || 0} code=${safeDiagnosticText(result?.code || "none")} otpRequired=${String(result?.code || "").toUpperCase() === "TP14"}`;
       if (!response.ok || Number(result?.status) !== 1) {
         const uncertain = Number(response.status) >= 500 || Number(response.status) === 429;
+        console.warn(`[moolre_ussd_charge] ${diagnostic} classification=${uncertain ? "uncertain" : "rejected"} message=${safeDiagnosticText(result?.message || "none")}`);
         return { ok: false, uncertain, status: uncertain ? "pending" : "failed", message: "Moolre could not start the payment prompt." };
       }
+      console.info(`[moolre_ussd_charge] ${diagnostic} classification=${String(result?.code || "").toUpperCase() === "TP14" ? "otp_required" : "prompt_requested"}`);
       return {
         ok: true,
         status: "pending",

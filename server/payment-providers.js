@@ -121,11 +121,11 @@ function createMoolreProvider({
     "X-API-USER": credentials.apiUser,
     "X-API-PUBKEY": credentials.publicKey
   };
-  const request = (pathname, body) => fetchImpl(`${baseUrl}${pathname}`, {
+  const request = (pathname, body, requestTimeoutMs = timeoutMs) => fetchImpl(`${baseUrl}${pathname}`, {
     method: "POST",
     headers,
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(timeoutMs)
+    signal: AbortSignal.timeout(requestTimeoutMs)
   });
 
   return {
@@ -194,6 +194,7 @@ function createMoolreProvider({
       }
       let response;
       let result;
+      const startedAt = Date.now();
       try {
         response = await request("/open/transact/payment", {
           type: 1,
@@ -205,13 +206,13 @@ function createMoolreProvider({
           reference: "SRC Awards vote",
           sessionid: String(sessionId || "").slice(0, 128),
           accountnumber: credentials.accountNumber
-        });
+        }, 45_000);
         result = await response.json();
-      } catch {
-        console.warn(`[moolre_ussd_charge] reference=${transaction.reference} network=${network} classification=network_or_timeout`);
+      } catch (error) {
+        console.warn(`[moolre_ussd_charge] reference=${transaction.reference} network=${network} classification=${errorCategory(error,"request")} errorType=${safeDiagnosticText(error?.name || "Error")} errorMessage=${safeDiagnosticText(error?.message || "Request failed")} elapsedMs=${Date.now()-startedAt}`);
         return { ok: false, uncertain: true, status: "pending", message: "The payment prompt status is uncertain." };
       }
-      const diagnostic = `reference=${transaction.reference} network=${network} channel=${paymentChannel} httpStatus=${Number(response.status) || 0} topLevelStatus=${Number(result?.status) || 0} code=${safeDiagnosticText(result?.code || "none")} otpRequired=${String(result?.code || "").toUpperCase() === "TP14"}`;
+      const diagnostic = `reference=${transaction.reference} network=${network} channel=${paymentChannel} httpStatus=${Number(response.status) || 0} topLevelStatus=${Number(result?.status) || 0} code=${safeDiagnosticText(result?.code || "none")} otpRequired=${String(result?.code || "").toUpperCase() === "TP14"} elapsedMs=${Date.now()-startedAt}`;
       if (!response.ok || Number(result?.status) !== 1) {
         const uncertain = Number(response.status) >= 500 || Number(response.status) === 429;
         console.warn(`[moolre_ussd_charge] ${diagnostic} classification=${uncertain ? "uncertain" : "rejected"} message=${safeDiagnosticText(result?.message || "none")}`);

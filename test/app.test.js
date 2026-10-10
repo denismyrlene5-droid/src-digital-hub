@@ -13,7 +13,7 @@ const { createPublicityRepository } = require("../server/publicity");
 const { createPaystackProvider, createMoolreProvider } = require("../server/payment-providers");
 const { createCampusPulseRepository, normalizeGhanaPhone } = require("../server/campus-pulse");
 const { createNominationRepository, pairKey, csvCell } = require("../server/nominations");
-const { createNomineeFlyer } = require("../server/award-flyers");
+const { createNomineeFlyer, createCategoryFlyer } = require("../server/award-flyers");
 const { votingCode, nomineeIdFromCode, ensureVotingCodes } = require("../server/nominee-codes");
 
 test("random numeric voting codes are permanent, unique, and preserve legacy aliases", async()=>{
@@ -216,7 +216,7 @@ test("Awards administration is consolidated into the unified dashboard", async (
     assert.match(moduleScript, /api\/admin\/awards\/settings/);
     assert.doesNotMatch(shellScript, /Awards Admin/);
     assert.doesNotMatch(awardsPage, /id="adminOverlay"/);
-    assert.match(adminPage, /admin-awards\.js\?v=26/);
+    assert.match(adminPage, /admin-awards\.js\?v=27/);
   } finally { await app.close(); }
 });
 
@@ -257,7 +257,7 @@ test("public frontend retains accessibility and responsive spacing polish", asyn
     assert.match(css, /\.urgent-notice-content b\{white-space:normal/);
     assert.match(css, /\.hub-hero h1\{font-size:clamp\(40px,12vw,49px\)/);
     assert.match(css, /\.publicity-metrics\{grid-template-columns:repeat\(4,1fr\)\}/);
-    assert.match(home, /\/hub\.css\?v=35/);
+    assert.match(home, /\/hub\.css\?v=36/);
     assert.match(awards, /\/hub\.css\?v=16/);
   } finally { await app.close(); }
 });
@@ -2362,6 +2362,21 @@ test("administrator merge and unmerge preserve original nomination evidence", as
     assert.equal(app.nominations.listNominees({categoryId}).length,2);
     assert.equal(app.db.prepare("SELECT COUNT(*) count FROM nomination_submissions").get().count,2);
     assert.equal(app.nominations.merges()[0].reversedAt!==null,true);
+  }finally{await app.close();}
+});
+
+test("admin category flyers include every published nominee and expand for larger grids",async()=>{
+  const app=await fixture();
+  try{
+    const category=app.db.prepare("SELECT id FROM categories ORDER BY sort_order,id LIMIT 1").get();
+    const nominees=app.db.prepare("SELECT id FROM nominees ORDER BY id LIMIT 5").all();
+    nominees.forEach((item,index)=>app.db.prepare("UPDATE nominees SET category_id=?,source='manual',publication_status='published',active=1,name=?,photo_token=NULL WHERE id=?").run(category.id,index===0?'A Nominee With An Exceptionally Long Campaign Name':`Category Nominee ${index+1}`,item.id));
+    const generated=await createCategoryFlyer({db:app.db,uploadDirectory:app.uploadDirectory,publicDirectory:path.join(__dirname,"..","public"),baseUrl:"https://uccwisesrc.com",categoryId:category.id});
+    const metadata=await sharp(generated.buffer).metadata();
+    assert.equal(generated.nominees.length,5);assert.equal(generated.missingPhotos.length,5);assert.equal(metadata.width,1600);assert.ok(metadata.height>1080);assert.match(generated.filename,/category-flyer\.png$/);
+    assert.equal((await fetch(`${app.base}/api/admin/awards/categories/${category.id}/flyer`)).status,401);
+    const cookie=await adminCookie(app),response=await fetch(`${app.base}/api/admin/awards/categories/${category.id}/flyer?download=1`,{headers:{Cookie:cookie}});
+    assert.equal(response.status,200);assert.equal(response.headers.get('content-type'),'image/png');assert.equal(response.headers.get('x-nominee-count'),'5');assert.equal(response.headers.get('x-missing-photo-count'),'5');assert.match(response.headers.get('content-disposition'),/attachment/);
   }finally{await app.close();}
 });
 

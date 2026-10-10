@@ -20,7 +20,7 @@ const { createCampusPulseRepository } = require("./campus-pulse");
 const { createCampusPulseRouter } = require("./campus-pulse-routes");
 const { createNominationRepository } = require("./nominations");
 const { createNominationRouter } = require("./nomination-routes");
-const { createNomineeFlyer } = require("./award-flyers");
+const { createNomineeFlyer, createCategoryFlyer } = require("./award-flyers");
 const { createRepository: createNomineePhotoRepository, createRouter: createNomineePhotoRouter } = require("./nominee-photo-submissions");
 const { createMoolreUssdRouter } = require("./moolre-ussd");
 const { scanDailyPayments } = require("./payment-reconciliation");
@@ -350,7 +350,10 @@ function createApp(options = {}) {
   app.get("/api/admin/system-health",auth.requireAnyAdmin,(req,res)=>{let database="healthy",storage="healthy";try{db.prepare("SELECT 1").get();}catch{database="unhealthy";}try{fs.accessSync(uploadDirectory,fs.constants.R_OK|fs.constants.W_OK);}catch{storage="unhealthy";}res.json({environment,database,storage,paymentProvider:activePaymentProvider?.name||"disabled",paymentConfigured:Boolean(activePaymentProvider&&activePaymentProvider.name!=="simulation"),pendingPayments:Number(db.prepare("SELECT COUNT(*) count FROM payments WHERE payment_status='pending'").get().count)});});
   app.get("/api/admin/awards", auth.requireAwardsAdmin, (req,res)=>res.json({
     ...awards.adminData(db,req.query),
-    categories:db.prepare("SELECT c.id,c.name,c.sort_order AS sortOrder,c.active FROM categories c WHERE NOT(c.active=0 AND EXISTS(SELECT 1 FROM nominees d WHERE d.category_id=c.id AND d.source='demo') AND NOT EXISTS(SELECT 1 FROM nominees genuine WHERE genuine.category_id=c.id AND genuine.source<>'demo')) ORDER BY c.sort_order").all(),
+    categories:db.prepare(`SELECT c.id,c.name,c.sort_order AS sortOrder,c.active,
+      COALESCE((SELECT g.name FROM nomination_categories nc JOIN nomination_award_groups g ON g.id=nc.group_id WHERE nc.name=c.name LIMIT 1),
+        CASE WHEN c.name LIKE 'Level 300%' THEN 'Level 300 Awards' WHEN c.name LIKE 'Level 350%' THEN 'Level 350 Awards' ELSE 'General Awards' END) AS groupName
+      FROM categories c WHERE NOT(c.active=0 AND EXISTS(SELECT 1 FROM nominees d WHERE d.category_id=c.id AND d.source='demo') AND NOT EXISTS(SELECT 1 FROM nominees genuine WHERE genuine.category_id=c.id AND genuine.source<>'demo')) ORDER BY c.sort_order`).all(),
     nominees:db.prepare("SELECT n.id,n.name,n.program,n.level,n.short_message AS shortMessage,n.flyer_design AS flyerDesign,n.publication_status AS publicationStatus,n.profile_slug AS profileSlug,n.source,n.code,n.active,n.photo_token AS photoToken,n.vote_total AS voteTotal,n.category_id AS categoryId,n.person_id AS personId,c.name AS category,COALESCE(p.photo_position_x,50) AS photoPositionX,COALESCE(p.photo_position_y,50) AS photoPositionY,COALESCE(p.photo_zoom,1) AS photoZoom FROM nominees n JOIN categories c ON c.id=n.category_id LEFT JOIN award_people p ON p.id=n.person_id WHERE n.source<>'demo' ORDER BY c.sort_order,n.name").all()
   }));
   app.get("/api/admin/awards/moolre-transaction/:id", auth.requireAwardsAdmin, rateLimit({windowMs:60000,max:12}), async(req,res,next)=>{
@@ -442,6 +445,7 @@ function createApp(options = {}) {
   app.get("/api/admin/awards/import-preview",auth.requireAwardsAdmin,(req,res)=>res.json(awards.importPreview(db)));
   app.post("/api/admin/awards/import",auth.requireAwardsAdmin,(req,res,next)=>{try{if(req.body?.confirm!==true)return res.status(400).json({ok:false,message:"Review and explicitly confirm the import first."});res.status(201).json(awards.applyApprovedImport(db,req.admin));}catch(error){next(error);}});
   app.get("/api/admin/awards/nominees/:id/flyer",auth.requireAwardsAdmin,async(req,res,next)=>{try{const base=publicBaseUrl||`${req.protocol}://${req.get("host")}`;const flyer=await createNomineeFlyer({db,uploadDirectory,publicDirectory,baseUrl:base,selector:{id:Number(req.params.id)},format:req.query.format||"status",design:req.query.design,allowDraft:true});res.setHeader("Content-Type","image/png");res.setHeader("Content-Disposition","inline");res.setHeader("Cache-Control","private, no-store");res.send(flyer.buffer);}catch(error){next(error);}});
+  app.get("/api/admin/awards/categories/:id/flyer",auth.requireAwardsAdmin,async(req,res,next)=>{try{const base=publicBaseUrl||`${req.protocol}://${req.get("host")}`;const flyer=await createCategoryFlyer({db,uploadDirectory,publicDirectory,baseUrl:base,categoryId:Number(req.params.id)});res.setHeader("Content-Type","image/png");res.setHeader("Content-Disposition",`${req.query.download==="1"?"attachment":"inline"}; filename="${flyer.filename}"`);res.setHeader("Cache-Control","private, no-store");res.setHeader("X-Nominee-Count",String(flyer.nominees.length));res.setHeader("X-Missing-Photo-Count",String(flyer.missingPhotos.length));res.send(flyer.buffer);}catch(error){next(error);}});
   app.put("/api/admin/awards/settings", auth.requireAwardsAdmin, (req,res,next)=>{
     try { const before=awards.settings(db); const updated=awards.updateSettings(db,req.body||{}); content.audit(req.admin,"awards.settings_updated","awards","settings",`Awards configuration changed from ${before.voting_state} to ${updated.voting_state}`); res.json({ok:true,settings:updated}); }
     catch(error){next(error);}

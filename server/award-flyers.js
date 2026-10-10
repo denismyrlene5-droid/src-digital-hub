@@ -94,4 +94,74 @@ async function createNomineeFlyer({ db, uploadDirectory, publicDirectory, baseUr
   return { buffer, item, targetUrl, design:designName, filename: `${cleanFilename(item.name)}-${cleanFilename(item.category)}-${designName}-${format}.png`, width, height };
 }
 
-module.exports = { createNomineeFlyer, formats, designs };
+function wrappedLines(value, font, size, maxWidth) {
+  const words = String(value || "").trim().split(/\s+/).filter(Boolean); const rows = []; let row = "";
+  for (const word of words) { const candidate = row ? `${row} ${word}` : word; if (row && font.getAdvanceWidth(candidate, size) > maxWidth) { rows.push(row); row = word; } else row = candidate; }
+  if (row) rows.push(row);
+  return rows;
+}
+
+function centeredText(value, centerX, y, size, font, fill, maxWidth, maxLines = 3, lineHeight = 1.15) {
+  let selectedSize = size; let rows = wrappedLines(value, font, selectedSize, maxWidth);
+  while (selectedSize > 18 && (rows.length > maxLines || rows.some(row => font.getAdvanceWidth(row, selectedSize) > maxWidth))) { selectedSize -= 1; rows = wrappedLines(value, font, selectedSize, maxWidth); }
+  rows = rows.slice(0, maxLines);
+  return rows.map((row, index) => textPath(row, centerX - font.getAdvanceWidth(row, selectedSize) / 2, y + index * selectedSize * lineHeight, selectedSize, font, fill)).join("");
+}
+
+async function createCategoryFlyer({ db, uploadDirectory, publicDirectory, baseUrl, categoryId }) {
+  const id = Number(categoryId);
+  if (!Number.isSafeInteger(id) || id < 1) { const error = new Error("Choose a valid award category."); error.status = 400; throw error; }
+  const category = db.prepare(`SELECT c.id,c.name,c.active,
+    COALESCE((SELECT g.name FROM nomination_categories nc JOIN nomination_award_groups g ON g.id=nc.group_id WHERE nc.name=c.name LIMIT 1),
+      CASE WHEN c.name LIKE 'Level 300%' THEN 'Level 300 Awards' WHEN c.name LIKE 'Level 350%' THEN 'Level 350 Awards' ELSE 'General Awards' END) AS groupName
+    FROM categories c WHERE c.id=?`).get(id);
+  if (!category || !category.active) { const error = new Error("Active award category not found."); error.status = 404; throw error; }
+  const nominees = db.prepare(`SELECT n.id,n.name,n.photo_token AS photoToken,n.profile_slug AS profileSlug,
+    COALESCE(p.photo_position_x,50) AS photoPositionX,COALESCE(p.photo_position_y,50) AS photoPositionY,COALESCE(p.photo_zoom,1) AS photoZoom
+    FROM nominees n LEFT JOIN award_people p ON p.id=n.person_id
+    WHERE n.category_id=? AND n.active=1 AND n.publication_status='published' AND n.source<>'demo'
+    ORDER BY n.name COLLATE NOCASE,n.id`).all(id);
+  if (!nominees.length) { const error = new Error("This category has no published nominees to place on a flyer."); error.status = 409; throw error; }
+
+  const width = 1600;
+  const columns = nominees.length === 1 ? 1 : nominees.length <= 4 ? 2 : nominees.length <= 9 ? 3 : 4;
+  const rows = Math.ceil(nominees.length / columns), margin = 86, gap = 34;
+  const cardWidth = Math.floor((width - margin * 2 - gap * (columns - 1)) / columns);
+  const photoWidth = cardWidth - 24, photoHeight = Math.round(photoWidth * 1.08), nameHeight = 132, rowHeight = photoHeight + nameHeight + gap;
+  const headerHeight = 440, footerHeight = 180, height = headerHeight + rows * rowHeight + footerHeight + 30;
+  const sans = flyerFont(publicDirectory, "Lato-Regular.ttf"), sansBold = flyerFont(publicDirectory, "Lato-Bold.ttf"), serif = flyerFont(publicDirectory, "AbrilFatface-Regular.ttf");
+  const logoPath = path.join(publicDirectory, "assets", "ucc-wise-src-logo.jpg");
+  if (!fs.existsSync(logoPath)) { const error = new Error("The official logo asset is unavailable."); error.status = 503; throw error; }
+  const logo = `data:image/jpeg;base64,${fs.readFileSync(logoPath).toString("base64")}`;
+  const uploads = createUploadStore(uploadDirectory), portraits = await Promise.all(nominees.map(item => portraitData(item, uploads, photoWidth, photoHeight, sansBold)));
+  const settings = db.prepare("SELECT voting_state AS votingState,price_per_vote AS pricePerVote,currency FROM awards_settings WHERE id=1").get();
+  const origin = String(baseUrl || "https://uccwisesrc.com").replace(/\/$/, ""), targetUrl = `${origin}/awards#categories`;
+  const stateLabel = settings.votingState === "open" ? "VOTE NOW" : settings.votingState === "paused" ? "VOTING PAUSED" : settings.votingState === "closed" ? "VOTING CLOSED" : "VOTING OPENS SOON";
+  const price = `${String(settings.currency || "GHS").toUpperCase()} ${(Number(settings.pricePerVote || 0) / 100).toFixed(2)} PER VOTE`;
+  const categoryTitle = centeredText(category.name.toUpperCase(), width / 2, 285, 64, serif, "#ffffff", width - 260, 3, 1.02);
+  const cards = nominees.map((item, index) => {
+    const row = Math.floor(index / columns), column = index % columns, itemsInRow = Math.min(columns, nominees.length - row * columns);
+    const rowWidth = itemsInRow * cardWidth + (itemsInRow - 1) * gap, rowStart = (width - rowWidth) / 2;
+    const x = rowStart + column * (cardWidth + gap), y = headerHeight + row * rowHeight;
+    const nameY = y + photoHeight + 69;
+    return `<g><rect x="${x}" y="${y}" width="${cardWidth}" height="${photoHeight + nameHeight}" rx="22" fill="#ffffff" stroke="#c7a653" stroke-width="3"/>
+      <clipPath id="categoryPhoto${index}"><rect x="${x + 12}" y="${y + 12}" width="${photoWidth}" height="${photoHeight}" rx="14"/></clipPath>
+      <image href="${portraits[index]}" x="${x + 12}" y="${y + 12}" width="${photoWidth}" height="${photoHeight}" preserveAspectRatio="xMidYMid slice" clip-path="url(#categoryPhoto${index})"/>
+      <rect x="${x + 12}" y="${y + photoHeight + 12}" width="${photoWidth}" height="${nameHeight - 24}" rx="14" fill="#081d38"/>
+      ${centeredText(item.name.toUpperCase(), x + cardWidth / 2, nameY, columns >= 4 ? 31 : 36, sansBold, "#ffffff", cardWidth - 54, 2, 1.08)}</g>`;
+  }).join("");
+  const footerY = height - footerHeight;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><defs><linearGradient id="categoryHeader" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#06162d"/><stop offset="1" stop-color="#0d3159"/></linearGradient><pattern id="categoryPattern" width="120" height="120" patternUnits="userSpaceOnUse"><path d="M0 120L120 0M60 120L120 60" stroke="#d0ad55" stroke-width="2" opacity=".08"/></pattern></defs>
+    <rect width="100%" height="100%" fill="#f5f1e7"/><rect width="100%" height="${headerHeight - 35}" fill="url(#categoryHeader)"/><rect width="100%" height="${headerHeight - 35}" fill="url(#categoryPattern)"/>
+    <rect x="70" y="52" width="138" height="148" rx="16" fill="#ffffff"/><image href="${logo}" x="82" y="64" width="114" height="124" preserveAspectRatio="xMidYMid meet"/>
+    ${textPath("UCC SANDWICH–WISE CAMPUS",245,95,25,sansBold,"#d4b35d",1.8)}${textPath("SRC AWARDS 2026",245,164,55,serif,"#ffffff")}
+    <rect x="245" y="197" width="${Math.min(550, Math.max(260, sansBold.getAdvanceWidth(category.groupName.toUpperCase(), 24) + 54))}" height="50" rx="25" fill="#d0ad55"/>${textPath(category.groupName.toUpperCase(),272,231,24,sansBold,"#071a33",1.1)}
+    ${categoryTitle}<path d="M120 385H1480" stroke="#d0ad55" stroke-width="3"/><circle cx="800" cy="385" r="7" fill="#d0ad55"/>
+    ${cards}<rect x="0" y="${footerY}" width="1600" height="${footerHeight}" fill="#06162d"/><path d="M0 ${footerY}H1600" stroke="#d0ad55" stroke-width="8"/>
+    ${textPath(stateLabel,80,footerY + 76,35,sansBold,"#d4b35d",1.4)}${settings.votingState === "open" ? textPath(price,80,footerY + 124,23,sans,"#ffffff") : ""}
+    ${textPath("VIEW ALL NOMINEES",930,footerY + 68,18,sansBold,"#d4b35d",1.4)}${textPath("uccwisesrc.com/awards",930,footerY + 119,31,sansBold,"#ffffff")}</svg>`;
+  const buffer = await sharp(Buffer.from(svg)).png({ compressionLevel: 9 }).toBuffer();
+  return { buffer, category, nominees, missingPhotos: nominees.filter(item => !item.photoToken).map(item => item.name), targetUrl, width, height, filename: `${cleanFilename(category.groupName)}-${cleanFilename(category.name)}-category-flyer.png` };
+}
+
+module.exports = { createNomineeFlyer, createCategoryFlyer, formats, designs };

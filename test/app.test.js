@@ -216,7 +216,7 @@ test("Awards administration is consolidated into the unified dashboard", async (
     assert.match(moduleScript, /api\/admin\/awards\/settings/);
     assert.doesNotMatch(shellScript, /Awards Admin/);
     assert.doesNotMatch(awardsPage, /id="adminOverlay"/);
-    assert.match(adminPage, /admin-awards\.js\?v=28/);
+    assert.match(adminPage, /admin-awards\.js\?v=29/);
   } finally { await app.close(); }
 });
 
@@ -257,7 +257,7 @@ test("public frontend retains accessibility and responsive spacing polish", asyn
     assert.match(css, /\.urgent-notice-content b\{white-space:normal/);
     assert.match(css, /\.hub-hero h1\{font-size:clamp\(40px,12vw,49px\)/);
     assert.match(css, /\.publicity-metrics\{grid-template-columns:repeat\(4,1fr\)\}/);
-    assert.match(home, /\/hub\.css\?v=36/);
+    assert.match(home, /\/hub\.css\?v=37/);
     assert.match(awards, /\/hub\.css\?v=16/);
   } finally { await app.close(); }
 });
@@ -2371,12 +2371,18 @@ test("admin category flyers include every published nominee and expand for large
     const category=app.db.prepare("SELECT id FROM categories ORDER BY sort_order,id LIMIT 1").get();
     const nominees=app.db.prepare("SELECT id FROM nominees ORDER BY id LIMIT 5").all();
     nominees.forEach((item,index)=>app.db.prepare("UPDATE nominees SET category_id=?,source='manual',publication_status='published',active=1,name=?,photo_token=NULL WHERE id=?").run(category.id,index===0?'A Nominee With An Exceptionally Long Campaign Name':`Category Nominee ${index+1}`,item.id));
-    const generated=await createCategoryFlyer({db:app.db,uploadDirectory:app.uploadDirectory,publicDirectory:path.join(__dirname,"..","public"),baseUrl:"https://uccwisesrc.com",categoryId:category.id});
+    const generated=await createCategoryFlyer({db:app.db,uploadDirectory:app.uploadDirectory,publicDirectory:path.join(__dirname,"..","public"),baseUrl:"https://uccwisesrc.com",categoryId:category.id,design:"emerald"});
     const metadata=await sharp(generated.buffer).metadata();
-    assert.equal(generated.nominees.length,5);assert.equal(generated.missingPhotos.length,5);assert.equal(metadata.width,1600);assert.ok(metadata.height>1080);assert.match(generated.filename,/category-flyer\.png$/);
+    assert.equal(generated.nominees.length,5);assert.equal(generated.missingPhotos.length,5);assert.equal(metadata.width,1600);assert.ok(metadata.height>1080);assert.match(generated.filename,/emerald-campaign-flyer\.png$/);
     assert.equal((await fetch(`${app.base}/api/admin/awards/categories/${category.id}/flyer`)).status,401);
     const cookie=await adminCookie(app),response=await fetch(`${app.base}/api/admin/awards/categories/${category.id}/flyer?download=1`,{headers:{Cookie:cookie}});
     assert.equal(response.status,200);assert.equal(response.headers.get('content-type'),'image/png');assert.equal(response.headers.get('x-nominee-count'),'5');assert.equal(response.headers.get('x-missing-photo-count'),'5');assert.match(response.headers.get('content-disposition'),/attachment/);
+    assert.equal((await fetch(`${app.base}/api/admin/awards/categories/${category.id}/flyer?mode=results`,{headers:{Cookie:cookie}})).status,409);
+    app.db.prepare("UPDATE nominees SET vote_total=id*10 WHERE category_id=?").run(category.id);
+    app.db.prepare("UPDATE awards_settings SET voting_state='closed',public_results_visible=1 WHERE id=1").run();
+    const hashes=[];for(const design of ["navy","emerald","cream","spotlight","geometric"]){const flyer=await createCategoryFlyer({db:app.db,uploadDirectory:app.uploadDirectory,publicDirectory:path.join(__dirname,"..","public"),baseUrl:"https://uccwisesrc.com",categoryId:category.id,design,mode:"results"});hashes.push(crypto.createHash("sha256").update(flyer.buffer).digest("hex"));}
+    assert.equal(new Set(hashes).size,5);
+    const resultsResponse=await fetch(`${app.base}/api/admin/awards/categories/${category.id}/flyer?mode=results&design=spotlight`,{headers:{Cookie:cookie}});assert.equal(resultsResponse.status,200);assert.equal(resultsResponse.headers.get("x-flyer-mode"),"results");assert.equal(resultsResponse.headers.get("x-flyer-design"),"spotlight");
   }finally{await app.close();}
 });
 

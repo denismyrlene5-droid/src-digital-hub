@@ -233,8 +233,10 @@ function createMoolreUssdRouter({ db, awards, provider, enabled, callbackToken, 
     if (!enabled) return res.status(503).json({ message: "USSD voting is unavailable.", reply: false });
     if (!safeEqual(req.query.token, callbackToken)) return res.status(401).json({ message: "USSD callback authorization failed.", reply: false });
     const result = handle(req.body);
+    // Begin the collection request while Moolre's USSD session is still active.
+    // Do not await it: the callback must immediately close the menu so the MoMo prompt can appear.
+    if (result.payment) initiate(result.payment).catch(error => logger.error?.(`[moolre-ussd] payment_prompt_error type=${error?.name || "Error"}`));
     res.json(result.response);
-    if (result.payment) globalThis.setImmediate(() => initiate(result.payment).catch(error => logger.error?.(`[moolre-ussd] payment_prompt_error type=${error?.name || "Error"}`)));
   });
 
   return router;

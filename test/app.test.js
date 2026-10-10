@@ -544,7 +544,7 @@ test("Moolre USSD Action API uses server-owned voting data and only credits afte
     response=await callback({new:false,message:"1"});assert.equal((await response.json()).reply,false);
     await new Promise(resolve=>setTimeout(resolve,30));
     assert.equal(paymentRequest.url,"https://sandbox.moolre.com/open/transact/payment");
-    assert.equal(paymentRequest.body.channel,"13");assert.equal(paymentRequest.body.payer,"0241235993");assert.equal(paymentRequest.body.amount,"2.00");
+    assert.equal(paymentRequest.body.channel,"13");assert.equal(paymentRequest.body.payer,"0241235993");assert.equal(paymentRequest.body.amount,"2.00");assert.equal(paymentRequest.body.sessionid,"3-17074657982460137");
     assert.match(paymentRequest.body.externalref,/^SRCVOTE-/);assert.equal(paymentRequest.body.accountnumber,"100000001");
     const transaction=app.db.prepare("SELECT nominee_id nomineeId FROM payments WHERE reference=?").get(paymentRequest.body.externalref);
     const before=app.db.prepare("SELECT vote_total total FROM nominees WHERE id=?").get(transaction.nomineeId).total;

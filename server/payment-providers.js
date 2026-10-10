@@ -212,7 +212,7 @@ function createMoolreProvider({
         console.warn(`[moolre_ussd_charge] reference=${transaction.reference} network=${network} classification=${errorCategory(error,"request")} errorType=${safeDiagnosticText(error?.name || "Error")} errorMessage=${safeDiagnosticText(error?.message || "Request failed")} elapsedMs=${Date.now()-startedAt}`);
         return { ok: false, uncertain: true, status: "pending", message: "The payment prompt status is uncertain." };
       }
-      const diagnostic = `reference=${transaction.reference} network=${network} channel=${paymentChannel} httpStatus=${Number(response.status) || 0} topLevelStatus=${Number(result?.status) || 0} code=${safeDiagnosticText(result?.code || "none")} otpRequired=${String(result?.code || "").toUpperCase() === "TP14"} elapsedMs=${Date.now()-startedAt}`;
+      const diagnostic = `reference=${transaction.reference} network=${network} channel=${paymentChannel} sessionAttached=${Boolean(sessionId)} httpStatus=${Number(response.status) || 0} topLevelStatus=${Number(result?.status) || 0} code=${safeDiagnosticText(result?.code || "none")} otpRequired=${String(result?.code || "").toUpperCase() === "TP14"} elapsedMs=${Date.now()-startedAt}`;
       if (!response.ok || Number(result?.status) !== 1) {
         const uncertain = Number(response.status) >= 500 || Number(response.status) === 429;
         console.warn(`[moolre_ussd_charge] ${diagnostic} classification=${uncertain ? "uncertain" : "rejected"} message=${safeDiagnosticText(result?.message || "none")}`);

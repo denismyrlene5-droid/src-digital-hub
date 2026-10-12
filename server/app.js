@@ -127,6 +127,7 @@ function createApp(options = {}) {
   const securityEvent=(event,details={})=>console.warn(JSON.stringify({timestamp:new Date().toISOString(),category:"security",event,...details}));
   const auth = createAuth({ db, adminUsers, adminPassword, publicityAdminPassword, studentAffairsAdminPassword, awardsAdminPassword, contentEditorPassword, secureCookies: production || staging, onSecurityEvent:securityEvent });
   const paymentLimit = rateLimit({ windowMs: 60_000, max: 20 });
+  const paymentCallbackLimit = rateLimit({ windowMs: 60_000, max: 120 });
   const campusPulseSubmissionLimit = rateLimit({ windowMs: 10 * 60_000, max: 12 });
   const nominationSubmissionLimit = rateLimit({ windowMs: 10 * 60_000, max: 10 });
   const requireSameOrigin=(req,res,next)=>{
@@ -196,7 +197,7 @@ function createApp(options = {}) {
   app.use("/api/admin/awards", requireSameOrigin, createAwardsAdminRouter({ db, uploadDirectory, requireAwardsAdmin: auth.requireAwardsAdmin, audit: content.audit }));
   app.use(express.json({ limit: "32kb" }));
 
-  app.post("/api/moolre/callback", async (req,res,next)=>{
+  app.post("/api/moolre/callback", paymentCallbackLimit, async (req,res,next)=>{
     try{
       const reference=String(req.body?.data?.externalref||"");
       if(!/^SRCVOTE-[A-Za-z0-9_-]{20,60}$/.test(reference))return res.status(400).json({ok:false});

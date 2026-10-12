@@ -883,6 +883,19 @@ test("Moolre callbacks always re-verify and concurrent duplicates credit votes o
   }finally{await app.close();}
 });
 
+test("Moolre callback endpoint rate-limits verification amplification",async()=>{
+  const app=await fixture();
+  try{
+    const request=()=>fetch(`${app.base}/api/moolre/callback`,{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({data:{externalref:"invalid"}})
+    });
+    for(let index=0;index<120;index+=1)assert.equal((await request()).status,400);
+    assert.equal((await request()).status,429);
+  }finally{await app.close();}
+});
+
 test("Moolre amount mismatch and unverified callback claims never credit votes",async()=>{
   const config={moolreApiUser:"merchant-user",moolrePublicKey:"public-key",moolreAccountNumber:"100000001",moolreBusinessEmail:"payments@example.edu"};
   let reference="",verificationStatus=0,amount="3.00";

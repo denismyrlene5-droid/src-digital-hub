@@ -11,10 +11,10 @@ const RICH_CONTENT_MAX_LENGTH = 500000;
 const RICH_CONTENT_TAGS = new Set(["p", "h2", "h3", "strong", "em", "ul", "ol", "li", "a", "br"]);
 const AWARDS_NOMINATION_NOTICE = Object.freeze({
   slug: "important-verify-official-src-information",
-  title: "SRC Awards nominations are now open",
-  summary: "Nominate yourself or someone deserving of recognition. Nominations are free and close on 12 September 2026 at 1:00 a.m.",
-  body: "Nominate yourself or someone deserving of recognition in the UCC Sandwich – WISE Campus SRC Awards. Nominations are free and close on 12 September 2026 at 1:00 a.m.",
-  actionUrl: "/nominations"
+  title: "SRC Awards voting is now open",
+  summary: "Support your favourite nominees in the UCC Sandwich – WISE Campus SRC Awards.",
+  body: "Voting is now open for the UCC Sandwich – WISE Campus SRC Awards. Visit the Awards page to choose a category and support your favourite nominee.",
+  actionUrl: "/awards"
 });
 const WOMEN_EMPOWERMENT_SEMINAR = Object.freeze({
   migrationId: "2026-09-online-women-empowerment-seminar",
@@ -266,7 +266,7 @@ function validateAnnouncement(input) {
 
 function migrateAwardsNominationNotice(db) {
   db.prepare(`UPDATE announcements SET title=?,summary=?,body=?,full_content=?,external_url=?,updated_at=CURRENT_TIMESTAMP
-    WHERE slug=? AND author_role='system_seed' AND (title=? OR summary=?)`).run(
+    WHERE slug=? AND (title IN (?,?) OR summary=?)`).run(
       AWARDS_NOMINATION_NOTICE.title,
       AWARDS_NOMINATION_NOTICE.summary,
       AWARDS_NOMINATION_NOTICE.body,
@@ -274,6 +274,7 @@ function migrateAwardsNominationNotice(db) {
       AWARDS_NOMINATION_NOTICE.actionUrl,
       AWARDS_NOMINATION_NOTICE.slug,
       "Official: SRC Awards 2026 countdown begins",
+      "SRC Awards nominations are now open",
       "The countdown to SRC Awards 2026 has begun at UCC Sandwich – WISE Campus."
     );
 }
@@ -601,7 +602,7 @@ function seedPublicity(db) {
     db.prepare(`INSERT INTO announcements(title,slug,summary,body,category,status,urgent,featured,author_role)
       VALUES(?,?,?,?,?,'draft',0,0,'system_seed')`).run("Draft publicity workflow example", "draft-publicity-workflow-example", "This draft exists to demonstrate that unpublished announcements remain private.", "This record is intentionally stored as a draft so administrators can test the publicity workflow without exposing unfinished content on public pages.", "General");
   }
-  db.prepare("UPDATE announcements SET title=?,summary=?,body=?,category=? WHERE slug='important-verify-official-src-information' AND summary LIKE '%placeholders%'").run("Official: SRC Awards 2026 countdown begins","The countdown to SRC Awards 2026 has begun at UCC Sandwich – WISE Campus.","Recognition. Excellence. Impact. The official SRC Digital Hub will share verified Awards updates as the campus counts down to 15 September 2026.","SRC");
+  db.prepare("UPDATE announcements SET title=?,summary=?,body=?,full_content=?,external_url=?,category=? WHERE slug='important-verify-official-src-information' AND summary LIKE '%placeholders%'").run(AWARDS_NOMINATION_NOTICE.title,AWARDS_NOMINATION_NOTICE.summary,AWARDS_NOMINATION_NOTICE.body,`<p>${AWARDS_NOMINATION_NOTICE.body}</p>`,AWARDS_NOMINATION_NOTICE.actionUrl,"SRC");
   if (!db.prepare("SELECT COUNT(*) AS count FROM events").get().count) {
     const insert = db.prepare(`INSERT INTO events(title,slug,short_description,description,event_date,start_time,end_time,venue,organizer,category,featured,status,author_role)
       VALUES(?,?,?,?,?,?,?,?,?,?,?,?, 'system_seed')`);

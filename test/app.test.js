@@ -1643,11 +1643,14 @@ test("public settings contain no secrets and only Super Admin can update them", 
     const publicity = await adminCookie(app, "publicity-password");
     assert.equal((await fetch(`${app.base}/api/content/admin/settings`, { headers: { Cookie: publicity } })).status, 403);
     const superCookie = await adminCookie(app);
-    const updated = await fetch(`${app.base}/api/content/admin/settings`, { method: "PUT", headers: { "Content-Type": "application/json", Cookie: superCookie }, body: JSON.stringify({ srcName: "Development SRC", activeTerm: "2026/2027" }) });
+    const updated = await fetch(`${app.base}/api/content/admin/settings`, { method: "PUT", headers: { "Content-Type": "application/json", Cookie: superCookie }, body: JSON.stringify({ srcName: "Development SRC", activeTerm: "2026/2027", officialEmail: "private@example.edu" }) });
     assert.equal(updated.status, 200);
     const publicSettings = await (await fetch(`${app.base}/api/content/settings`)).json();
     assert.equal(publicSettings.settings.srcName, "Development SRC");
     assert.equal(publicSettings.settings.activeTerm, "2026/2027");
+    assert.equal("officialEmail" in publicSettings.settings, false);
+    const adminSettings = await (await fetch(`${app.base}/api/content/admin/settings`, { headers: { Cookie: superCookie } })).json();
+    assert.equal(adminSettings.settings.officialEmail, "private@example.edu");
   } finally { await app.close(); }
 });
 
@@ -2209,17 +2212,17 @@ test("nomination campaign notice and category descriptions migrate without chang
   const app = await fixture();
   try {
     const urgent = (await (await fetch(`${app.base}/api/publicity/urgent`)).json()).announcement;
-    assert.equal(urgent.title, "SRC Awards nominations are now open");
-    assert.equal(urgent.summary, "Nominate yourself or someone deserving of recognition. Nominations are free and close on 12 September 2026 at 1:00 a.m.");
-    assert.equal(urgent.externalUrl, "/nominations");
+    assert.equal(urgent.title, "SRC Awards voting is now open");
+    assert.equal(urgent.summary, "Support your favourite nominees in the UCC Sandwich – WISE Campus SRC Awards.");
+    assert.equal(urgent.externalUrl, "/awards");
     const urgentId = urgent.id;
     app.db.prepare("UPDATE announcements SET title=?,summary=?,body=?,full_content='',external_url=NULL WHERE id=?").run("Official: SRC Awards 2026 countdown begins", "The countdown to SRC Awards 2026 has begun at UCC Sandwich – WISE Campus.", "Legacy Awards countdown copy.", urgentId);
     createPublicityRepository(app.db, { seed: false });
     const migratedUrgent = app.db.prepare("SELECT id,title,summary,external_url externalUrl FROM announcements WHERE id=?").get(urgentId);
     assert.equal(migratedUrgent.id, urgentId);
-    assert.equal(migratedUrgent.title, "SRC Awards nominations are now open");
-    assert.equal(migratedUrgent.summary, "Nominate yourself or someone deserving of recognition. Nominations are free and close on 12 September 2026 at 1:00 a.m.");
-    assert.equal(migratedUrgent.externalUrl, "/nominations");
+    assert.equal(migratedUrgent.title, "SRC Awards voting is now open");
+    assert.equal(migratedUrgent.summary, "Support your favourite nominees in the UCC Sandwich – WISE Campus SRC Awards.");
+    assert.equal(migratedUrgent.externalUrl, "/awards");
 
     const categoryId = app.db.prepare("SELECT id FROM nomination_categories WHERE public_nominations=1 ORDER BY id LIMIT 1").get().id;
     app.db.prepare("UPDATE nomination_phases SET status='open',opens_at=?,closes_at=?").run(new Date(Date.now()-60_000).toISOString(), new Date(Date.now()+3_600_000).toISOString());

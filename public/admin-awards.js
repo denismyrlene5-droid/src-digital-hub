@@ -60,6 +60,7 @@
       votes.querySelector('[data-vote-search]').addEventListener('input',event=>{const query=event.target.value.trim().toLowerCase();rows.forEach((row,index)=>{const item=overview.nominees[index];row.hidden=!!item&&!`${item.name} ${item.category}`.toLowerCase().includes(query);});});
     }
     const reconciliation=host.querySelector('#awardsTransactionFilters').closest('.cms-admin-section');
+    reconciliation.id='payment-reconciliation';
     const categoryManagement=[...host.querySelectorAll('.cms-admin-section')].find(section=>section.querySelector('h3')?.textContent==='Categories');
     const categoryFlyer=document.createElement('section');categoryFlyer.className='hub-card cms-admin-section category-flyer-studio';
     const awardGroups=[...new Set(data.categories.filter(item=>item.active).map(item=>item.groupName||'General Awards'))];

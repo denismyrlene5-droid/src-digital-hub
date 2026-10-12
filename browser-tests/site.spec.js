@@ -71,7 +71,7 @@ test("payment reconciliation searches Moolre IDs and paginates on desktop and mo
   await expect(table.locator('tbody tr')).toHaveCount(1);
   await expect(table).toContainText('MLR-SAMPLE-26');
   await form.getByPlaceholder('SRCVOTE, Moolre ID, or nominee name').fill('MLR-SAMPLE-26');
-  await form.getByRole('button',{name:'Apply filters'}).click();
+  await form.getByRole('button',{name:'Search payments'}).click();
   await expect(pager).toContainText('1 matching payment');
   await expect(table).toContainText('DDT Example');
   expect(await page.evaluate(()=>document.documentElement.scrollWidth-document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
@@ -373,9 +373,9 @@ test("PDF nominee import preview and published nominee cards work on mobile",asy
   await page.getByRole("button",{name:"Preview import"}).click();await expect(page.getByText("95",{exact:true}).first()).toBeVisible();await expect(page.getByText("Needs PDF review")).toHaveCount(0);
   page.once("dialog",dialog=>dialog.accept());await page.getByRole("button",{name:/Import \d+ draft entries/}).click();
   const admin=await (await page.request.get("/api/admin/awards")).json(),draft=admin.nominees.find(item=>item.source==="pdf_import");
-  expect(draft).toBeTruthy();const draftRow=page.locator(`[data-edit-nominee="${draft.id}"]`).locator("xpath=ancestor::tr");await draftRow.getByRole("button",{name:"Copy photo link"}).click();const linkDialog=page.getByRole("dialog",{name:"Private nominee photo link"});await expect(linkDialog.locator("[data-private-link]")).toHaveValue(/\/nominee-photo\/[A-Za-z0-9_-]{40,}/);await linkDialog.getByRole("button",{name:"Close"}).click();await draftRow.getByRole("button",{name:"Preview flyer"}).click();const flyerDialog=page.getByRole("dialog");await expect(flyerDialog.getByAltText("Private campaign flyer preview")).toBeVisible();await expect(flyerDialog.getByLabel("Design style").locator("option")).toHaveCount(6);await flyerDialog.getByLabel("Design style").selectOption("burgundy");await expect.poll(()=>flyerDialog.getByAltText("Private campaign flyer preview").evaluate(image=>image.naturalWidth)).toBe(1080);await flyerDialog.getByRole("button",{name:"Close"}).click();await page.request.put(`/api/admin/awards/nominees/${draft.id}`,{data:{name:draft.name,program:draft.program,code:draft.code,categoryId:draft.categoryId,level:draft.level,publicationStatus:"published",active:true}});
+  expect(draft).toBeTruthy();const draftRow=page.locator(`[data-edit-nominee="${draft.id}"]`).locator("xpath=ancestor::tr");await draftRow.getByRole("button",{name:"Copy photo link"}).click();const linkDialog=page.getByRole("dialog",{name:"Private nominee photo link"});await expect(linkDialog.locator("[data-private-link]")).toHaveValue(/\/nominee-photo\/[A-Za-z0-9_-]{40,}/);await linkDialog.getByRole("button",{name:"Close"}).click();await draftRow.getByRole("button",{name:"Flyer Studio"}).click();const flyerDialog=page.getByRole("dialog");await expect(flyerDialog.getByAltText("Burgundy Excellence flyer preview")).toBeVisible();await expect(flyerDialog.locator("[data-flyer-choice]")).toHaveCount(5);await flyerDialog.locator('[data-flyer-choice="burgundy"]').click();await expect.poll(()=>flyerDialog.getByAltText("Burgundy Excellence flyer preview").evaluate(image=>image.naturalWidth)).toBe(1080);await flyerDialog.getByRole("button",{name:"Close"}).click();await page.request.put(`/api/admin/awards/nominees/${draft.id}`,{data:{name:draft.name,program:draft.program,code:draft.code,categoryId:draft.categoryId,level:draft.level,publicationStatus:"published",active:true}});
   await page.goto("/awards");await expect(page.getByRole("heading",{name:"Meet Your Nominees",exact:true})).toBeVisible();await expect(page.getByRole("heading",{name:draft.name})).toBeVisible();await expect(page.locator("#countdown")).toHaveCount(0);expect(await page.evaluate(()=>document.documentElement.scrollWidth-document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
-  await page.getByRole("link",{name:draft.name}).click();await expect(page).toHaveURL(new RegExp(`/awards/nominees/${draft.profileSlug}$`));await expect(page.getByRole("heading",{name:draft.name})).toBeVisible();await page.getByRole("button",{name:"Square post"}).click();const preview=page.getByAltText("Campaign flyer preview");await expect(preview).toBeVisible();await expect.poll(()=>preview.evaluate(image=>image.naturalWidth)).toBe(1080);await expect.poll(()=>preview.evaluate(image=>image.naturalHeight)).toBe(1080);
+  await page.getByRole("link",{name:draft.name}).click();await expect(page).toHaveURL(new RegExp(`/awards/nominees/${draft.profileSlug}$`));await expect(page.getByRole("heading",{name:draft.name,level:1})).toBeVisible();await page.getByRole("button",{name:"Square post"}).click();const preview=page.getByAltText("Campaign flyer preview");await expect(preview).toBeVisible();await expect.poll(()=>preview.evaluate(image=>image.naturalWidth)).toBe(1080);await expect.poll(()=>preview.evaluate(image=>image.naturalHeight)).toBe(1080);
 });
 
 test("Women Empowerment Seminar is responsive across homepage, publicity, details, and Admin", async ({ page }, testInfo) => {
@@ -462,9 +462,9 @@ test("open nominations are promoted only while the authoritative phase accepts s
       await expect(homeHero.getByRole("link", { name: "Latest Updates" })).toBeVisible();
       await expect(homeHero.getByRole("link", { name: "Explore Events" })).toHaveCount(0);
       const urgent = page.locator(".urgent-notice");
-      await expect(urgent.getByText("SRC Awards nominations are now open")).toBeVisible();
-      await expect(urgent.getByText("Nominate yourself or someone deserving of recognition. Nominations are free and close on 12 September 2026 at 1:00 a.m.")).toBeVisible();
-      await expect(urgent.getByRole("link", { name: "Nominate now" })).toHaveAttribute("href", "/nominations");
+      await expect(urgent.getByText("SRC Awards voting is now open")).toBeVisible();
+      await expect(urgent.getByText("Support your favourite nominees in the UCC Sandwich – WISE Campus SRC Awards.")).toBeVisible();
+      await expect(urgent.getByRole("link", { name: "Vote now" })).toHaveAttribute("href", "/awards");
       const awardsQuickAccess = page.locator(".quick-card").filter({ has: page.getByRole("heading", { name: "SRC Awards" }) });
       await expect(awardsQuickAccess.getByText("Submit a free nomination")).toBeVisible();
       await expect(awardsQuickAccess).toHaveAttribute("href", "/nominations");

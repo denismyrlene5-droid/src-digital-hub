@@ -5,11 +5,11 @@ function createContentRouter({ repository, uploadDirectory, requireAnyAdmin, req
   const router = express.Router(); const uploads = createUploadStore(uploadDirectory);
   const handle = fn => async (req,res,next) => { try { await fn(req,res,next); } catch(error) { next(error); } };
   const log = (req,action,type,id,summary) => repository.audit(req.admin,action,type,id,summary);
-  router.get("/settings", (req,res) => res.json({ settings: repository.settings() }));
+  router.get("/settings", (req,res) => res.json({ settings: repository.publicSettings() }));
   router.get("/media/featured", (req,res) => res.json({ albums: repository.featuredAlbums() }));
   router.get("/media", handle((req,res) => res.json({ categories: repository.categories, albums: repository.listAlbumsPublic(req.query) })));
   router.get("/media/:slug", handle((req,res) => { const album=repository.getAlbumPublic(req.params.slug); if(!album)return res.status(404).json({ok:false,message:"Album not found."}); res.json({album}); }));
-  router.get("/executives", handle((req,res)=>res.json({settings:repository.settings(),executives:repository.listExecutivesPublic(req.query.term)})));
+  router.get("/executives", handle((req,res)=>res.json({settings:repository.publicSettings(),executives:repository.listExecutivesPublic(req.query.term)})));
   router.get("/executives/:slug", handle((req,res)=>{const executive=repository.getExecutivePublic(req.params.slug);if(!executive)return res.status(404).json({ok:false,message:"Executive not found."});res.json({executive});}));
   router.get("/files/:token", handle((req,res)=>{const token=repository.publicFile(req.params.token);if(!token)return res.sendStatus(404);res.setHeader("Cache-Control","public, max-age=3600");res.sendFile(uploads.absolute(token));}));
 

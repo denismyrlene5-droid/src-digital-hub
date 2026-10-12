@@ -471,7 +471,7 @@ function createApp(options = {}) {
     return String(value || "").replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   }
   function injectCriticalPublicData(html,{includeHomeFeed=false,includeNominations=false}={}){
-    const settings=content.settings();
+    const settings=content.publicSettings();
     const bootstrap={settings};
     if(includeHomeFeed)bootstrap.homeFeed=publicity.homeFeed();
     if(includeNominations)bootstrap.nominations=nominations.publicData();

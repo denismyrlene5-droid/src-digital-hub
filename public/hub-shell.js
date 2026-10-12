@@ -82,7 +82,7 @@
     copy.append(title, summary);
     const link = document.createElement("a");
     link.href = announcement.externalUrl || `/announcements/${encodeURIComponent(announcement.slug)}`;
-    link.textContent = announcement.externalUrl === "/nominations" ? "Nominate now" : announcement.externalUrl ? "Open link" : "Read notice";
+    link.textContent = announcement.externalUrl === "/nominations" ? "Nominate now" : announcement.externalUrl === "/awards" ? "Vote now" : announcement.externalUrl ? "Open link" : "Read notice";
     const close = document.createElement("button");
     close.type = "button";
     close.setAttribute("aria-label", "Dismiss urgent notice");

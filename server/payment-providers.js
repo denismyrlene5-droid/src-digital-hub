@@ -207,9 +207,27 @@ function createMoolreProvider({
           sessionid: String(sessionId || "").slice(0, 128),
           accountnumber: credentials.accountNumber
         }, 45_000);
-        result = await response.json();
       } catch (error) {
-        console.warn(`[moolre_ussd_charge] reference=${transaction.reference} network=${network} classification=${errorCategory(error,"request")} errorType=${safeDiagnosticText(error?.name || "Error")} errorMessage=${safeDiagnosticText(error?.message || "Request failed")} elapsedMs=${Date.now()-startedAt}`);
+        console.warn(`[moolre_ussd_charge] reference=${transaction.reference} network=${network} classification=${errorCategory(error,"request")} errorType=${safeDiagnosticText(error?.name || "Error")} elapsedMs=${Date.now()-startedAt}`);
+        return { ok: false, uncertain: true, status: "pending", message: "The payment prompt status is uncertain." };
+      }
+      let rawResponse = "";
+      try {
+        // Inspect the response in memory only. Never log provider exception text,
+        // which may contain credentials, phone numbers, SQL or server paths.
+        if (typeof response.text === "function") {
+          rawResponse = await response.text();
+          result = JSON.parse(rawResponse);
+        } else result = await response.json();
+      } catch (error) {
+        const responseKind = /PDOException/i.test(rawResponse) ? "php_database_exception"
+          : /(?:PHP Fatal error|Fatal error:|Uncaught .*Exception)/i.test(rawResponse) ? "server_exception"
+          : /<(?:!doctype|html|body)/i.test(rawResponse) ? "html"
+          : rawResponse.trim() ? "non_json" : "empty_or_unreadable";
+        const sqlState = rawResponse.match(/SQLSTATE\[([A-Z0-9]{5})\]/i)?.[1]?.toUpperCase() || "none";
+        const contentType = String(response.headers?.get?.("content-type") || "").split(";")[0].trim().toLowerCase();
+        const safeContentType = ["application/json", "text/html", "text/plain"].includes(contentType) ? contentType : "other_or_missing";
+        console.warn(`[moolre_ussd_charge] reference=${transaction.reference} network=${network} channel=${paymentChannel} sessionAttached=${Boolean(sessionId)} httpStatus=${Number(response.status)||0} contentType=${safeContentType} classification=http_parsing responseKind=${responseKind} sqlState=${sqlState} errorType=${error instanceof SyntaxError ? "SyntaxError" : "ResponseReadError"} elapsedMs=${Date.now()-startedAt}`);
         return { ok: false, uncertain: true, status: "pending", message: "The payment prompt status is uncertain." };
       }
       const diagnostic = `reference=${transaction.reference} network=${network} channel=${paymentChannel} sessionAttached=${Boolean(sessionId)} httpStatus=${Number(response.status) || 0} topLevelStatus=${Number(result?.status) || 0} code=${safeDiagnosticText(result?.code || "none")} otpRequired=${String(result?.code || "").toUpperCase() === "TP14"} elapsedMs=${Date.now()-startedAt}`;

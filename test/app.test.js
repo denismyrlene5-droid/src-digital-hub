@@ -849,6 +849,21 @@ test("Moolre mobile-money collection sends the documented numeric payment channe
   assert.deepEqual(channels,["13","6","7"]);
 });
 
+test("Moolre malformed collection responses log only safe diagnostics and remain pending",async()=>{
+  const logs=[], originalWarn=console.warn;
+  console.warn=message=>logs.push(message);
+  try{
+    const provider=createMoolreProvider({apiUser:"merchant-user",publicKey:"secret-sentinel",accountNumber:"100000001",businessEmail:"private@example.edu",fetchImpl:async()=>new Response("PDOException SQLSTATE[HY000] secret-sentinel private@example.edu 0241235993 /private/server.php",{status:500,headers:{"Content-Type":"text/html; charset=UTF-8"}})});
+    const transaction={reference:"SRCVOTE-test-reference-123456",currency:"GHS",expectedAmount:300};
+    const result=await provider.collectMobileMoney(transaction,{payer:"0241235993",channel:"MTN",sessionId:"private-session-id"});
+    assert.equal(result.uncertain,true);assert.equal(result.status,"pending");
+    assert.match(logs[0],/httpStatus=500 contentType=text\/html classification=http_parsing responseKind=php_database_exception sqlState=HY000/);
+    for(const sensitive of ["secret-sentinel","private@example.edu","0241235993","/private/server.php","private-session-id"])assert.equal(logs[0].includes(sensitive),false);
+    const success=createMoolreProvider({apiUser:"merchant-user",publicKey:"public-key",accountNumber:"100000001",businessEmail:"payments@example.edu",fetchImpl:async()=>new Response(JSON.stringify({status:1,code:"TR099",data:"prompt-reference"}),{status:200})});
+    assert.equal((await success.collectMobileMoney(transaction,{payer:"0241235993",channel:"MTN",sessionId:"session"})).ok,true);
+  }finally{console.warn=originalWarn;}
+});
+
 test("Moolre verification maps statuses and rejects reference, account, currency, and amount anomalies",async()=>{
   let providerData={txstatus:1,externalref:"SRCVOTE-test-reference-123456",accountnumber:"100000001",amount:"3.00",transactionid:"MLR-100",currency:"GHS"};
   const provider=createMoolreProvider({apiUser:"merchant-user",publicKey:"public-key",accountNumber:"100000001",businessEmail:"payments@example.edu",fetchImpl:async()=>({ok:true,status:200,json:async()=>({status:1,data:providerData})})});
